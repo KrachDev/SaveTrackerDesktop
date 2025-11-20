@@ -1,0 +1,289 @@
+<Window xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="600"
+             x:Class="SaveTracker.BlackListEditor"
+             Background="#1E1E1E">
+  
+  <Grid Margin="20">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="*"/>
+      <RowDefinition Height="Auto"/>
+    </Grid.RowDefinitions>
+
+    <!-- Header -->
+    <StackPanel Grid.Row="0" Margin="0,0,0,20">
+      <TextBlock Text="Blacklist Editor" 
+                 FontSize="24" 
+                 FontWeight="Bold" 
+                 Foreground="White"/>
+      <TextBlock Text="Configure files, folders, and patterns to exclude from tracking" 
+                 FontSize="13" 
+                 Foreground="#858585"
+                 Margin="0,5,0,0"/>
+    </StackPanel>
+
+    <!-- Main Content -->
+    <TabControl Grid.Row="1" Background="#252526" BorderBrush="#3F3F46">
+      
+      <!-- Directories Tab -->
+      <TabItem Header="Ignored Directories">
+        <Grid Margin="15">
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+          </Grid.RowDefinitions>
+
+          <!-- Search and Add -->
+          <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,10">
+            <TextBox Name="DirectorySearchBox"
+                     Watermark="Search directories..."
+                     Background="#2A2A2A"
+                     Foreground="White"
+                     BorderBrush="#3F3F46"
+                     Padding="10"/>
+            
+            <Button Grid.Column="1" 
+                    Name="AddDirectoryBtn"
+                    Content="+ Add Directory"
+                    Background="#0E7490"
+                    Foreground="White"
+                    Padding="15,10"
+                    Margin="10,0,0,0"
+                    CornerRadius="4"
+                    Cursor="Hand"/>
+          </Grid>
+
+          <!-- Directory List -->
+          <Border Grid.Row="1" 
+                  Background="#2A2A2A" 
+                  BorderBrush="#3F3F46" 
+                  BorderThickness="1"
+                  CornerRadius="4">
+            <ScrollViewer>
+              <StackPanel Name="DirectoryListPanel" Margin="10"/>
+            </ScrollViewer>
+          </Border>
+
+          <!-- Stats -->
+          <StackPanel Grid.Row="2" 
+                      Orientation="Horizontal" 
+                      Margin="0,10,0,0">
+            <TextBlock Name="DirectoryCountText" 
+                       Text="0 directories" 
+                       FontSize="12" 
+                       Foreground="#858585"/>
+          </StackPanel>
+        </Grid>
+      </TabItem>
+
+      <!-- File Extensions Tab -->
+      <TabItem Header="Ignored Extensions">
+        <Grid Margin="15">
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+          </Grid.RowDefinitions>
+
+          <!-- Add Extension -->
+          <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,10">
+            <TextBox Name="ExtensionInput"
+                     Watermark=".ext (e.g., .tmp, .log)"
+                     Background="#2A2A2A"
+                     Foreground="White"
+                     BorderBrush="#3F3F46"
+                     Padding="10"/>
+            
+            <Button Grid.Column="1" 
+                    Name="AddExtensionBtn"
+                    Content="+ Add Extension"
+                    Background="#0E7490"
+                    Foreground="White"
+                    Padding="15,10"
+                    Margin="10,0,0,0"
+                    CornerRadius="4"
+                    Cursor="Hand"/>
+          </Grid>
+
+          <!-- Extension Grid -->
+          <Border Grid.Row="1" 
+                  Background="#2A2A2A" 
+                  BorderBrush="#3F3F46" 
+                  BorderThickness="1"
+                  CornerRadius="4">
+            <ScrollViewer>
+              <WrapPanel Name="ExtensionWrapPanel" 
+                        Margin="10"
+                        Orientation="Horizontal"/>
+            </ScrollViewer>
+          </Border>
+
+          <!-- Stats -->
+          <StackPanel Grid.Row="2" 
+                      Orientation="Horizontal" 
+                      Margin="0,10,0,0">
+            <TextBlock Name="ExtensionCountText" 
+                       Text="0 extensions" 
+                       FontSize="12" 
+                       Foreground="#858585"/>
+          </StackPanel>
+        </Grid>
+      </TabItem>
+
+      <!-- File Names Tab -->
+      <TabItem Header="Ignored File Names">
+        <Grid Margin="15">
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+          </Grid.RowDefinitions>
+
+          <!-- Add File Name -->
+          <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,10">
+            <TextBox Name="FileNameInput"
+                     Watermark="filename.ext (e.g., thumbs.db)"
+                     Background="#2A2A2A"
+                     Foreground="White"
+                     BorderBrush="#3F3F46"
+                     Padding="10"/>
+            
+            <Button Grid.Column="1" 
+                    Name="AddFileNameBtn"
+                    Content="+ Add File Name"
+                    Background="#0E7490"
+                    Foreground="White"
+                    Padding="15,10"
+                    Margin="10,0,0,0"
+                    CornerRadius="4"
+                    Cursor="Hand"/>
+          </Grid>
+
+          <!-- File Name Grid -->
+          <Border Grid.Row="1" 
+                  Background="#2A2A2A" 
+                  BorderBrush="#3F3F46" 
+                  BorderThickness="1"
+                  CornerRadius="4">
+            <ScrollViewer>
+              <WrapPanel Name="FileNameWrapPanel" 
+                        Margin="10"
+                        Orientation="Horizontal"/>
+            </ScrollViewer>
+          </Border>
+
+          <!-- Stats -->
+          <StackPanel Grid.Row="2" 
+                      Orientation="Horizontal" 
+                      Margin="0,10,0,0">
+            <TextBlock Name="FileNameCountText" 
+                       Text="0 file names" 
+                       FontSize="12" 
+                       Foreground="#858585"/>
+          </StackPanel>
+        </Grid>
+      </TabItem>
+
+      <!-- Keywords Tab -->
+      <TabItem Header="Ignored Keywords">
+        <Grid Margin="15">
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+          </Grid.RowDefinitions>
+
+          <!-- Add Keyword -->
+          <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,10">
+            <TextBox Name="KeywordInput"
+                     Watermark="keyword (e.g., cache, temp)"
+                     Background="#2A2A2A"
+                     Foreground="White"
+                     BorderBrush="#3F3F46"
+                     Padding="10"/>
+            
+            <Button Grid.Column="1" 
+                    Name="AddKeywordBtn"
+                    Content="+ Add Keyword"
+                    Background="#0E7490"
+                    Foreground="White"
+                    Padding="15,10"
+                    Margin="10,0,0,0"
+                    CornerRadius="4"
+                    Cursor="Hand"/>
+          </Grid>
+
+          <!-- Keyword Grid -->
+          <Border Grid.Row="1" 
+                  Background="#2A2A2A" 
+                  BorderBrush="#3F3F46" 
+                  BorderThickness="1"
+                  CornerRadius="4">
+            <ScrollViewer>
+              <WrapPanel Name="KeywordWrapPanel" 
+                        Margin="10"
+                        Orientation="Horizontal"/>
+            </ScrollViewer>
+          </Border>
+
+          <!-- Info -->
+          <StackPanel Grid.Row="2" Margin="0,10,0,0">
+            <TextBlock Name="KeywordCountText" 
+                       Text="0 keywords" 
+                       FontSize="12" 
+                       Foreground="#858585"/>
+            <TextBlock Text="Keywords are matched against file paths (case-insensitive)" 
+                       FontSize="11" 
+                       Foreground="#666666"
+                       Margin="0,5,0,0"/>
+          </StackPanel>
+        </Grid>
+      </TabItem>
+
+    </TabControl>
+
+    <!-- Action Buttons -->
+    <StackPanel Grid.Row="2" 
+                Orientation="Horizontal" 
+                HorizontalAlignment="Right"
+                Spacing="10"
+                Margin="0,20,0,0">
+      
+      <Button Name="ResetToDefaultBtn"
+              Content="Reset to Defaults"
+              Background="#7C3AED"
+              Foreground="White"
+              Padding="15,10"
+              CornerRadius="4"
+              Cursor="Hand"/>
+      
+      <Button Name="ExportBtn"
+              Content="Export"
+              Background="#0EA5E9"
+              Foreground="White"
+              Padding="15,10"
+              CornerRadius="4"
+              Cursor="Hand"/>
+      
+      <Button Name="ImportBtn"
+              Content="Import"
+              Background="#0EA5E9"
+              Foreground="White"
+              Padding="15,10"
+              CornerRadius="4"
+              Cursor="Hand"/>
+      
+      <Button Name="SaveBtn"
+              Content="Save Changes"
+              Background="#10B981"
+              Foreground="White"
+              Padding="20,10"
+              CornerRadius="4"
+              Cursor="Hand"/>
+    </StackPanel>
+  </Grid>
+</Window>
