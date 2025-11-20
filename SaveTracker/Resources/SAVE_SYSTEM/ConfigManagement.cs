@@ -378,6 +378,14 @@ public class Game : INotifyPropertyChanged
         set { _localConfig = value; OnPropertyChanged(); }
     }
 
+
+    public string GetGameDataFile()
+    {
+        return Path.Combine(InstallDirectory, ".savetracker_checksums.json");
+    }
+
+
+
     public event PropertyChangedEventHandler? PropertyChanged;
     protected void OnPropertyChanged([CallerMemberName] string? name = null)
     {

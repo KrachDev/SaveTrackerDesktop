@@ -308,6 +308,11 @@ namespace SaveTracker.Resources.Logic
 
         #endregion
 
+
+
+       
+
+
         #region Helper Methods
 
         private void ReportProgress(UploadProgressInfo progress)
@@ -405,6 +410,12 @@ namespace SaveTracker.Resources.Logic
                 .Concat(new[] { '/', '\\', ':', '*', '?', '"', '<', '>', '|' });
             return invalidChars.Aggregate(gameName, (current, c) => current.Replace(c, '_')).Trim();
         }
+
+
+
+
+
+
     }
 
     /// <summary>

@@ -21,11 +21,23 @@ namespace SaveTracker
             if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
             {
                 // Avoid duplicate validations from both Avalonia and the CommunityToolkit. 
-                // More info: https://docs.avaloniaui.net/docs/guides/development-guides/data-validation#manage-validationplugins
                 DisableAvaloniaDataAnnotationValidation();
+
+                // 1. Create the ViewModel instance explicitly
+                var mainViewModel = new MainWindowViewModel();
+
+                // 2. Pass initial command line args if they exist
+                // This handles the case where you right-click a file -> Open With -> SaveTracker
+                if (desktop.Args != null && desktop.Args.Length > 0)
+                {
+                    // Ensure your MainWindowViewModel has a method named ProcessStartupArgs 
+                    // or reuse the method you created for the 'FilesDropped' event.
+                    mainViewModel.ProcessStartupArgs(desktop.Args);
+                }
+
                 desktop.MainWindow = new MainWindow
                 {
-                    DataContext = new MainWindowViewModel(),
+                    DataContext = mainViewModel,
                 };
             }
 

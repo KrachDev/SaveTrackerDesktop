@@ -49,13 +49,6 @@
                                  Padding="8"/>
                     </Border>
 
-                    <!-- Filter Options -->
-                    <StackPanel Grid.Row="1" Margin="10,0,10,10" Spacing="5">
-                        <TextBlock Text="FILTERS" FontSize="11" Foreground="#858585" Margin="0,0,0,5"/>
-                        <CheckBox Content="Show tracked only" IsChecked="False"/>
-                        <CheckBox Content="Show with changes" IsChecked="False"/>
-                    </StackPanel>
-
                     <!-- Game List -->
                     <ListBox Grid.Row="2" Background="Transparent" Name="GamesList" SelectionChanged="GamesList_SelectionChanged_1" Margin="5">
                         <!-- Game items will be populated here -->
@@ -78,12 +71,12 @@
                 <!-- Game Header -->
                 <Border Grid.Row="0" Background="#2D2D30" Padding="20">
                     <Grid ColumnDefinitions="Auto,*,Auto">
-    <Border Width="80" Height="80" Background="#1E1E1E" CornerRadius="8" Margin="0,0,15,0">
-       <Image Name="GameIconImage" 
-              Width="80" 
-              Height="80" 
-              Stretch="Uniform"/>
-   </Border>
+                        <Border Width="80" Height="80" Background="#1E1E1E" CornerRadius="8" Margin="0,0,15,0">
+                            <Image Name="GameIconImage" 
+                                   Width="80" 
+                                   Height="80" 
+                                   Stretch="Uniform"/>
+                        </Border>
                         
                         <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="5">
                             <TextBlock Name="GameTitleBox" Text="Select a game" FontSize="24" FontWeight="Bold"/>
@@ -108,12 +101,10 @@
                             <Border Grid.Row="0" Background="#252526" Padding="15" BorderBrush="#3F3F46" BorderThickness="0,0,0,1">
                                 <Grid ColumnDefinitions="*,Auto">
                                     <StackPanel Orientation="Horizontal" Spacing="10">
-                                        <Button Content="+ Add File" Padding="10,6"/>
-                                        <Button Content="🗑️ Remove Selected" Padding="10,6"/>
+                                        <Button  Name="AddFileBTN" Click="AddFileBTN_Click" Content="➕ Add Files" Padding="10,6"/>
+                                        <Button Name="RemoveFilesBTN" Click="RemoveFilesBTN_Click" Content="🗑️ Remove Selected" Padding="10,6"/>
                                         <Button Content="🔄 Refresh Tracking" Padding="10,6"/>
                                         <Separator Width="1" Background="#3F3F46" Margin="5,0"/>
-                                        <TextBlock Text="Status:" VerticalAlignment="Center" Foreground="#858585"/>
-                                        <TextBlock Text="No game selected" VerticalAlignment="Center" Foreground="#858585"/>
                                     </StackPanel>
                                     
                                     <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10">
@@ -148,6 +139,64 @@
                                 <Grid ColumnDefinitions="*,Auto">
                                     <TextBlock Name="FilesTrackedTxt" Text="0 files tracked" Foreground="#CCCCCC"/>
                                     <TextBlock Grid.Column="1" Text="Total size: 0 B" Foreground="#858585"/>
+                                </Grid>
+                            </Border>
+                        </Grid>
+                    </TabItem>
+
+                    <!-- Cloud Folder Tab -->
+                    <TabItem Header="☁️ Cloud Folder">
+                        <Grid RowDefinitions="Auto,Auto,*,Auto">
+                            
+                            <!-- Action Bar -->
+                            <Border Grid.Row="0" Background="#252526" Padding="15" BorderBrush="#3F3F46" BorderThickness="0,0,0,1">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <StackPanel Orientation="Horizontal" Spacing="10">
+                                        <Button Name="RefreshCloudFilesBTN" Click="RefreshCloudFilesBTN_Click" Content="🔄 Refresh" Padding="10,6"/>
+                                        <Button Name="DownloadSelectedFilesBTN" Click="DownloadSelectedFilesBTN_Click" Content="⬇️ Download Selected" Padding="10,6"/>
+                                        <Button Content="🗑️ Delete Selected" Padding="10,6"/>
+                                        <Separator Width="1" Background="#3F3F46" Margin="5,0"/>
+                                        <TextBlock Text="View files stored in your cloud provider" 
+                                                   VerticalAlignment="Center" 
+                                                   Foreground="#858585"
+                                                   FontSize="12"/>
+                                    </StackPanel>
+                                    
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10">
+                                        <TextBlock Text="Cloud Storage:" VerticalAlignment="Center" Foreground="#858585"/>
+                                        <TextBlock Name="CloudStorageTXT" Text="Google Drive" VerticalAlignment="Center" Foreground="#4EC9B0" FontWeight="SemiBold"/>
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+
+                            <!-- File List Header -->
+                            <Border Grid.Row="1" Background="#1E1E1E" BorderBrush="#3F3F46" BorderThickness="0,0,0,1">
+                                <Grid Margin="15,10" ColumnDefinitions="40,3*,150,150,120">
+                                    <TextBlock Grid.Column="0" Text="" FontWeight="SemiBold" FontSize="12" Foreground="#858585"/>
+                                    <TextBlock Grid.Column="1" Text="FILE NAME" FontWeight="SemiBold" FontSize="12" Foreground="#858585"/>
+                                    <TextBlock Grid.Column="2" Text="SIZE" FontWeight="SemiBold" FontSize="12" Foreground="#858585"/>
+                                    <TextBlock Grid.Column="3" Text="UPLOADED" FontWeight="SemiBold" FontSize="12" Foreground="#858585"/>
+                                    <TextBlock Grid.Column="4" Text="STATUS" FontWeight="SemiBold" FontSize="12" Foreground="#858585"/>
+                                </Grid>
+                            </Border>
+
+                            <!-- Cloud File List -->
+                            <ScrollViewer Grid.Row="2">
+                                <StackPanel Name="CloudFileList" Margin="15">
+                                    <!-- Cloud file items will be populated here -->
+                                    <TextBlock Text="No files in cloud. Upload tracked files to see them here." 
+                                             Foreground="#858585" 
+                                             HorizontalAlignment="Center" 
+                                             VerticalAlignment="Center"
+                                             Margin="0,50,0,0"/>
+                                </StackPanel>
+                            </ScrollViewer>
+
+                            <!-- Summary Bar -->
+                            <Border Grid.Row="3" Background="#252526" Padding="15" BorderBrush="#3F3F46" BorderThickness="0,1,0,0">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Name="CloudFilesCountTxt" Text="0 files in cloud" Foreground="#CCCCCC"/>
+                                    <TextBlock Grid.Column="1" Text="Last sync: Never" Foreground="#858585"/>
                                 </Grid>
                             </Border>
                         </Grid>
@@ -218,7 +267,7 @@
                                         <CheckBox Content="Enable verbose logging"/>
                                         <CheckBox Content="Keep temporary files for debugging"/>
                                         <CheckBox Content="Handle game launcher (track parent process)"/>
-                                        <Button  Content="View Blacklist Filters" Padding="10,6" HorizontalAlignment="Left"/>
+                                        <Button Content="View Blacklist Filters" Padding="10,6" HorizontalAlignment="Left"/>
                                         <Button Content="Export Configuration" Padding="10,6" HorizontalAlignment="Left"/>
                                     </StackPanel>
                                 </Border>
@@ -267,7 +316,7 @@
                 <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="10">
                     <TextBlock Text="Rclone: Not Connected" Foreground="White"/>
                     <TextBlock Text="•" Foreground="White"/>
-                    <TextBlock Text="0 games tracked" Foreground="White"/>
+                    <TextBlock Name="GamesCountTxt" Text="0 games tracked" Foreground="White"/>
                 </StackPanel>
             </Grid>
         </Border>

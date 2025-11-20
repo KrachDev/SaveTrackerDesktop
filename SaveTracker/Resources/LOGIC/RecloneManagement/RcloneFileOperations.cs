@@ -807,6 +807,11 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
 
             return PathContractor.ExpandPath(Path, gameDirectory);
         }
+
+        public override string ToString()
+        {
+            return GetAbsolutePath();
+        }
     }
 
     public class RemoteFileInfo
