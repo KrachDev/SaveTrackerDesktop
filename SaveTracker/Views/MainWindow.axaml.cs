@@ -28,7 +28,7 @@ namespace SaveTracker.Views
         private CancellationTokenSource trackingCancellation;
 
         // SETTINGS
-        bool canUpload = false;
+        bool canUpload = true;
 
         public Game SelectedGame;
         public MainWindow()
@@ -86,34 +86,56 @@ namespace SaveTracker.Views
                     trackLogic = new SaveFileTrackerManager();
                     trackingCancellation = new CancellationTokenSource();
 
-                    DebugConsole.WriteInfo($"Launching {SelectedGame.Name}...");
+                    // Get the executable name without extension
+                    string exeName = Path.GetFileNameWithoutExtension(SelectedGame.ExecutablePath);
 
-                    var startInfo = new ProcessStartInfo
+                    // Check if process is already running
+                    var existingProcesses = Process.GetProcessesByName(exeName);
+                    Process targetProcess = null;
+
+                    if (existingProcesses.Length > 0)
                     {
-                        FileName = SelectedGame.ExecutablePath,
-                        WorkingDirectory = SelectedGame.InstallDirectory,
-                        UseShellExecute = true
-                    };
-
-                    var process = Process.Start(startInfo);
-
-                    if (process != null)
+                        // Process already running - hook to it
+                        targetProcess = existingProcesses[0];
+                        DebugConsole.WriteInfo($"Found existing process: {SelectedGame.Name} (PID: {targetProcess.Id})");
+                        DebugConsole.WriteSuccess($"Hooking to existing process...");
+                    }
+                    else
                     {
-                        process.EnableRaisingEvents = true;
-                        DebugConsole.WriteSuccess($"{SelectedGame.Name} started (PID: {process.Id})");
+                        // Process not running - launch it
+                        DebugConsole.WriteInfo($"Launching {SelectedGame.Name}...");
 
-                        // Disable on UI thread (we're already on it)
+                        var startInfo = new ProcessStartInfo
+                        {
+                            FileName = SelectedGame.ExecutablePath,
+                            WorkingDirectory = SelectedGame.InstallDirectory,
+                            UseShellExecute = true
+                        };
+
+                        targetProcess = Process.Start(startInfo);
+
+                        if (targetProcess != null)
+                        {
+                            DebugConsole.WriteSuccess($"{SelectedGame.Name} started (PID: {targetProcess.Id})");
+                        }
+                    }
+
+                    if (targetProcess != null)
+                    {
+                        targetProcess.EnableRaisingEvents = true;
+
+                        // Disable button on UI thread
                         LaunchBTN.IsEnabled = false;
 
                         // Track while game is running
-                        _ = TrackGameProcess(process, trackingCancellation.Token);
+                        _ = TrackGameProcess(targetProcess, trackingCancellation.Token);
 
                         // Handle process exit - MUST use Dispatcher for UI updates
-                        process.Exited += async (s, e) =>
+                        targetProcess.Exited += async (s, e) =>
                         {
                             try
                             {
-                                await OnGameExited(process);
+                                await OnGameExited(targetProcess);
                             }
                             finally
                             {
@@ -124,11 +146,27 @@ namespace SaveTracker.Views
                                 });
                             }
                         };
+
+                        // If hooking to existing process, check if it's already exited
+                        if (targetProcess.HasExited)
+                        {
+                            DebugConsole.WriteWarning($"Process already exited");
+                            await OnGameExited(targetProcess);
+                            await Dispatcher.UIThread.InvokeAsync(() =>
+                            {
+                                LaunchBTN.IsEnabled = true;
+                            });
+                        }
+                    }
+                    else
+                    {
+                        DebugConsole.WriteError("Failed to start or find game process");
+                        trackingCancellation?.Cancel();
                     }
                 }
                 catch (Exception ex)
                 {
-                    DebugConsole.WriteError($"Failed to launch game: {ex.Message}");
+                    DebugConsole.WriteError($"Failed to launch/hook game: {ex.Message}");
                     trackingCancellation?.Cancel();
 
                     // Ensure button is re-enabled on error
@@ -138,56 +176,7 @@ namespace SaveTracker.Views
                     });
                 }
             }
-        }
-        private async Task TrackGameProcess(Process process, CancellationToken cancellationToken)
-        {
-            try
-            {
-                DebugConsole.WriteInfo("Starting file tracking...");
-
-                while (!process.HasExited && !cancellationToken.IsCancellationRequested)
-                {
-                    try
-                    {
-                        // Track file operations
-                        await trackLogic.Track(SelectedGame);
-
-                        // Log memory usage periodically (optional) - with safety check
-                        try
-                        {
-                            if (!process.HasExited && process.WorkingSet64 > 0)
-                            {
-                                DebugConsole.WriteDebug($"Game memory: {process.WorkingSet64 / 1024 / 1024} MB");
-                            }
-                        }
-                        catch
-                        {
-                            // Process already exited, ignore
-                        }
-
-                        await Task.Delay(5000, cancellationToken); // Check every 5 seconds
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        break;
-                    }
-                    catch (Exception ex)
-                    {
-                        // Don't log if it's just about the process exiting
-                        if (!ex.Message.Contains("Process has exited"))
-                        {
-                            DebugConsole.WriteWarning($"Tracking error: {ex.Message}");
-                        }
-                    }
-                }
-
-                DebugConsole.WriteInfo("File tracking stopped");
-            }
-            catch (Exception ex)
-            {
-                DebugConsole.WriteError($"Tracking process failed: {ex.Message}");
-            }
-        }
+        } 
         private async Task OnGameExited(Process process)
         {
             try
@@ -204,7 +193,7 @@ namespace SaveTracker.Views
                 if (trackedFiles == null || trackedFiles.Count == 0)
                 {
                     DebugConsole.WriteWarning("No files were tracked during gameplay");
-                    return;
+                    //return;
                 }
 
                 // Check if all files exist
@@ -324,6 +313,56 @@ namespace SaveTracker.Views
             {
                 trackingCancellation?.Dispose();
                 trackingCancellation = null;
+            }
+        }
+
+        private async Task TrackGameProcess(Process process, CancellationToken cancellationToken)
+        {
+            try
+            {
+                DebugConsole.WriteInfo("Starting file tracking...");
+
+                while (!process.HasExited && !cancellationToken.IsCancellationRequested)
+                {
+                    try
+                    {
+                        // Track file operations
+                        await trackLogic.Track(SelectedGame);
+
+                        // Log memory usage periodically (optional) - with safety check
+                        try
+                        {
+                            if (!process.HasExited && process.WorkingSet64 > 0)
+                            {
+                                DebugConsole.WriteDebug($"Game memory: {process.WorkingSet64 / 1024 / 1024} MB");
+                            }
+                        }
+                        catch
+                        {
+                            // Process already exited, ignore
+                        }
+
+                        await Task.Delay(5000, cancellationToken); // Check every 5 seconds
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        break;
+                    }
+                    catch (Exception ex)
+                    {
+                        // Don't log if it's just about the process exiting
+                        if (!ex.Message.Contains("Process has exited"))
+                        {
+                            DebugConsole.WriteWarning($"Tracking error: {ex.Message}");
+                        }
+                    }
+                }
+
+                DebugConsole.WriteInfo("File tracking stopped");
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteError($"Tracking process failed: {ex.Message}");
             }
         }
         private async void OpenCloudSettingsBTN_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)

@@ -22,12 +22,6 @@ namespace SaveTracker.Resources.LOGIC
         private const int PROCESS_SHUTDOWN_GRACE_PERIOD_MS = 5000; // 5 seconds - wait for filesystem to settle
         private const string ETW_SESSION_NAME = "SaveTrackerSession";
 
-        // Common temp extensions
-        private static readonly HashSet<string> TempExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            ".tmp", ".temp", ".bak", ".backup", ".~", ".old", ".orig"
-        };
-
         // Settings
         bool canTrack = true;
         bool trackWrites = true;
@@ -51,9 +45,11 @@ namespace SaveTracker.Resources.LOGIC
             if (_currentSession != null && _currentSession.IsTracking)
             {
                 DebugConsole.WriteLine("Already tracking.");
-
                 return;
             }
+
+            // Clean up any existing ETW sessions
+            CleanupExistingEtwSessions();
 
             // Initialize new tracking session
             _currentSession = new TrackingSession(gameArg);
@@ -92,6 +88,27 @@ namespace SaveTracker.Resources.LOGIC
         }
 
         /// <summary>
+        /// Clean up any orphaned ETW sessions
+        /// </summary>
+        private void CleanupExistingEtwSessions()
+        {
+            try
+            {
+                var existingSession = TraceEventSession.GetActiveSession(ETW_SESSION_NAME);
+                if (existingSession != null)
+                {
+                    DebugConsole.WriteWarning("Found existing ETW session, stopping it...");
+                    existingSession.Stop();
+                    existingSession.Dispose();
+                }
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteWarning($"Error cleaning up ETW session: {ex.Message}");
+            }
+        }
+
+        /// <summary>
         /// Stops the current tracking session
         /// </summary>
         public void StopTracking()
@@ -104,7 +121,7 @@ namespace SaveTracker.Resources.LOGIC
         /// </summary>
         public List<string> GetUploadList()
         {
-            return TrackingSession.GetGlobalUploadList();
+            return _currentSession.GetUploadList();
         }
 
         private void DisplayResults(List<string> uploadFiles)
@@ -137,6 +154,7 @@ namespace SaveTracker.Resources.LOGIC
         // ETW session
         private TraceEventSession _etwSession;
         private bool _isTracking;
+        private bool _isDisposed;
 
         // Process tracking
         private ProcessMonitor _processMonitor;
@@ -151,10 +169,10 @@ namespace SaveTracker.Resources.LOGIC
         // Background tasks
         private readonly List<Task> _backgroundTasks = new List<Task>();
 
-        // Temp file resolution
-        private static readonly HashSet<string> _trackedFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        private static readonly HashSet<string> _uploadCandidates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        private static readonly object _listLock = new object();
+        // Temp file resolution - NON-STATIC to avoid cross-session contamination
+        private readonly HashSet<string> _trackedFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private readonly HashSet<string> _uploadCandidates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private readonly object _listLock = new object();
 
         // Common temp extensions
         private static readonly HashSet<string> TempExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -162,7 +180,6 @@ namespace SaveTracker.Resources.LOGIC
             ".tmp", ".temp", ".bak", ".backup", ".~", ".old", ".orig"
         };
 
-        bool canTrack = true;
         bool trackWrites = true;
         bool trackReads = false;
         public bool IsTracking => _isTracking;
@@ -170,7 +187,6 @@ namespace SaveTracker.Resources.LOGIC
         public TrackingSession(Game game)
         {
             _game = game ?? throw new ArgumentNullException(nameof(game));
-
             _fileCollector = new FileCollector(_game);
             _cancellationTokenSource = new CancellationTokenSource();
         }
@@ -195,6 +211,7 @@ namespace SaveTracker.Resources.LOGIC
                 DebugConsole.WriteWarning($"Couldn't detect a running game process in install directory: {ex.Message}");
                 return false;
             }
+
             string processName = Path.GetFileName(detectedExe);
             var cleanName = processName.ToLower().Replace(".exe", "");
             var procs = Process.GetProcessesByName(cleanName);
@@ -217,42 +234,77 @@ namespace SaveTracker.Resources.LOGIC
 
         public async Task StartTracking()
         {
-            _etwSession = new TraceEventSession(ETW_SESSION_NAME);
-            _isTracking = true;
+            if (_isDisposed)
+                throw new ObjectDisposedException(nameof(TrackingSession));
 
-            // Enable ETW providers
-            _etwSession.EnableKernelProvider(
-                KernelTraceEventParser.Keywords.FileIO
-                    | KernelTraceEventParser.Keywords.FileIOInit
-                    | KernelTraceEventParser.Keywords.Process
-            );
+            try
+            {
+                _etwSession = new TraceEventSession(ETW_SESSION_NAME);
+                _isTracking = true;
 
-            // Setup event handlers
-            SetupEventHandlers();
+                DebugConsole.WriteLine("Starting ETW session...");
 
-            // Start background tasks
-            StartBackgroundProcessing();
+                // Enable ETW providers
+                _etwSession.EnableKernelProvider(
+                    KernelTraceEventParser.Keywords.FileIO
+                        | KernelTraceEventParser.Keywords.FileIOInit
+                        | KernelTraceEventParser.Keywords.Process
+                );
+
+                // Setup event handlers
+                SetupEventHandlers();
+
+                // Start background tasks
+                StartBackgroundProcessing();
+
+                DebugConsole.WriteSuccess("ETW tracking started successfully");
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteError($"Failed to start ETW session: {ex.Message}");
+                _isTracking = false;
+                throw;
+            }
         }
 
         private void SetupEventHandlers()
         {
+            if (_etwSession?.Source == null)
+            {
+                DebugConsole.WriteError("ETW session source is null");
+                return;
+            }
+
             // Monitor new processes
             _etwSession.Source.Kernel.ProcessStart += data =>
             {
                 try
                 {
-                    _processMonitor.HandleNewProcess(data.ProcessID);
+                    if (_isTracking && !_isDisposed)
+                    {
+                        _processMonitor?.HandleNewProcess(data.ProcessID);
+                    }
                 }
                 catch (Exception ex)
                 {
-                    // Process might have already exited
+                    DebugConsole.WriteWarning($"Error handling new process: {ex.Message}");
                 }
             };
 
             // Track process exits
             _etwSession.Source.Kernel.ProcessStop += data =>
             {
-                _processMonitor.HandleProcessExit(data.ProcessID);
+                try
+                {
+                    if (_isTracking && !_isDisposed)
+                    {
+                        _processMonitor?.HandleProcessExit(data.ProcessID);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    DebugConsole.WriteWarning($"Error handling process exit: {ex.Message}");
+                }
             };
 
             // File write tracking
@@ -260,9 +312,19 @@ namespace SaveTracker.Resources.LOGIC
             {
                 _etwSession.Source.Kernel.FileIOWrite += data =>
                 {
-                    if (_processMonitor.IsTracked(data.ProcessID))
+                    try
                     {
-                        HandleFileAccess(data.FileName);
+                        if (_isTracking && !_isDisposed && _processMonitor != null)
+                        {
+                            if (_processMonitor.IsTracked(data.ProcessID))
+                            {
+                                HandleFileAccess(data.FileName);
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        // Silently ignore individual file tracking errors
                     }
                 };
             }
@@ -272,125 +334,81 @@ namespace SaveTracker.Resources.LOGIC
             {
                 _etwSession.Source.Kernel.FileIORead += data =>
                 {
-                    if (_processMonitor.IsTracked(data.ProcessID))
+                    try
                     {
-                        HandleFileAccess(data.FileName);
+                        if (_isTracking && !_isDisposed && _processMonitor != null)
+                        {
+                            if (_processMonitor.IsTracked(data.ProcessID))
+                            {
+                                HandleFileAccess(data.FileName);
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        // Silently ignore individual file tracking errors
                     }
                 };
             }
 
-            DebugConsole.WriteWarning($"Track writes: {trackWrites}");
-            DebugConsole.WriteWarning($"Track reads: {trackReads}");
+            DebugConsole.WriteInfo($"Track writes: {trackWrites}");
+            DebugConsole.WriteInfo($"Track reads: {trackReads}");
         }
 
         private void HandleFileAccess(string filePath)
         {
-            if (string.IsNullOrEmpty(filePath))
+            if (string.IsNullOrEmpty(filePath) || _isDisposed)
                 return;
 
-            // Normalize path
-            string normalizedPath = filePath.Replace('/', '\\');
-
-            // Check if should be ignored
-            if (_fileCollector.ShouldIgnore(normalizedPath))
-                return;
-
-            // Add to file collector
-            if (!_fileCollector.AddFile(normalizedPath))
-                return;
-
-            // Smart temp file resolution
-            lock (_listLock)
+            try
             {
-                // Track this file
-                _trackedFiles.Add(normalizedPath);
+                // Normalize path
+                string normalizedPath = filePath.Replace('/', '\\');
 
-                // Always add the file itself as upload candidate
-                _uploadCandidates.Add(normalizedPath);
+                // Check if should be ignored
+                if (_fileCollector.ShouldIgnore(normalizedPath))
+                    return;
 
-                // Check if it has double extension (temp file pattern)
-                if (HasDoubleExtension(normalizedPath))
+                // Add to file collector
+                if (!_fileCollector.AddFile(normalizedPath))
+                    return;
+
+                // Simple solution: Track the file AND version without last extension
+                lock (_listLock)
                 {
-                    // Find base file
-                    string baseFile = GetBaseFileName(normalizedPath);
-                    if (!string.IsNullOrEmpty(baseFile))
+                    // Always track the file we detected
+                    if (!_trackedFiles.Contains(normalizedPath))
                     {
-                        _uploadCandidates.Add(baseFile);
-                        DebugConsole.WriteLine($"Detected: {normalizedPath}");
-                        DebugConsole.WriteLine($"  -> Will also check: {baseFile}");
+                        _trackedFiles.Add(normalizedPath);
+                        _uploadCandidates.Add(normalizedPath);
+                        DebugConsole.WriteLine($"Tracked: {normalizedPath}");
                     }
-                }
-                // If it's a base file, check for temp variants we've tracked
-                else
-                {
-                    foreach (var tempExt in TempExtensions)
+
+                    // If file has ANY extension, also track version without that extension
+                    string extension = Path.GetExtension(normalizedPath);
+                    if (!string.IsNullOrEmpty(extension))
                     {
-                        string tempVariant = normalizedPath + tempExt;
-                        if (_trackedFiles.Contains(tempVariant))
+                        string fileWithoutExt = Path.Combine(
+                            Path.GetDirectoryName(normalizedPath) ?? "",
+                            Path.GetFileNameWithoutExtension(normalizedPath)
+                        );
+
+                        // Only add if it still has an extension (was double extension)
+                        if (!string.IsNullOrEmpty(Path.GetExtension(fileWithoutExt)))
                         {
-                            _uploadCandidates.Add(tempVariant);
-                            DebugConsole.WriteLine($"Detected: {normalizedPath}");
-                            DebugConsole.WriteLine($"  -> Also uploading tracked temp: {tempVariant}");
+                            if (!_uploadCandidates.Contains(fileWithoutExt))
+                            {
+                                _uploadCandidates.Add(fileWithoutExt);
+                                DebugConsole.WriteLine($"  -> Also tracking: {fileWithoutExt}");
+                            }
                         }
                     }
                 }
             }
-        }
-
-        /// <summary>
-        /// Checks if file has double extension (e.g., save.dat.tmp)
-        /// </summary>
-        private bool HasDoubleExtension(string filePath)
-        {
-            return has2extensions(filePath);
-        }
-
-        /// <summary>
-        /// Checks if filepath has 2 extensions (e.g., save.dat.tmp, config.ini.bak)
-        /// </summary>
-        public static bool has2extensions(string filepath)
-        {
-            if (string.IsNullOrEmpty(filepath))
-                return false;
-
-            // Get the last extension
-            string extension = Path.GetExtension(filepath);
-            if (string.IsNullOrEmpty(extension))
-                return false;
-
-            // Check if it's a known temp extension
-            if (!TempExtensions.Contains(extension))
-                return false;
-
-            // Remove the extension and check if there's still an extension
-            string fileNameWithoutExt = Path.GetFileNameWithoutExtension(filepath);
-            string remainingExtension = Path.GetExtension(fileNameWithoutExt);
-
-            // If there's still an extension after removing the temp extension, it's a double extension
-            return !string.IsNullOrEmpty(remainingExtension);
-        }
-
-        /// <summary>
-        /// Gets base filename by removing temp extension
-        /// save.dat.tmp -> save.dat
-        /// </summary>
-        private string GetBaseFileName(string filePath)
-        {
-            string directory = Path.GetDirectoryName(filePath);
-            string fileName = Path.GetFileName(filePath);
-            string extension = Path.GetExtension(fileName);
-
-            if (string.IsNullOrEmpty(extension))
-                return null;
-
-            // Remove temp extension
-            string baseFileName = fileName.Substring(0, fileName.Length - extension.Length);
-
-            // Check if still has an extension
-            if (!baseFileName.Contains("."))
-                return null;
-
-            return Path.Combine(directory, baseFileName);
+            catch (Exception ex)
+            {
+                DebugConsole.WriteWarning($"Error handling file access for {filePath}: {ex.Message}");
+            }
         }
 
         private void StartBackgroundProcessing()
@@ -402,10 +420,14 @@ namespace SaveTracker.Resources.LOGIC
                 {
                     DebugConsole.WriteLine("ETW session processing started.");
                     _etwSession.Source.Process();
+                    DebugConsole.WriteLine("ETW session processing ended.");
                 }
                 catch (Exception ex)
                 {
-                    DebugConsole.WriteLine($"[ERROR] ETW Session: {ex.Message}");
+                    if (!_isDisposed)
+                    {
+                        DebugConsole.WriteLine($"[ERROR] ETW Session: {ex.Message}");
+                    }
                 }
             }, _cancellationTokenSource.Token);
 
@@ -414,10 +436,20 @@ namespace SaveTracker.Resources.LOGIC
             // Directory monitoring task
             var monitorTask = Task.Run(async () =>
             {
-                await _processMonitor.StartPeriodicScan(
-                    DIRECTORY_SCAN_INTERVAL_MS,
-                    _cancellationTokenSource.Token
-                );
+                try
+                {
+                    await _processMonitor.StartPeriodicScan(
+                        DIRECTORY_SCAN_INTERVAL_MS,
+                        _cancellationTokenSource.Token
+                    );
+                }
+                catch (Exception ex)
+                {
+                    if (!_isDisposed)
+                    {
+                        DebugConsole.WriteWarning($"Directory scan error: {ex.Message}");
+                    }
+                }
             }, _cancellationTokenSource.Token);
 
             _backgroundTasks.Add(monitorTask);
@@ -429,20 +461,33 @@ namespace SaveTracker.Resources.LOGIC
             {
                 // Wait for main process to exit
                 var mainProcess = Process.GetProcessById(_initialProcessId);
-                await WaitForProcessExitAsync(mainProcess, _cancellationTokenSource.Token);
 
-                DebugConsole.WriteLine("Main game process exited, waiting for filesystem to settle...");
+                if (mainProcess.HasExited)
+                {
+                    DebugConsole.WriteLine("Process already exited.");
+                }
+                else
+                {
+                    DebugConsole.WriteLine("Waiting for process to exit...");
+                    await WaitForProcessExitAsync(mainProcess, _cancellationTokenSource.Token);
+                    DebugConsole.WriteLine("Main game process exited.");
+                }
 
                 // Grace period for filesystem to settle (renames, final writes)
+                DebugConsole.WriteLine($"Waiting {PROCESS_SHUTDOWN_GRACE_PERIOD_MS}ms for filesystem to settle...");
                 await Task.Delay(PROCESS_SHUTDOWN_GRACE_PERIOD_MS, _cancellationTokenSource.Token);
             }
             catch (ArgumentException)
             {
-                DebugConsole.WriteLine("Process already exited.");
+                DebugConsole.WriteLine("Process already exited (ArgumentException).");
             }
             catch (OperationCanceledException)
             {
                 DebugConsole.WriteLine("Tracking was cancelled.");
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteWarning($"Error during wait: {ex.Message}");
             }
             finally
             {
@@ -454,7 +499,7 @@ namespace SaveTracker.Resources.LOGIC
 
         public void Stop()
         {
-            if (!_isTracking)
+            if (!_isTracking || _isDisposed)
                 return;
 
             DebugConsole.WriteLine("Stopping tracking session...");
@@ -462,12 +507,20 @@ namespace SaveTracker.Resources.LOGIC
             _isTracking = false;
 
             // Cancel all background tasks
-            _cancellationTokenSource?.Cancel();
+            try
+            {
+                _cancellationTokenSource?.Cancel();
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteWarning($"Error cancelling tasks: {ex.Message}");
+            }
 
             // Stop ETW session
             try
             {
                 _etwSession?.Stop();
+                DebugConsole.WriteLine("ETW session stopped.");
             }
             catch (Exception ex)
             {
@@ -506,66 +559,81 @@ namespace SaveTracker.Resources.LOGIC
                         DebugConsole.WriteWarning($"Error checking {candidate}: {ex.Message}");
                     }
                 }
+
+                DebugConsole.WriteInfo($"Final upload list: {finalList.Count} files");
             }
 
             return finalList;
         }
 
-        public static List<string> GetGlobalUploadList()
-        {
-            var finalList = new List<string>();
-
-            lock (_listLock)
-            {
-                foreach (var candidate in _uploadCandidates)
-                {
-                    try
-                    {
-                        if (File.Exists(candidate))
-                        {
-                            finalList.Add(candidate);
-                        }
-                    }
-                    catch { }
-                }
-            }
-
-            return finalList;
-        }
+        
 
         private static async Task WaitForProcessExitAsync(Process process, CancellationToken cancellationToken)
         {
             var tcs = new TaskCompletionSource<bool>();
 
-            process.EnableRaisingEvents = true;
-            process.Exited += (s, e) => tcs.TrySetResult(true);
+            void OnExited(object s, EventArgs e) => tcs.TrySetResult(true);
 
-            using (cancellationToken.Register(() => tcs.TrySetCanceled()))
+            try
             {
-                if (!process.HasExited)
+                process.EnableRaisingEvents = true;
+                process.Exited += OnExited;
+
+                using (cancellationToken.Register(() => tcs.TrySetCanceled()))
                 {
-                    await tcs.Task;
+                    if (!process.HasExited)
+                    {
+                        await tcs.Task;
+                    }
                 }
+            }
+            finally
+            {
+                process.Exited -= OnExited;
             }
         }
 
         public void Dispose()
         {
-            Stop();
+            if (_isDisposed)
+                return;
 
-            _cancellationTokenSource?.Dispose();
-            _etwSession?.Dispose();
-            _processMonitor?.Dispose();
+            _isDisposed = true;
+
+            Stop();
 
             // Wait for background tasks to complete
             try
             {
-                Task.WaitAll(_backgroundTasks.ToArray(), TimeSpan.FromSeconds(5));
+                if (_backgroundTasks.Count > 0)
+                {
+                    DebugConsole.WriteLine("Waiting for background tasks to complete...");
+                    Task.WaitAll(_backgroundTasks.ToArray(), TimeSpan.FromSeconds(5));
+                }
             }
             catch (Exception ex)
             {
                 DebugConsole.WriteWarning($"Error waiting for background tasks: {ex.Message}");
             }
+
+            // Dispose resources
+            try
+            {
+                _cancellationTokenSource?.Dispose();
+            }
+            catch { }
+
+            try
+            {
+                _etwSession?.Dispose();
+            }
+            catch { }
+
+            try
+            {
+                _processMonitor?.Dispose();
+            }
+            catch { }
         }
 
         private const string ETW_SESSION_NAME = "SaveTrackerSession";
