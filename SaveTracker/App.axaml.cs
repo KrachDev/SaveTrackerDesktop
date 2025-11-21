@@ -32,7 +32,7 @@ namespace SaveTracker
                 {
                     // Ensure your MainWindowViewModel has a method named ProcessStartupArgs 
                     // or reuse the method you created for the 'FilesDropped' event.
-                    mainViewModel.ProcessStartupArgs(desktop.Args);
+                   // mainViewModel.ProcessStartupArgs(desktop.Args);
                 }
 
                 desktop.MainWindow = new MainWindow
