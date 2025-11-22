@@ -20,13 +20,13 @@ namespace SaveTracker.Resources.HELPERS
             { "%PROGRAMFILES%", Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles) },
             { "%PROGRAMFILESX86%", Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86) },
             { "%TEMP%", Path.GetTempPath().TrimEnd('\\', '/') },
-            { "%SYSTEMDRIVE%", Path.GetPathRoot(Environment.SystemDirectory).TrimEnd('\\', '/') },
+            { "%SYSTEMDRIVE%", (Path.GetPathRoot(Environment.SystemDirectory) ?? "").TrimEnd('\\', '/') },
         };
 
         // Can be set dynamically for game-specific paths
-        private static string _gamePath = null;
+        private static string? _gamePath = null;
 
-        public static void SetGamePath(string gamePath)
+        public static void SetGamePath(string? gamePath)
         {
             _gamePath = gamePath?.TrimEnd('\\', '/');
         }

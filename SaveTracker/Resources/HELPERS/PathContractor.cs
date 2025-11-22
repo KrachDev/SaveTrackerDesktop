@@ -15,7 +15,7 @@ namespace SaveTracker.Resources.HELPERS
         /// <summary>
         /// Contracts a single path to use environment variables
         /// </summary>
-        public static string ContractPath(string absolutePath, string gameInstallDirectory = null)
+        public static string ContractPath(string absolutePath, string gameInstallDirectory)
         {
             if (string.IsNullOrEmpty(absolutePath))
                 return absolutePath;
@@ -44,9 +44,9 @@ namespace SaveTracker.Resources.HELPERS
                 ("%APPDATA%", Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData)),
                 ("%LOCALAPPDATA%", Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData)),
                 ("%PROGRAMDATA%", Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData)),
-                ("%PUBLIC%", Environment.GetEnvironmentVariable("PUBLIC")),
-                ("%HOMEDRIVE%", Environment.GetEnvironmentVariable("HOMEDRIVE")),
-                ("%HOMEPATH%", Environment.GetEnvironmentVariable("HOMEPATH")),
+                ("%PUBLIC%", Environment.GetEnvironmentVariable("PUBLIC") ?? ""),
+                ("%HOMEDRIVE%", Environment.GetEnvironmentVariable("HOMEDRIVE") ?? ""),
+                ("%HOMEPATH%", Environment.GetEnvironmentVariable("HOMEPATH") ?? ""),
                 ("%TEMP%", Path.GetTempPath()),
                 ("%PROGRAMFILES%", Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles)),
                 ("%PROGRAMFILES(X86)%", Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86)),
@@ -77,7 +77,7 @@ namespace SaveTracker.Resources.HELPERS
         /// <summary>
         /// Contracts a list of paths to use environment variables
         /// </summary>
-        public static List<string> ContractPaths(List<string> absolutePaths, string gameInstallDirectory = null)
+        public static List<string> ContractPaths(List<string> absolutePaths, string gameInstallDirectory)
         {
             if (absolutePaths == null)
                 return new List<string>();
@@ -93,7 +93,7 @@ namespace SaveTracker.Resources.HELPERS
         /// <summary>
         /// Expands an environmental path back to absolute path
         /// </summary>
-        public static string ExpandPath(string contractedPath, string gameInstallDirectory = null)
+        public static string ExpandPath(string contractedPath, string gameInstallDirectory)
         {
             if (string.IsNullOrEmpty(contractedPath))
                 return contractedPath;
@@ -118,7 +118,7 @@ namespace SaveTracker.Resources.HELPERS
         /// <summary>
         /// Expands a list of environmental paths back to absolute paths
         /// </summary>
-        public static List<string> ExpandPaths(List<string> contractedPaths, string gameInstallDirectory = null)
+        public static List<string> ExpandPaths(List<string> contractedPaths, string gameInstallDirectory)
         {
             if (contractedPaths == null)
                 return new List<string>();

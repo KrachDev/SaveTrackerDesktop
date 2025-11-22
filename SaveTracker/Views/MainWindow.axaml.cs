@@ -1,5 +1,7 @@
-﻿using Avalonia.Controls;
+﻿using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Interactivity;
+using Avalonia.Input;
 using SaveTracker.Resources.HELPERS;
 using SaveTracker.Resources.SAVE_SYSTEM;
 using SaveTracker.ViewModels;
@@ -12,7 +14,7 @@ namespace SaveTracker.Views
 {
     public partial class MainWindow : Window
     {
-        private MainWindowViewModel _viewModel;
+        private MainWindowViewModel? _viewModel;
 
         public MainWindow()
         {
@@ -22,37 +24,52 @@ namespace SaveTracker.Views
 
             DebugConsole.WriteInfo("InitializeComponent completed");
 
-            // Create ViewModel FIRST
-            _viewModel = new MainWindowViewModel();
-            DebugConsole.WriteInfo($"ViewModel created: {_viewModel != null}");
-
-            // Subscribe to events BEFORE setting DataContext
-            DebugConsole.WriteInfo("Subscribing to ViewModel events...");
-
-            _viewModel.OnAddGameRequested += ShowAddGameDialog;
-            DebugConsole.WriteInfo($"- OnAddGameRequested subscribed. Handler count: {_viewModel.GetAddGameRequestedSubscriberCount()}");
-
-            _viewModel.OnAddFilesRequested += ShowAddFilesDialog;
-            DebugConsole.WriteInfo($"- OnAddFilesRequested subscribed");
-
-            _viewModel.OnCloudSettingsRequested += ShowCloudSettings;
-            DebugConsole.WriteInfo($"- OnCloudSettingsRequested subscribed");
-
-            _viewModel.OnBlacklistRequested += ShowBlacklist;
-            DebugConsole.WriteInfo($"- OnBlacklistRequested subscribed");
-
-            _viewModel.OnRcloneSetupRequired += ShowRcloneSetup;
-            DebugConsole.WriteInfo($"- OnRcloneSetupRequired subscribed");
-
-            // Set DataContext AFTER subscribing
-            DataContext = _viewModel;
-            DebugConsole.WriteInfo($"DataContext set: {DataContext != null}");
+            // DataContext will be set by App.axaml.cs, so we wait for it
+            DataContextChanged += OnDataContextChanged;
 
             DebugConsole.WriteSuccess("=== MainWindow Constructor COMPLETE ===");
         }
 
+        private void OnDataContextChanged(object? sender, EventArgs e)
+        {
+            // Unsubscribe to prevent multiple calls
+            DataContextChanged -= OnDataContextChanged;
+
+            if (DataContext is MainWindowViewModel viewModel)
+            {
+                _viewModel = viewModel;
+                DebugConsole.WriteInfo($"ViewModel received via DataContext: {_viewModel != null}");
+
+                // Subscribe to events
+                DebugConsole.WriteInfo("Subscribing to ViewModel events...");
+
+                _viewModel.OnAddGameRequested += ShowAddGameDialog;
+                DebugConsole.WriteInfo($"- OnAddGameRequested subscribed. Handler count: {_viewModel.GetAddGameRequestedSubscriberCount()}");
+
+                _viewModel.OnAddFilesRequested += ShowAddFilesDialog;
+                DebugConsole.WriteInfo($"- OnAddFilesRequested subscribed");
+
+                _viewModel.OnCloudSettingsRequested += ShowCloudSettings;
+                DebugConsole.WriteInfo($"- OnCloudSettingsRequested subscribed");
+
+                _viewModel.OnBlacklistRequested += ShowBlacklist;
+                DebugConsole.WriteInfo($"- OnBlacklistRequested subscribed");
+
+                _viewModel.OnRcloneSetupRequired += ShowRcloneSetup;
+                DebugConsole.WriteInfo($"- OnRcloneSetupRequired subscribed");
+
+                DebugConsole.WriteSuccess("ViewModel event subscriptions complete");
+            }
+            else
+            {
+                DebugConsole.WriteError("DataContext is not MainWindowViewModel!");
+            }
+        }
+
         private async void ShowAddGameDialog()
         {
+            if (_viewModel == null) return;
+
             try
             {
                 DebugConsole.WriteInfo("=== ShowAddGameDialog CALLED ===");
@@ -109,8 +126,11 @@ namespace SaveTracker.Views
                 DebugConsole.WriteError($"Stack: {ex.StackTrace}");
             }
         }
+
         private async void ShowAddFilesDialog()
         {
+            if (_viewModel == null) return;
+
             try
             {
                 DebugConsole.WriteInfo("=== ShowAddFilesDialog CALLED ===");
@@ -208,15 +228,33 @@ namespace SaveTracker.Views
             }
         }
 
+        protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+        {
+            base.OnPropertyChanged(change);
+
+            if (change.Property == WindowStateProperty)
+            {
+                if (WindowState == WindowState.Minimized)
+                {
+                    // Hide the window when minimized
+                    Hide();
+                    DebugConsole.WriteInfo("Window minimized to tray");
+                }
+            }
+        }
+
         protected override void OnClosing(WindowClosingEventArgs e)
         {
             base.OnClosing(e);
 
-            _viewModel.OnAddGameRequested -= ShowAddGameDialog;
-            _viewModel.OnAddFilesRequested -= ShowAddFilesDialog;
-            _viewModel.OnCloudSettingsRequested -= ShowCloudSettings;
-            _viewModel.OnBlacklistRequested -= ShowBlacklist;
-            _viewModel.OnRcloneSetupRequired -= ShowRcloneSetup;
+            if (_viewModel != null)
+            {
+                _viewModel.OnAddGameRequested -= ShowAddGameDialog;
+                _viewModel.OnAddFilesRequested -= ShowAddFilesDialog;
+                _viewModel.OnCloudSettingsRequested -= ShowCloudSettings;
+                _viewModel.OnBlacklistRequested -= ShowBlacklist;
+                _viewModel.OnRcloneSetupRequired -= ShowRcloneSetup;
+            }
         }
     }
 }

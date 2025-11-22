@@ -1,0 +1,25 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="SaveTracker.Views.AdminPromptDialog"
+        Title="Administrator Required"
+        Width="450"
+        Height="200"
+        WindowStartupLocation="CenterScreen"
+        CanResize="False"
+        Icon="/Assets/avalonia-logo.ico">
+    
+    <StackPanel Margin="20" Spacing="15">
+        <TextBlock TextWrapping="Wrap" FontSize="14">
+            SaveTracker requires administrator privileges to track game files using ETW (Event Tracing for Windows).
+        </TextBlock>
+        
+        <TextBlock TextWrapping="Wrap" FontSize="14" FontWeight="Bold">
+            Would you like to restart the application as administrator?
+        </TextBlock>
+        
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="10" Margin="0,20,0,0">
+            <Button Name="YesButton" Content="Yes" Width="100" Click="YesButton_Click" />
+            <Button Name="NoButton" Content="No" Width="100" Click="NoButton_Click" />
+        </StackPanel>
+    </StackPanel>
+</Window>
