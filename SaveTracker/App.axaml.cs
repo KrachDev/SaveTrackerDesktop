@@ -3,14 +3,17 @@ using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Data.Core.Plugins;
 using Avalonia.Markup.Xaml;
-using Avalonia.Platform;
 using CommunityToolkit.Mvvm.Input;
+using SaveTracker.Resources.HELPERS;
+using SaveTracker.Resources.SAVE_SYSTEM;
 using SaveTracker.ViewModels;
 using SaveTracker.Views;
+using SaveTracker.Views.Dialog;
 using System;
 using System.Diagnostics;
 using System.Linq;
 using System.Security.Principal;
+using Avalonia.Platform;
 
 namespace SaveTracker
 {
@@ -34,23 +37,55 @@ namespace SaveTracker
 
         public override void OnFrameworkInitializationCompleted()
         {
+            // Disable data validation
+            DisableAvaloniaDataAnnotationValidation();
+
             if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
             {
-                // Avoid duplicate validation from both Avalonia and CT
-                DisableAvaloniaDataAnnotationValidation();
+                // Load Config
+                var config = ConfigManagement.LoadConfigAsync().GetAwaiter().GetResult();
 
-                InitializeTrayIcon();
-
-                desktop.MainWindow = new MainWindow
+                // Apply Debug Console Setting
+                DebugConsole.Enable(config.ShowDebugConsole);
+                if (config.ShowDebugConsole)
                 {
-                    DataContext = new MainWindowViewModel()
-                };
+                    DebugConsole.WriteInfo("Debug Console Enabled via Config");
+                }
+
+                // Check Admin Privileges
+                if (!IsAdministrator())
+                {
+                    // If not admin, we might want to prompt. 
+                    // Since we can't easily await a dialog here, we'll log it for now.
+                    // Ideally, we would show a dialog or restart.
+                    // For now, let's just log a warning.
+                    DebugConsole.WriteWarning("Application is not running as Administrator. Some features may not work.");
+
+                    // TODO: Implement proper Admin Prompt here if needed, possibly by setting MainWindow to the prompt first.
+                }
+
+                // Initialize Main Window
+                var mainWindow = new MainWindow();
+                var viewModel = new MainWindowViewModel();
+                mainWindow.DataContext = viewModel;
+                desktop.MainWindow = mainWindow;
+
+                // Apply Start Minimized Setting
+                if (config.StartMinimized)
+                {
+                    // We set it to minimized. MainWindow.axaml.cs has logic to Hide() when minimized.
+                    mainWindow.WindowState = WindowState.Minimized;
+                    DebugConsole.WriteInfo("Starting application minimized.");
+                }
+
+                // Initialize Tray Icon
+                InitializeTrayIcon();
             }
 
             base.OnFrameworkInitializationCompleted();
         }
 
-        private bool IsRunningAsAdministrator()
+        private bool IsAdministrator()
         {
             try
             {

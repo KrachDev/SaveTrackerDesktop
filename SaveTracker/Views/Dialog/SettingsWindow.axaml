@@ -1,0 +1,35 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="using:SaveTracker.ViewModels"
+        mc:Ignorable="d" d:DesignWidth="400" d:DesignHeight="350"
+        x:Class="SaveTracker.Views.Dialog.SettingsWindow"
+        x:DataType="vm:SettingsViewModel"
+        Title="Settings"
+        Width="400" Height="350"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        SystemDecorations="Full"
+        Background="#1E1E1E">
+
+    <Grid RowDefinitions="*,Auto" Margin="20">
+        <StackPanel Grid.Row="0" Spacing="15">
+            <TextBlock Text="Application Settings" FontSize="18" FontWeight="Bold" Foreground="White" Margin="0,0,0,10"/>
+
+            <CheckBox IsChecked="{Binding EnableAutomaticTracking}" Content="Enable Automatic Game Tracking" Foreground="#CCCCCC"/>
+            <TextBlock Text="Automatically detects when configured games are launched." FontSize="11" Foreground="#858585" Margin="28,-10,0,0"/>
+
+            <CheckBox IsChecked="{Binding StartWithWindows}" Content="Start with Windows" Foreground="#CCCCCC"/>
+            
+            <CheckBox IsChecked="{Binding StartMinimized}" Content="Start Minimized to Tray" Foreground="#CCCCCC"/>
+            
+            <CheckBox IsChecked="{Binding ShowDebugConsole}" Content="Show Debug Console" Foreground="#CCCCCC"/>
+        </StackPanel>
+
+        <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10">
+            <Button Content="Save &amp; Close" Command="{Binding SaveSettingsCommand}" Click="SaveButton_Click" Background="#0E639C" Foreground="White" Padding="15,8"/>
+            <Button Content="Cancel" Click="CancelButton_Click" Background="#3F3F46" Foreground="#CCCCCC" Padding="15,8"/>
+        </StackPanel>
+    </Grid>
+</Window>

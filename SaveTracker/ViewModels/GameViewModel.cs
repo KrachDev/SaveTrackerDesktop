@@ -21,11 +21,15 @@ namespace SaveTracker.ViewModels
         [ObservableProperty]
         private Avalonia.Media.Imaging.Bitmap? _icon;
 
+        [ObservableProperty]
+        private bool _isDeleted;
+
         public GameViewModel(Game game)
         {
             Game = game;
             _name = game.Name;
             _installDirectory = game.InstallDirectory;
+            _isDeleted = game.IsDeleted;
 
             try
             {

@@ -168,7 +168,41 @@ namespace SaveTracker.Resources.SAVE_SYSTEM
                     PropertyNameCaseInsensitive = true
                 });
 
-                return games ?? new List<Game>();
+                if (games == null || games.Count == 0)
+                {
+                    return new List<Game>();
+                }
+
+                // Check if each game's executable still exists
+                bool hasChanges = false;
+                foreach (var game in games)
+                {
+                    bool executableExists = !string.IsNullOrEmpty(game.ExecutablePath) && File.Exists(game.ExecutablePath);
+
+                    // Update IsDeleted flag if it changed
+                    if (game.IsDeleted != !executableExists)
+                    {
+                        game.IsDeleted = !executableExists;
+                        hasChanges = true;
+
+                        if (game.IsDeleted)
+                        {
+                            DebugConsole.WriteWarning($"Game '{game.Name}' executable not found at: {game.ExecutablePath}");
+                        }
+                        else
+                        {
+                            DebugConsole.WriteSuccess($"Game '{game.Name}' executable found again at: {game.ExecutablePath}");
+                        }
+                    }
+                }
+
+                // Save the updated list if any games were flagged
+                if (hasChanges)
+                {
+                    await SaveAllGamesAsync(games);
+                }
+
+                return games;
             }
             catch (Exception ex)
             {
@@ -378,6 +412,13 @@ public class Game : INotifyPropertyChanged
         set { _localConfig = value; OnPropertyChanged(); }
     }
 
+    private bool _isDeleted = false;
+    public bool IsDeleted
+    {
+        get => _isDeleted;
+        set { _isDeleted = value; OnPropertyChanged(); }
+    }
+
 
     public string GetGameDataFile()
     {
@@ -399,6 +440,8 @@ public class Config
     public bool TrackWrite { get; set; } = true;
     public bool TrackReads { get; set; } = false;
     public bool Auto_Upload { get; set; } = true;
+    public bool StartMinimized { get; set; } = false;
+    public bool ShowDebugConsole { get; set; } = false;
 
     public CloudConfig CloudConfig { get; set; } = new CloudConfig();
 }

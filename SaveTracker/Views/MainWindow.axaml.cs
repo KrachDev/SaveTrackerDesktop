@@ -1,7 +1,6 @@
-﻿using Avalonia;
-using Avalonia.Controls;
+﻿using Avalonia.Controls;
 using Avalonia.Interactivity;
-using Avalonia.Input;
+using Avalonia;
 using SaveTracker.Resources.HELPERS;
 using SaveTracker.Resources.SAVE_SYSTEM;
 using SaveTracker.ViewModels;
@@ -57,6 +56,9 @@ namespace SaveTracker.Views
 
                 _viewModel.OnRcloneSetupRequired += ShowRcloneSetup;
                 DebugConsole.WriteInfo($"- OnRcloneSetupRequired subscribed");
+
+                _viewModel.OnSettingsRequested += ShowSettingsDialog;
+                DebugConsole.WriteInfo($"- OnSettingsRequested subscribed");
 
                 DebugConsole.WriteSuccess("ViewModel event subscriptions complete");
             }
@@ -220,6 +222,35 @@ namespace SaveTracker.Views
             }
         }
 
+        private async void ShowSettingsDialog()
+        {
+            try
+            {
+                DebugConsole.WriteInfo("=== ShowSettingsDialog CALLED ===");
+
+                var settingsWindow = new SettingsWindow
+                {
+                    WindowStartupLocation = WindowStartupLocation.CenterOwner
+                };
+
+                DebugConsole.WriteInfo("SettingsWindow instance created, showing as dialog...");
+
+                // Show as modal dialog
+                await settingsWindow.ShowDialog(this);
+
+                DebugConsole.WriteSuccess("SettingsWindow closed");
+
+                if (_viewModel != null)
+                {
+                    await _viewModel.ReloadConfigAsync();
+                }
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteException(ex, "Failed to open settings dialog");
+            }
+        }
+
         private void TrackedFile_DoubleTapped(object? sender, Avalonia.Input.TappedEventArgs e)
         {
             if (sender is Border border && border.DataContext is TrackedFileViewModel fileVm)
@@ -254,6 +285,7 @@ namespace SaveTracker.Views
                 _viewModel.OnCloudSettingsRequested -= ShowCloudSettings;
                 _viewModel.OnBlacklistRequested -= ShowBlacklist;
                 _viewModel.OnRcloneSetupRequired -= ShowRcloneSetup;
+                _viewModel.OnSettingsRequested -= ShowSettingsDialog;
             }
         }
     }

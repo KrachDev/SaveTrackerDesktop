@@ -12,19 +12,22 @@
         MinWidth="1280" MinHeight="600">
 
     <Grid RowDefinitions="Auto,*,Auto">
-        
         <!-- Top Menu Bar -->
-        <Border Grid.Row="0" Background="#2D2D30" Padding="10">
-            <Grid ColumnDefinitions="*,Auto">
-                <StackPanel Orientation="Horizontal" Spacing="15">
-                    <Button Content="⚙️ Settings" Classes="MenuButton"/>
-                    <Button Command="{Binding OpenCloudSettingsCommand}" Content="☁️ Cloud Config" Classes="MenuButton"/>
-                    <Button Command="{Binding OpenBlacklistCommand}" Content="📋 Blacklist Editor" Classes="MenuButton"/>
+        <Border Grid.Row="0" Background="#1E1E1E" Padding="10" BorderBrush="#3F3F46" BorderThickness="0,0,0,1">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+                <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                    <TextBlock Text="SaveTracker" FontWeight="Bold" FontSize="16" VerticalAlignment="Center" Foreground="White"/>
                 </StackPanel>
-                
-                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10">
+
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="15" VerticalAlignment="Center">
                     <TextBlock Text="🔄 Sync Status: " VerticalAlignment="Center" Foreground="#CCCCCC"/>
                     <TextBlock Text="{Binding SyncStatusText}" VerticalAlignment="Center" Foreground="#4EC9B0"/>
+                    
+                    <Separator Width="1" Background="#3F3F46" Margin="5,0"/>
+
+                    <Button Command="{Binding OpenCloudSettingsCommand}" Content="☁️ Cloud" Classes="MenuButton"/>
+                    <Button Command="{Binding OpenBlacklistCommand}" Content="⛔ Blacklist" Classes="MenuButton"/>
+                    <Button Command="{Binding OpenSettingsCommand}" Content="⚙️ Settings" Classes="MenuButton"/>
                 </StackPanel>
             </Grid>
         </Border>
