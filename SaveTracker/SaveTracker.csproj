@@ -6,6 +6,21 @@
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    
+    <!-- Application Metadata -->
+    <AssemblyName>SaveTracker</AssemblyName>
+    <Product>SaveTracker Desktop</Product>
+    <Company>KrachDev</Company>
+    <Authors>KrachDev</Authors>
+    <Copyright>Copyright © 2025 KrachDev</Copyright>
+    <Version>1.0.1</Version>
+    <AssemblyVersion>1.0.1.0</AssemblyVersion>
+    <FileVersion>1.0.1.0</FileVersion>
+    <Description>Automatic game save file tracking and cloud synchronization</Description>
+    <PackageProjectUrl>https://github.com/KrachDev/SaveTrackerDesktop</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/KrachDev/SaveTrackerDesktop</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <NeutralLanguage>en</NeutralLanguage>
   </PropertyGroup>
 
   <ItemGroup>

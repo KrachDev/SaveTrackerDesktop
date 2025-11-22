@@ -97,7 +97,6 @@ namespace SaveTracker.ViewModels
 
         private Config? _mainConfig;
         private CloudProvider _selectedProvider;
-
         // ========== SIMPLIFIED EVENTS ==========
         public event Action? OnAddGameRequested;
         public event Action? OnAddFilesRequested;
@@ -105,6 +104,7 @@ namespace SaveTracker.ViewModels
         public event Action? OnBlacklistRequested;
         public event Action? OnRcloneSetupRequired;
         public event Action? OnSettingsRequested;
+        public event Action? RequestMinimize;
 
         // ========== DEBUG HELPER METHODS ==========
         public int GetAddGameRequestedSubscriberCount() => OnAddGameRequested?.GetInvocationList().Length ?? 0;
@@ -126,12 +126,31 @@ namespace SaveTracker.ViewModels
         {
             try
             {
+                // Enable console engine but don't show window yet
                 DebugConsole.Enable(true);
-                DebugConsole.ShowConsole();
-                DebugConsole.WriteLine("Console Started!");
-                DebugConsole.WriteInfo("Is Admin: " + AdminHelper.IsAdministrator().Result.ToString());
 
                 await LoadDataAsync();
+
+                // Apply settings
+                if (_mainConfig != null)
+                {
+                    if (_mainConfig.ShowDebugConsole)
+                    {
+                        DebugConsole.ShowConsole();
+                        DebugConsole.WriteLine("Console Started!");
+                    }
+                    else
+                    {
+                        DebugConsole.HideConsole();
+                    }
+
+                    if (_mainConfig.StartMinimized)
+                    {
+                        RequestMinimize?.Invoke();
+                    }
+                }
+
+                DebugConsole.WriteInfo("Is Admin: " + AdminHelper.IsAdministrator().Result.ToString());
             }
             catch (Exception ex)
             {

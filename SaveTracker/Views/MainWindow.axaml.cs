@@ -60,6 +60,9 @@ namespace SaveTracker.Views
                 _viewModel.OnSettingsRequested += ShowSettingsDialog;
                 DebugConsole.WriteInfo($"- OnSettingsRequested subscribed");
 
+                _viewModel.RequestMinimize += MinimizeWindow;
+                DebugConsole.WriteInfo($"- RequestMinimize subscribed");
+
                 DebugConsole.WriteSuccess("ViewModel event subscriptions complete");
             }
             else
@@ -259,6 +262,12 @@ namespace SaveTracker.Views
             }
         }
 
+        private void MinimizeWindow()
+        {
+            DebugConsole.WriteInfo("MinimizeWindow called, setting WindowState to Minimized");
+            WindowState = WindowState.Minimized;
+        }
+
         protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
         {
             base.OnPropertyChanged(change);
@@ -286,6 +295,7 @@ namespace SaveTracker.Views
                 _viewModel.OnBlacklistRequested -= ShowBlacklist;
                 _viewModel.OnRcloneSetupRequired -= ShowRcloneSetup;
                 _viewModel.OnSettingsRequested -= ShowSettingsDialog;
+                _viewModel.RequestMinimize -= MinimizeWindow;
             }
         }
     }

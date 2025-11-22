@@ -306,7 +306,7 @@
         <Border Grid.Row="2" Background="#007ACC" Padding="10,8">
             <Grid ColumnDefinitions="Auto,*,Auto">
                 <StackPanel Orientation="Horizontal" Spacing="15">
-                    <TextBlock Text="SaveTracker Desktop v1.0" Foreground="White" FontWeight="SemiBold"/>
+                    <TextBlock Text="SaveTracker Desktop v1.0.1" Foreground="White" FontWeight="SemiBold"/>
                     <Separator Width="1" Background="White" Opacity="0.3"/>
                     <TextBlock Text="Platform: Windows" Foreground="White"/>
                 </StackPanel>
