@@ -13,9 +13,9 @@
     <Company>KrachDev</Company>
     <Authors>KrachDev</Authors>
     <Copyright>Copyright © 2025 KrachDev</Copyright>
-    <Version>1.0.1</Version>
-    <AssemblyVersion>1.0.1.0</AssemblyVersion>
-    <FileVersion>1.0.1.0</FileVersion>
+    <Version>0.2.0</Version>
+    <AssemblyVersion>0.2.0.0</AssemblyVersion>
+    <FileVersion>0.2.0.0</FileVersion>
     <Description>Automatic game save file tracking and cloud synchronization</Description>
     <PackageProjectUrl>https://github.com/KrachDev/SaveTrackerDesktop</PackageProjectUrl>
     <RepositoryUrl>https://github.com/KrachDev/SaveTrackerDesktop</RepositoryUrl>

@@ -8,6 +8,9 @@ using SaveTracker.Views.Dialog;
 using System;
 using System.Linq;
 using System.Threading.Tasks;
+using MsBox.Avalonia;
+using MsBox.Avalonia.Enums;
+using MsBox.Avalonia;
 
 namespace SaveTracker.Views
 {
@@ -62,6 +65,9 @@ namespace SaveTracker.Views
 
                 _viewModel.RequestMinimize += MinimizeWindow;
                 DebugConsole.WriteInfo($"- RequestMinimize subscribed");
+
+                _viewModel.OnCloudSaveFound += ShowCloudSaveFoundDialog;
+                DebugConsole.WriteInfo($"- OnCloudSaveFound subscribed");
 
                 DebugConsole.WriteSuccess("ViewModel event subscriptions complete");
             }
@@ -178,7 +184,7 @@ namespace SaveTracker.Views
             try
             {
                 DebugConsole.WriteInfo("=== ShowCloudSettings CALLED ===");
-                await Misc.RcloneSetup(this);
+                await OpenCloudSettingsDialog();
                 DebugConsole.WriteInfo("Cloud settings closed");
             }
             catch (Exception ex)
@@ -211,17 +217,76 @@ namespace SaveTracker.Views
             }
         }
 
-        private async void ShowRcloneSetup()
+        private async Task ShowRcloneSetup()
         {
             try
             {
                 DebugConsole.WriteInfo("=== ShowRcloneSetup CALLED ===");
-                await Misc.RcloneSetup(this);
+                await OpenCloudSettingsDialog();
                 DebugConsole.WriteInfo("Rclone setup closed");
             }
             catch (Exception ex)
             {
                 DebugConsole.WriteException(ex, "Failed to setup Rclone");
+            }
+        }
+
+        private async Task<bool> ShowCloudSaveFoundDialog(string gameName)
+        {
+            try
+            {
+                // Ensure we are on UI thread
+                return await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(async () =>
+                {
+                    var box = MessageBoxManager.GetMessageBoxStandard(new MsBox.Avalonia.Dto.MessageBoxStandardParams
+                    {
+                        ButtonDefinitions = ButtonEnum.YesNo,
+                        ContentTitle = "Cloud Save Found",
+                        ContentHeader = "Download Cloud Save?",
+                        ContentMessage = $"A cloud save for {gameName} was found. Do you want to download it before launching?\n\nThis will overwrite local files.",
+                        Icon = MsBox.Avalonia.Enums.Icon.Question,
+                        WindowStartupLocation = WindowStartupLocation.CenterOwner
+                    });
+
+                    var result = await box.ShowWindowDialogAsync(this);
+                    return result == ButtonResult.Yes;
+                });
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteException(ex, "Failed to show cloud save dialog");
+                return false;
+            }
+        }
+
+        private async Task OpenCloudSettingsDialog()
+        {
+            var viewModel = new CloudSettingsViewModel();
+            var view = new UC_CloudSettings
+            {
+                DataContext = viewModel
+            };
+
+            var dialog = new Window
+            {
+                Title = "Cloud Storage Settings",
+                Width = 500,
+                Height = 450,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                Content = view,
+                SystemDecorations = SystemDecorations.BorderOnly,
+                Background = Avalonia.Media.Brushes.Transparent,
+                TransparencyLevelHint = new[] { WindowTransparencyLevel.Transparent }
+            };
+
+            viewModel.RequestClose += () => dialog.Close();
+
+            await dialog.ShowDialog(this);
+
+            // Refresh config in main view model if needed
+            if (_viewModel != null)
+            {
+                await _viewModel.ReloadConfigAsync();
             }
         }
 
@@ -296,6 +361,7 @@ namespace SaveTracker.Views
                 _viewModel.OnRcloneSetupRequired -= ShowRcloneSetup;
                 _viewModel.OnSettingsRequested -= ShowSettingsDialog;
                 _viewModel.RequestMinimize -= MinimizeWindow;
+                _viewModel.OnCloudSaveFound -= ShowCloudSaveFoundDialog;
             }
         }
     }

@@ -95,16 +95,27 @@ namespace SaveTracker.ViewModels
         [ObservableProperty]
         private Avalonia.Media.Imaging.Bitmap? _gameIcon;
 
+        [ObservableProperty]
+        private string _appVersion = GetAppVersion();
+
         private Config? _mainConfig;
         private CloudProvider _selectedProvider;
+
+        private static string GetAppVersion()
+        {
+            var version = System.Reflection.Assembly.GetExecutingAssembly()
+                .GetName().Version;
+            return version != null ? $"SaveTracker Desktop v{version.Major}.{version.Minor}.{version.Build}" : "SaveTracker Desktop";
+        }
         // ========== SIMPLIFIED EVENTS ==========
         public event Action? OnAddGameRequested;
         public event Action? OnAddFilesRequested;
         public event Action? OnCloudSettingsRequested;
         public event Action? OnBlacklistRequested;
-        public event Action? OnRcloneSetupRequired;
+        public event Func<Task>? OnRcloneSetupRequired;
         public event Action? OnSettingsRequested;
         public event Action? RequestMinimize;
+        public event Func<string, Task<bool>>? OnCloudSaveFound;
 
         // ========== DEBUG HELPER METHODS ==========
         public int GetAddGameRequestedSubscriberCount() => OnAddGameRequested?.GetInvocationList().Length ?? 0;
@@ -373,6 +384,63 @@ namespace SaveTracker.ViewModels
             {
                 var game = SelectedGame.Game;
 
+                // Check Rclone Config
+                var config = await ConfigManagement.LoadConfigAsync();
+                var provider = config?.CloudConfig;
+                var rcloneInstaller = new RcloneInstaller();
+
+                bool rcloneReady = false;
+                if (provider != null)
+                {
+                    rcloneReady = await rcloneInstaller.RcloneCheckAsync(provider.Provider);
+                }
+
+                if (!rcloneReady)
+                {
+                    DebugConsole.WriteWarning("Rclone not configured - prompting user");
+                    if (OnRcloneSetupRequired != null)
+                    {
+                        await OnRcloneSetupRequired.Invoke();
+                        // Reload config and re-check
+                        config = await ConfigManagement.LoadConfigAsync();
+                        provider = config?.CloudConfig;
+                        if (provider != null)
+                        {
+                            rcloneReady = await rcloneInstaller.RcloneCheckAsync(provider.Provider);
+                        }
+                    }
+
+                    if (!rcloneReady)
+                    {
+                        DebugConsole.WriteWarning("Rclone still not configured - proceeding without cloud check");
+                    }
+                }
+
+                // Check for Cloud Saves (if Rclone is ready)
+                if (rcloneReady && provider != null)
+                {
+                    var rcloneOps = new RcloneFileOperations(game);
+                    var remoteName = _providerHelper.GetProviderConfigName(provider.Provider);
+                    var sanitizedGameName = SanitizeGameName(game.Name);
+                    var remoteBasePath = $"{remoteName}:SaveTrackerCloudSave/{sanitizedGameName}";
+
+                    bool cloudSavesExist = await rcloneOps.CheckCloudSaveExistsAsync(remoteBasePath);
+
+                    if (cloudSavesExist)
+                    {
+                        if (OnCloudSaveFound != null)
+                        {
+                            bool shouldDownload = await OnCloudSaveFound.Invoke(game.Name);
+                            if (shouldDownload)
+                            {
+                                await rcloneOps.DownloadWithChecksumAsync(remoteBasePath, game);
+                                // Refresh tracked list after download
+                                await UpdateTrackedListAsync(game);
+                            }
+                        }
+                    }
+                }
+
                 if (!File.Exists(game.ExecutablePath))
                 {
                     DebugConsole.WriteError($"Executable not found: {game.ExecutablePath}");
@@ -602,8 +670,18 @@ namespace SaveTracker.ViewModels
                 if (!rcloneReady)
                 {
                     DebugConsole.WriteWarning("Rclone not configured");
-                    OnRcloneSetupRequired?.Invoke();
-                    return;
+                    if (OnRcloneSetupRequired != null)
+                    {
+                        await OnRcloneSetupRequired.Invoke();
+                        // Re-check after dialog closes
+                        rcloneReady = await rcloneInstaller.RcloneCheckAsync(provider.Provider);
+                    }
+
+                    if (!rcloneReady)
+                    {
+                        DebugConsole.WriteWarning("Rclone still not configured after prompt");
+                        return;
+                    }
                 }
 
                 var configPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ExtraTools", "rclone.conf");
@@ -614,6 +692,16 @@ namespace SaveTracker.ViewModels
                     new RcloneFileOperations(game),
                     configPath
                 );
+
+                _uploadManager.OnCloudConfigRequired += async () =>
+                {
+                    if (OnRcloneSetupRequired != null)
+                    {
+                        await OnRcloneSetupRequired.Invoke();
+                        return true;
+                    }
+                    return false;
+                };
 
                 _uploadManager.OnProgressChanged += (progress) =>
                 {
@@ -856,7 +944,39 @@ namespace SaveTracker.ViewModels
                     return;
                 }
 
-                await Misc.RcloneSetup(mainWindow);
+                var viewModel = new CloudSettingsViewModel();
+                var view = new SaveTracker.Views.Dialog.UC_CloudSettings
+                {
+                    DataContext = viewModel
+                };
+
+                var dialog = new Window
+                {
+                    Title = "Cloud Storage Settings",
+                    Width = 500,
+                    Height = 450,
+                    WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                    Content = view,
+                    SystemDecorations = SystemDecorations.BorderOnly, // Custom chrome in UC
+                    Background = Avalonia.Media.Brushes.Transparent,
+                    TransparencyLevelHint = new[] { WindowTransparencyLevel.Transparent }
+                };
+
+                viewModel.RequestClose += () => dialog.Close();
+
+                await dialog.ShowDialog(mainWindow);
+
+                // Refresh cloud status after dialog closes
+                if (_mainConfig != null)
+                {
+                    _mainConfig = await ConfigManagement.LoadConfigAsync();
+                    if (_mainConfig != null)
+                    {
+                        _selectedProvider = _mainConfig.CloudConfig.Provider;
+                        CloudStorageText = _providerHelper.GetProviderDisplayName(_selectedProvider);
+                    }
+                }
+
                 DebugConsole.WriteInfo("Cloud settings closed");
             }
             catch (Exception ex)

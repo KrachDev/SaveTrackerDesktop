@@ -1,0 +1,104 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:SaveTracker.ViewModels"
+             mc:Ignorable="d" d:DesignWidth="500" d:DesignHeight="400"
+             x:Class="SaveTracker.Views.Dialog.UC_CloudSettings"
+             x:DataType="vm:CloudSettingsViewModel">
+
+    <Border Background="#1E1E1E" BorderBrush="#3F3F46" BorderThickness="1">
+        <Grid RowDefinitions="Auto,*,Auto">
+            <!-- Header -->
+            <Border Grid.Row="0" Background="#252526" Padding="15" BorderBrush="#3F3F46" BorderThickness="0,0,0,1">
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                    <TextBlock Text="☁️" FontSize="20"/>
+                    <TextBlock Text="Cloud Storage Settings" FontSize="18" FontWeight="Bold" VerticalAlignment="Center"/>
+                </StackPanel>
+            </Border>
+
+            <!-- Content -->
+            <StackPanel Grid.Row="1" Margin="20" Spacing="20">
+                
+                <!-- Rclone Status Section -->
+                <Border Background="#2D2D30" CornerRadius="4" Padding="15">
+                    <StackPanel Spacing="10">
+                        <TextBlock Text="Rclone Status" FontWeight="SemiBold" Foreground="#CCCCCC"/>
+                        
+                        <Grid ColumnDefinitions="*,Auto">
+                            <StackPanel Spacing="5">
+                                <StackPanel Orientation="Horizontal" Spacing="10">
+                                    <TextBlock Text="Status:" Foreground="#858585"/>
+                                    <TextBlock Text="{Binding IsRcloneInstalled, Converter={x:Static ObjectConverters.IsNull}}" 
+                                               IsVisible="False"/> <!-- Hack to trigger binding -->
+                                    <TextBlock Text="Installed" Foreground="#4EC9B0" IsVisible="{Binding IsRcloneInstalled}"/>
+                                    <TextBlock Text="Not Installed" Foreground="#F14C4C" IsVisible="{Binding !IsRcloneInstalled}"/>
+                                </StackPanel>
+                                
+                                <StackPanel Orientation="Horizontal" Spacing="10">
+                                    <TextBlock Text="Version:" Foreground="#858585"/>
+                                    <TextBlock Text="{Binding RcloneVersion}"/>
+                                </StackPanel>
+                            </StackPanel>
+
+                            <Button Grid.Column="1"
+                                    Command="{Binding InstallRcloneCommand}" 
+                                    Content="Install / Update" 
+                                    Classes="Accent"/>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <!-- Configuration Section -->
+                <Border Background="#2D2D30" CornerRadius="4" Padding="15">
+                    <StackPanel Spacing="15">
+                        <TextBlock Text="Configuration" FontWeight="SemiBold" Foreground="#CCCCCC"/>
+
+                        <StackPanel Spacing="5">
+                            <TextBlock Text="Select Provider:" Foreground="#858585"/>
+                            <ComboBox ItemsSource="{Binding Providers}" 
+                                      SelectedItem="{Binding SelectedProvider}"
+                                      HorizontalAlignment="Stretch"/>
+                        </StackPanel>
+
+                        <Button Command="{Binding ConfigureCommand}" 
+                                Content="Configure &amp; Link Account" 
+                                HorizontalAlignment="Stretch"
+                                HorizontalContentAlignment="Center"
+                                Padding="10"
+                                Background="#0E639C"/>
+                        
+                        <TextBlock Text="ℹ️ This will open your browser to authenticate with the selected provider." 
+                                   FontSize="12" 
+                                   Foreground="#858585" 
+                                   TextWrapping="Wrap"/>
+                    </StackPanel>
+                </Border>
+
+            </StackPanel>
+
+            <!-- Footer / Status Bar -->
+            <Border Grid.Row="2" Background="#252526" Padding="15" BorderBrush="#3F3F46" BorderThickness="0,1,0,0">
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Text="{Binding StatusMessage}" 
+                               Foreground="#CCCCCC" 
+                               VerticalAlignment="Center"
+                               TextTrimming="CharacterEllipsis"/>
+                    
+                    <Button Grid.Column="1" 
+                            Command="{Binding CloseCommand}" 
+                            Content="Close" 
+                            Padding="15,5"/>
+                </Grid>
+            </Border>
+            
+            <!-- Loading Overlay -->
+            <Grid Grid.RowSpan="3" Background="#AA000000" IsVisible="{Binding IsBusy}">
+                <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="10">
+                    <TextBlock Text="⏳" FontSize="30" HorizontalAlignment="Center"/>
+                    <TextBlock Text="{Binding StatusMessage}" FontWeight="Bold" HorizontalAlignment="Center"/>
+                </StackPanel>
+            </Grid>
+        </Grid>
+    </Border>
+</UserControl>

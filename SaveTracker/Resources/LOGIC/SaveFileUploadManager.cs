@@ -38,6 +38,7 @@ namespace SaveTracker.Resources.Logic
         // Event for progress updates
         public event Action<UploadProgressInfo> OnProgressChanged;
         public event Action<UploadResult> OnUploadCompleted;
+        public event Func<Task<bool>>? OnCloudConfigRequired;
 
         public SaveFileUploadManager(
             RcloneInstaller rcloneInstaller,
@@ -107,6 +108,20 @@ namespace SaveTracker.Resources.Logic
 
             if (!rcloneValid || !File.Exists(RcloneExePath) || !File.Exists(_configPath))
             {
+                if (OnCloudConfigRequired != null)
+                {
+                    bool configured = await OnCloudConfigRequired.Invoke();
+                    if (configured)
+                    {
+                        // Retry validation
+                        rcloneValid = await _rcloneInstaller.RcloneCheckAsync(context.Provider);
+                        if (rcloneValid && File.Exists(RcloneExePath) && File.Exists(_configPath))
+                        {
+                            return true;
+                        }
+                    }
+                }
+
                 string error = "Rclone is not installed or configured.";
                 DebugConsole.WriteError(error);
                 return false;
@@ -308,11 +323,6 @@ namespace SaveTracker.Resources.Logic
 
         #endregion
 
-
-
-       
-
-
         #region Helper Methods
 
         private void ReportProgress(UploadProgressInfo progress)
@@ -410,12 +420,6 @@ namespace SaveTracker.Resources.Logic
                 .Concat(new[] { '/', '\\', ':', '*', '?', '"', '<', '>', '|' });
             return invalidChars.Aggregate(gameName, (current, c) => current.Replace(c, '_')).Trim();
         }
-
-
-
-
-
-
     }
 
     /// <summary>

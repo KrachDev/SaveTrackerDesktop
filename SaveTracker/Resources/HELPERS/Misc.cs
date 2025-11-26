@@ -61,7 +61,7 @@ namespace SaveTracker.Resources.HELPERS
 
             // Try to load exe icon
             var iconBitmap = ExtractIconFromExe(game.ExecutablePath);
-            iconImage.Source = iconBitmap ;
+            iconImage.Source = iconBitmap;
 
             var iconBorder = new Border
             {
@@ -164,110 +164,7 @@ namespace SaveTracker.Resources.HELPERS
             }
         }
 
-        public static async Task RcloneSetup(Window owner)
-        {
-            try
-            {
-                var dialog = new Window
-                {
-                    Title = "Cloud Storage Settings",
-                    Width = 400,
-                    Height = 300,
-                    WindowStartupLocation = WindowStartupLocation.CenterOwner
-                };
 
-                var stackPanel = new StackPanel
-                {
-                    Margin = new Avalonia.Thickness(20),
-                    Spacing = 15
-                };
-
-                // Provider selection
-                stackPanel.Children.Add(new TextBlock
-                {
-                    Text = "Select Cloud Provider:",
-                    FontWeight = Avalonia.Media.FontWeight.Bold
-                });
-
-                var providerCombo = new ComboBox
-                {
-                    HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch
-                };
-
-                // Populate ComboBox with helper
-                var helper = new CloudProviderHelper();
-                foreach (var provider in helper.GetSupportedProviders())
-                {
-                    providerCombo.Items.Add(new ComboBoxItem
-                    {
-                        Content = helper.GetProviderDisplayName(provider),
-                        Tag = provider
-                    });
-                }
-                providerCombo.SelectedIndex = 1; // Box (or adjust based on your preferred default)
-
-                stackPanel.Children.Add(providerCombo);
-
-                // Configure button
-                var configBtn = new Button
-                {
-                    Content = "Configure Now",
-                    HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch,
-                    Padding = new Avalonia.Thickness(10)
-                };
-
-                configBtn.Click += async (s, e) =>
-                {
-                    // Get selected provider from ComboBox item Tag
-                    var selectedItem = providerCombo.SelectedItem as ComboBoxItem;
-                    if (selectedItem?.Tag is not CloudProvider selectedProvider)
-                    {
-                        DebugConsole.WriteError("Please select a cloud provider");
-                        return;
-                    }
-
-                    configBtn.IsEnabled = false;
-                    configBtn.Content = $"Configuring {helper.GetProviderDisplayName(selectedProvider)}...";
-
-                    var rcloneInstaller = new RcloneInstaller();
-                    bool success = await rcloneInstaller.SetupConfigAsync(selectedProvider);
-
-                    if (success)
-                    {
-                        DebugConsole.WriteSuccess($"{helper.GetProviderDisplayName(selectedProvider)} configuration successful!");
-                        var config = await ConfigManagement.LoadConfigAsync();
-                        config.CloudConfig.Provider = selectedProvider;
-                        await ConfigManagement.SaveConfigAsync(config);
-                        DebugConsole.WriteSuccess("gloabl Config updated");
-                        dialog.Close();
-                    }
-                    else
-                    {
-                        configBtn.Content = "Configure Now";
-                        configBtn.IsEnabled = true;
-                        DebugConsole.WriteError($"{helper.GetProviderDisplayName(selectedProvider)} configuration failed");
-                    }
-                };
-
-                stackPanel.Children.Add(configBtn);
-
-                // Status text
-                var statusText = new TextBlock
-                {
-                    Text = "ℹ️ Your browser will open for authentication",
-                    TextWrapping = Avalonia.Media.TextWrapping.Wrap,
-                    Foreground = Avalonia.Media.Brushes.Gray
-                };
-                stackPanel.Children.Add(statusText);
-
-                dialog.Content = stackPanel;
-                await dialog.ShowDialog(owner);
-            }
-            catch (Exception ex)
-            {
-                DebugConsole.WriteException(ex, "Failed to open cloud settings");
-            }
-        }
         public static string FormatFileSize(long bytes)
         {
             string[] sizes = { "B", "KB", "MB", "GB", "TB" };
@@ -320,5 +217,5 @@ namespace SaveTracker.Resources.HELPERS
             return Path.Combine(directory, newFileName);
         }
     }
-    
+
 }
