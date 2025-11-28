@@ -1,0 +1,58 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="500" d:DesignHeight="200"
+        x:Class="SaveTracker.Views.Dialog.UpdateProgressWindow"
+        Title="Updating SaveTracker"
+        Width="500" Height="200"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        SystemDecorations="BorderOnly">
+    
+    <Window.Styles>
+        <Style Selector="Window">
+            <Setter Property="Background" Value="#1E1E1E"/>
+        </Style>
+        <Style Selector="TextBlock">
+            <Setter Property="Foreground" Value="White"/>
+        </Style>
+        <Style Selector="ProgressBar">
+            <Setter Property="Foreground" Value="#0078D4"/>
+            <Setter Property="Background" Value="#333333"/>
+        </Style>
+    </Window.Styles>
+
+    <Grid Margin="30">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="20"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="20"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Title -->
+        <TextBlock Grid.Row="0" 
+                   Text="Downloading Update..."
+                   FontSize="18"
+                   FontWeight="Bold"
+                   HorizontalAlignment="Center"/>
+
+        <!-- Progress Bar -->
+        <ProgressBar Grid.Row="2"
+                     x:Name="UpdateProgressBar"
+                     Height="25"
+                     Minimum="0"
+                     Maximum="100"
+                     Value="0"/>
+
+        <!-- Status Text -->
+        <TextBlock Grid.Row="4"
+                   x:Name="StatusText"
+                   Text="Preparing download..."
+                   FontSize="14"
+                   HorizontalAlignment="Center"
+                   Opacity="0.8"/>
+    </Grid>
+</Window>

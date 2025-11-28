@@ -41,7 +41,16 @@ namespace SaveTracker.Resources.Logic.AutoUpdater
                 client.Timeout = TimeSpan.FromSeconds(30);
 
                 DebugConsole.WriteInfo("Fetching latest release from GitHub...");
-                var json = await client.GetStringAsync(GitHubApiUrl);
+
+                var response = await client.GetAsync(GitHubApiUrl);
+                if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+                {
+                    DebugConsole.WriteWarning("No releases found on GitHub (404). This is expected if no release has been published yet.");
+                    return new UpdateInfo { IsUpdateAvailable = false };
+                }
+
+                response.EnsureSuccessStatusCode();
+                var json = await response.Content.ReadAsStringAsync();
 
                 var release = JObject.Parse(json);
 

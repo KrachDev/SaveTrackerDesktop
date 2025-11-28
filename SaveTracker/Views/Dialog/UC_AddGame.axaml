@@ -50,20 +50,7 @@
                             </StackPanel>
                         </Button>
 
-                        <!-- From Running Process -->
-                        <Button HorizontalAlignment="Stretch" 
-                                Padding="15"
-                                Background="#3F3F46"
-                                Height="60">
-                            <StackPanel Orientation="Horizontal" Spacing="10">
-                                <TextBlock Text="🎮" FontSize="24" VerticalAlignment="Center"/>
-                                <StackPanel VerticalAlignment="Center">
-                                    <TextBlock Text="Select from Running Processes" FontWeight="SemiBold" Foreground="White"/>
-                                    <TextBlock Text="Choose from currently running games" 
-                                             FontSize="11" Foreground="#CCCCCC"/>
-                                </StackPanel>
-                            </StackPanel>
-                        </Button>
+                    
                     </StackPanel>
                 </Border>
 

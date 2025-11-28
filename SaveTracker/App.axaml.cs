@@ -12,7 +12,6 @@ using SaveTracker.Views.Dialog;
 using System;
 using System.Diagnostics;
 using System.Linq;
-using System.Security.Principal;
 using Avalonia.Platform;
 
 namespace SaveTracker
@@ -52,18 +51,6 @@ namespace SaveTracker
                     DebugConsole.WriteInfo("Debug Console Enabled via Config");
                 }
 
-                // Check Admin Privileges
-                if (!IsAdministrator())
-                {
-                    // If not admin, we might want to prompt. 
-                    // Since we can't easily await a dialog here, we'll log it for now.
-                    // Ideally, we would show a dialog or restart.
-                    // For now, let's just log a warning.
-                    DebugConsole.WriteWarning("Application is not running as Administrator. Some features may not work.");
-
-                    // TODO: Implement proper Admin Prompt here if needed, possibly by setting MainWindow to the prompt first.
-                }
-
                 // Initialize Main Window
                 var mainWindow = new MainWindow();
                 var viewModel = new MainWindowViewModel();
@@ -83,39 +70,6 @@ namespace SaveTracker
             }
 
             base.OnFrameworkInitializationCompleted();
-        }
-
-        private bool IsAdministrator()
-        {
-            try
-            {
-                var identity = WindowsIdentity.GetCurrent();
-                var principal = new WindowsPrincipal(identity);
-                return principal.IsInRole(WindowsBuiltInRole.Administrator);
-            }
-            catch
-            {
-                return false;
-            }
-        }
-
-        private void RestartAsAdmin()
-        {
-            try
-            {
-                var processInfo = new ProcessStartInfo
-                {
-                    FileName = Process.GetCurrentProcess().MainModule?.FileName ?? "",
-                    UseShellExecute = true,
-                    Verb = "runas" // Request elevation
-                };
-
-                Process.Start(processInfo);
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Failed to restart as admin: {ex.Message}");
-            }
         }
 
         private void InitializeTrayIcon()

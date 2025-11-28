@@ -28,6 +28,7 @@
                     <Button Command="{Binding OpenCloudSettingsCommand}" Content="☁️ Cloud" Classes="MenuButton"/>
                     <Button Command="{Binding OpenBlacklistCommand}" Content="⛔ Blacklist" Classes="MenuButton"/>
                     <Button Command="{Binding OpenSettingsCommand}" Content="⚙️ Settings" Classes="MenuButton"/>
+                    <Button Command="{Binding ReportIssueCommand}" Content="🐛 Report Issue" Classes="MenuButton"/>
                 </StackPanel>
             </Grid>
         </Border>

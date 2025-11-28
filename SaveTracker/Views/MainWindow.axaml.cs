@@ -10,7 +10,8 @@ using System.Linq;
 using System.Threading.Tasks;
 using MsBox.Avalonia;
 using MsBox.Avalonia.Enums;
-using MsBox.Avalonia;
+using System.Security.Principal;
+using System.Diagnostics;
 
 namespace SaveTracker.Views
 {
@@ -21,20 +22,112 @@ namespace SaveTracker.Views
         public MainWindow()
         {
             DebugConsole.WriteInfo("=== MainWindow Constructor START ===");
-
             InitializeComponent();
-
             DebugConsole.WriteInfo("InitializeComponent completed");
-
-            // DataContext will be set by App.axaml.cs, so we wait for it
             DataContextChanged += OnDataContextChanged;
-
             DebugConsole.WriteSuccess("=== MainWindow Constructor COMPLETE ===");
+        }
+
+        protected override async void OnOpened(EventArgs e)
+        {
+            base.OnOpened(e);
+            DebugConsole.WriteInfo("MainWindow OnOpened fired.");
+
+            bool isAdmin = IsAdministrator();
+            DebugConsole.WriteInfo($"IsAdministrator: {isAdmin}");
+
+            if (!isAdmin)
+            {
+                DebugConsole.WriteInfo("Showing Admin Warning Dialog...");
+                try
+                {
+                    var box = MessageBoxManager.GetMessageBoxStandard(new MsBox.Avalonia.Dto.MessageBoxStandardParams
+                    {
+                        ButtonDefinitions = ButtonEnum.YesNo,
+                        ContentTitle = "Administrator Rights Required",
+                        ContentHeader = "Restart as Administrator?",
+                        ContentMessage = "SaveTracker requires Administrator privileges to monitor game processes correctly.\n\n" +
+                                         "Do you want to restart the application as Administrator?",
+                        Icon = MsBox.Avalonia.Enums.Icon.Warning,
+                        WindowStartupLocation = WindowStartupLocation.CenterScreen
+                    });
+
+                    ButtonResult result;
+                    if (this.IsVisible)
+                    {
+                        result = await box.ShowWindowDialogAsync(this);
+                    }
+                    else
+                    {
+                        DebugConsole.WriteInfo("Window is not visible (minimized?), showing non-modal dialog.");
+                        result = await box.ShowAsync();
+                    }
+
+                    DebugConsole.WriteInfo($"Admin Dialog Result: {result}");
+
+                    if (result == ButtonResult.Yes)
+                    {
+                        DebugConsole.WriteInfo("User accepted restart. Restarting as Admin...");
+                        RestartAsAdmin();
+                    }
+                    else
+                    {
+                        DebugConsole.WriteWarning("User declined to restart as Administrator. Some features may not work.");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    DebugConsole.WriteException(ex, "Failed to show admin dialog");
+                }
+            }
+        }
+
+        private bool IsAdministrator()
+        {
+            try
+            {
+                if (OperatingSystem.IsWindows())
+                {
+                    var identity = WindowsIdentity.GetCurrent();
+                    var principal = new WindowsPrincipal(identity);
+                    return principal.IsInRole(WindowsBuiltInRole.Administrator);
+                }
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private void RestartAsAdmin()
+        {
+            try
+            {
+                var exePath = Environment.ProcessPath;
+                if (string.IsNullOrEmpty(exePath))
+                {
+                    exePath = Process.GetCurrentProcess().MainModule?.FileName;
+                }
+
+                var processInfo = new ProcessStartInfo
+                {
+                    FileName = exePath ?? "SaveTracker.exe",
+                    UseShellExecute = true,
+                    Verb = "runas"
+                };
+
+                Process.Start(processInfo);
+                Environment.Exit(0);
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteException(ex, "Failed to restart as admin");
+            }
         }
 
         private void OnDataContextChanged(object? sender, EventArgs e)
         {
-            // Unsubscribe to prevent multiple calls
             DataContextChanged -= OnDataContextChanged;
 
             if (DataContext is MainWindowViewModel viewModel)
@@ -42,32 +135,17 @@ namespace SaveTracker.Views
                 _viewModel = viewModel;
                 DebugConsole.WriteInfo($"ViewModel received via DataContext: {_viewModel != null}");
 
-                // Subscribe to events
                 DebugConsole.WriteInfo("Subscribing to ViewModel events...");
 
                 _viewModel.OnAddGameRequested += ShowAddGameDialog;
-                DebugConsole.WriteInfo($"- OnAddGameRequested subscribed. Handler count: {_viewModel.GetAddGameRequestedSubscriberCount()}");
-
                 _viewModel.OnAddFilesRequested += ShowAddFilesDialog;
-                DebugConsole.WriteInfo($"- OnAddFilesRequested subscribed");
-
                 _viewModel.OnCloudSettingsRequested += ShowCloudSettings;
-                DebugConsole.WriteInfo($"- OnCloudSettingsRequested subscribed");
-
                 _viewModel.OnBlacklistRequested += ShowBlacklist;
-                DebugConsole.WriteInfo($"- OnBlacklistRequested subscribed");
-
                 _viewModel.OnRcloneSetupRequired += ShowRcloneSetup;
-                DebugConsole.WriteInfo($"- OnRcloneSetupRequired subscribed");
-
                 _viewModel.OnSettingsRequested += ShowSettingsDialog;
-                DebugConsole.WriteInfo($"- OnSettingsRequested subscribed");
-
                 _viewModel.RequestMinimize += MinimizeWindow;
-                DebugConsole.WriteInfo($"- RequestMinimize subscribed");
-
                 _viewModel.OnCloudSaveFound += ShowCloudSaveFoundDialog;
-                DebugConsole.WriteInfo($"- OnCloudSaveFound subscribed");
+                _viewModel.OnUpdateAvailable += ShowUpdateDialog;
 
                 DebugConsole.WriteSuccess("ViewModel event subscriptions complete");
             }
@@ -80,77 +158,35 @@ namespace SaveTracker.Views
         private async void ShowAddGameDialog()
         {
             if (_viewModel == null) return;
-
             try
             {
-                DebugConsole.WriteInfo("=== ShowAddGameDialog CALLED ===");
-                DebugConsole.WriteInfo($"MainWindow IsVisible: {IsVisible}");
-
-                // Ensure we're on UI thread and window is ready
                 await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(async () =>
                 {
-                    try
+                    var window = new UC_AddGame();
+                    if (!this.IsActive)
                     {
-                        DebugConsole.WriteInfo("Creating UC_AddGame window...");
-                        var window = new UC_AddGame();
-
-                        DebugConsole.WriteInfo($"Window created. About to show dialog...");
-                        DebugConsole.WriteInfo($"Parent window (this) IsVisible: {this.IsVisible}");
-                        DebugConsole.WriteInfo($"Parent window (this) IsActive: {this.IsActive}");
-
-                        // Make sure parent window is active
-                        if (!this.IsActive)
-                        {
-                            this.Activate();
-                            await Task.Delay(100); // Small delay to ensure activation
-                        }
-
-                        // Show as modal dialog
-                        var result = await window.ShowDialog<Game?>(this);
-                        DebugConsole.WriteInfo("ShowDialog returned");
-
-                        // Check the result after dialog closes
-                        if (result != null)
-                        {
-                            DebugConsole.WriteSuccess($"Game returned: {result.Name}");
-                            await _viewModel.OnGameAddedAsync(result);
-                        }
-                        else
-                        {
-                            DebugConsole.WriteInfo("No game was added (cancelled or no result)");
-                        }
-
-                        DebugConsole.WriteSuccess("Dialog closed successfully!");
+                        this.Activate();
+                        await Task.Delay(100);
                     }
-                    catch (Exception ex)
+                    var result = await window.ShowDialog<Game?>(this);
+                    if (result != null)
                     {
-                        DebugConsole.WriteException(ex, "Failed in dialog show (inner)");
-                        DebugConsole.WriteError($"Exception: {ex.Message}");
-                        DebugConsole.WriteError($"Stack: {ex.StackTrace}");
+                        await _viewModel.OnGameAddedAsync(result);
                     }
                 });
             }
             catch (Exception ex)
             {
                 DebugConsole.WriteException(ex, "Failed to show add game dialog");
-                DebugConsole.WriteError($"Exception: {ex.Message}");
-                DebugConsole.WriteError($"Stack: {ex.StackTrace}");
             }
         }
 
         private async void ShowAddFilesDialog()
         {
             if (_viewModel == null) return;
-
             try
             {
-                DebugConsole.WriteInfo("=== ShowAddFilesDialog CALLED ===");
-
-                if (_viewModel.SelectedGame == null)
-                {
-                    DebugConsole.WriteWarning("No game selected");
-                    return;
-                }
+                if (_viewModel.SelectedGame == null) return;
 
                 var fileDialog = new OpenFileDialog
                 {
@@ -159,18 +195,10 @@ namespace SaveTracker.Views
                     Directory = _viewModel.SelectedGame.Game.InstallDirectory
                 };
 
-                DebugConsole.WriteInfo("Opening file dialog...");
                 var selectedFiles = await fileDialog.ShowAsync(this);
-
                 if (selectedFiles != null && selectedFiles.Length > 0)
                 {
-                    DebugConsole.WriteInfo($"User selected {selectedFiles.Length} files");
                     await _viewModel.OnFilesAddedAsync(selectedFiles);
-                    DebugConsole.WriteSuccess($"Added {selectedFiles.Length} file(s)");
-                }
-                else
-                {
-                    DebugConsole.WriteInfo("No files selected");
                 }
             }
             catch (Exception ex)
@@ -183,9 +211,7 @@ namespace SaveTracker.Views
         {
             try
             {
-                DebugConsole.WriteInfo("=== ShowCloudSettings CALLED ===");
                 await OpenCloudSettingsDialog();
-                DebugConsole.WriteInfo("Cloud settings closed");
             }
             catch (Exception ex)
             {
@@ -197,19 +223,11 @@ namespace SaveTracker.Views
         {
             try
             {
-                DebugConsole.WriteInfo("=== ShowBlacklist CALLED ===");
-
                 var blistEditor = new BlackListEditor
                 {
                     WindowStartupLocation = WindowStartupLocation.CenterOwner
                 };
-
-                DebugConsole.WriteInfo("BlackListEditor instance created, showing as dialog...");
-
-                // Show as modal dialog
                 _ = blistEditor.ShowDialog(this);
-
-                DebugConsole.WriteSuccess("BlackListEditor shown");
             }
             catch (Exception ex)
             {
@@ -221,9 +239,7 @@ namespace SaveTracker.Views
         {
             try
             {
-                DebugConsole.WriteInfo("=== ShowRcloneSetup CALLED ===");
                 await OpenCloudSettingsDialog();
-                DebugConsole.WriteInfo("Rclone setup closed");
             }
             catch (Exception ex)
             {
@@ -235,7 +251,6 @@ namespace SaveTracker.Views
         {
             try
             {
-                // Ensure we are on UI thread
                 return await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(async () =>
                 {
                     var box = MessageBoxManager.GetMessageBoxStandard(new MsBox.Avalonia.Dto.MessageBoxStandardParams
@@ -256,6 +271,92 @@ namespace SaveTracker.Views
             {
                 DebugConsole.WriteException(ex, "Failed to show cloud save dialog");
                 return false;
+            }
+        }
+
+        private async void ShowUpdateDialog(SaveTracker.Resources.Logic.AutoUpdater.UpdateInfo info)
+        {
+            try
+            {
+                await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(async () =>
+                {
+                    // First, ask user if they want to update
+                    var confirmBox = MessageBoxManager.GetMessageBoxStandard(new MsBox.Avalonia.Dto.MessageBoxStandardParams
+                    {
+                        ButtonDefinitions = ButtonEnum.YesNo,
+                        ContentTitle = "Update Available",
+                        ContentHeader = $"Version {info.Version} is available!",
+                        ContentMessage = $"A new version of SaveTracker is available.\n\n" +
+                                         $"New Version: {info.Version}\n" +
+                                         $"Size: {SaveTracker.Resources.HELPERS.Misc.FormatFileSize(info.DownloadSize)}\n\n" +
+                                         $"Do you want to download and install it now?\n\n" +
+                                         $"The application will close and restart automatically after the update.",
+                        Icon = MsBox.Avalonia.Enums.Icon.Info,
+                        WindowStartupLocation = WindowStartupLocation.CenterOwner
+                    });
+
+                    var result = await confirmBox.ShowWindowDialogAsync(this);
+
+                    if (result == ButtonResult.Yes)
+                    {
+                        // Create and show progress window
+                        var progressWindow = new UpdateProgressWindow();
+
+                        // Start download in background
+                        _ = Task.Run(async () =>
+                        {
+                            try
+                            {
+                                progressWindow.UpdateStatus("Downloading update...");
+
+                                var downloader = new SaveTracker.Resources.Logic.AutoUpdater.UpdateDownloader();
+                                downloader.DownloadProgressChanged += (sender, progress) =>
+                                {
+                                    progressWindow.UpdateProgress(progress);
+                                };
+
+                                string downloadedFilePath = await downloader.DownloadUpdateAsync(info.DownloadUrl);
+
+                                progressWindow.UpdateStatus("Installing update...");
+                                progressWindow.UpdateProgress(100);
+
+                                await Task.Delay(500); // Brief pause to show 100%
+
+                                // Install and restart
+                                var installer = new SaveTracker.Resources.Logic.AutoUpdater.UpdateInstaller();
+                                await installer.InstallUpdateAsync(downloadedFilePath);
+
+                                // App will exit in InstallUpdateAsync
+                            }
+                            catch (Exception ex)
+                            {
+                                await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(async () =>
+                                {
+                                    progressWindow.Close();
+
+                                    var errorBox = MessageBoxManager.GetMessageBoxStandard(new MsBox.Avalonia.Dto.MessageBoxStandardParams
+                                    {
+                                        ButtonDefinitions = ButtonEnum.Ok,
+                                        ContentTitle = "Update Failed",
+                                        ContentHeader = "Failed to install update",
+                                        ContentMessage = $"Error: {ex.Message}",
+                                        Icon = MsBox.Avalonia.Enums.Icon.Error,
+                                        WindowStartupLocation = WindowStartupLocation.CenterOwner
+                                    });
+
+                                    await errorBox.ShowWindowDialogAsync(this);
+                                });
+                            }
+                        });
+
+                        // Show modal progress window (blocks interaction)
+                        await progressWindow.ShowDialog(this);
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteException(ex, "Failed to show update dialog");
             }
         }
 
@@ -280,10 +381,8 @@ namespace SaveTracker.Views
             };
 
             viewModel.RequestClose += () => dialog.Close();
-
             await dialog.ShowDialog(this);
 
-            // Refresh config in main view model if needed
             if (_viewModel != null)
             {
                 await _viewModel.ReloadConfigAsync();
@@ -294,20 +393,11 @@ namespace SaveTracker.Views
         {
             try
             {
-                DebugConsole.WriteInfo("=== ShowSettingsDialog CALLED ===");
-
                 var settingsWindow = new SettingsWindow
                 {
                     WindowStartupLocation = WindowStartupLocation.CenterOwner
                 };
-
-                DebugConsole.WriteInfo("SettingsWindow instance created, showing as dialog...");
-
-                // Show as modal dialog
                 await settingsWindow.ShowDialog(this);
-
-                DebugConsole.WriteSuccess("SettingsWindow closed");
-
                 if (_viewModel != null)
                 {
                     await _viewModel.ReloadConfigAsync();
@@ -329,21 +419,17 @@ namespace SaveTracker.Views
 
         private void MinimizeWindow()
         {
-            DebugConsole.WriteInfo("MinimizeWindow called, setting WindowState to Minimized");
             WindowState = WindowState.Minimized;
         }
 
         protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
         {
             base.OnPropertyChanged(change);
-
             if (change.Property == WindowStateProperty)
             {
                 if (WindowState == WindowState.Minimized)
                 {
-                    // Hide the window when minimized
                     Hide();
-                    DebugConsole.WriteInfo("Window minimized to tray");
                 }
             }
         }
@@ -351,7 +437,6 @@ namespace SaveTracker.Views
         protected override void OnClosing(WindowClosingEventArgs e)
         {
             base.OnClosing(e);
-
             if (_viewModel != null)
             {
                 _viewModel.OnAddGameRequested -= ShowAddGameDialog;
@@ -362,6 +447,7 @@ namespace SaveTracker.Views
                 _viewModel.OnSettingsRequested -= ShowSettingsDialog;
                 _viewModel.RequestMinimize -= MinimizeWindow;
                 _viewModel.OnCloudSaveFound -= ShowCloudSaveFoundDialog;
+                _viewModel.OnUpdateAvailable -= ShowUpdateDialog;
             }
         }
     }

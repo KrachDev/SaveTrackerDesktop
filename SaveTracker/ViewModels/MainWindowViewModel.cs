@@ -129,6 +129,7 @@ namespace SaveTracker.ViewModels
         public event Action? OnSettingsRequested;
         public event Action? RequestMinimize;
         public event Func<string, Task<bool>>? OnCloudSaveFound;
+        public event Action<UpdateInfo>? OnUpdateAvailable;
 
         // ========== DEBUG HELPER METHODS ==========
         public int GetAddGameRequestedSubscriberCount() => OnAddGameRequested?.GetInvocationList().Length ?? 0;
@@ -1263,7 +1264,11 @@ namespace SaveTracker.ViewModels
                 {
                     UpdateAvailable = true;
                     UpdateVersion = _latestUpdateInfo.Version;
+                    UpdateVersion = _latestUpdateInfo.Version;
                     DebugConsole.WriteSuccess($"Update available: v{_latestUpdateInfo.Version}");
+
+                    // Notify UI to show dialog
+                    OnUpdateAvailable?.Invoke(_latestUpdateInfo);
 
                     // Update last check time
                     if (_mainConfig != null)
@@ -1321,6 +1326,25 @@ namespace SaveTracker.ViewModels
             catch (Exception ex)
             {
                 DebugConsole.WriteException(ex, "Failed to download and install update");
+            }
+        }
+
+        [RelayCommand]
+        private void ReportIssue()
+        {
+            try
+            {
+                var url = "https://github.com/KrachDev/SaveTrackerDesktop/issues/new";
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = url,
+                    UseShellExecute = true
+                });
+                DebugConsole.WriteInfo("Opened GitHub issues page");
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteException(ex, "Failed to open issues page");
             }
         }
     }

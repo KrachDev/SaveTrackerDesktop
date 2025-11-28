@@ -111,15 +111,14 @@ if errorlevel 1 (
 echo Cleaning up cache...
 rmdir /S /Q ""{UpdateCachePath}"" >nul 2>&1
 
-echo Deleting update script...
-del ""{batchScriptPath}"" >nul 2>&1
-
 echo Starting updated application...
 start """" ""{CurrentExePath}""
 
-echo Update completed successfully!
+echo Waiting for app to start...
 timeout /t 2 /nobreak >nul
-exit
+
+echo Deleting update script...
+(goto) 2>nul & del ""%~f0""
 ";
 
             // Write the batch script
