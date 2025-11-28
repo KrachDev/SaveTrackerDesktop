@@ -53,7 +53,10 @@ namespace SaveTracker.ViewModels
 
         [ObservableProperty]
         private string _fileName;
-
+        
+        [ObservableProperty]
+        private string _checksum;
+        
         [ObservableProperty]
         private string _path;
 
@@ -78,6 +81,7 @@ namespace SaveTracker.ViewModels
 
             AbsolutePath = record.GetAbsolutePath(game.InstallDirectory);
             _fileName = System.IO.Path.GetFileName(record.Path);
+            _checksum = record.Checksum;
             _path = record.Path;
             _size = Misc.FormatFileSize(record.FileSize);
             _lastModified = record.LastUpload.ToString("MM/dd/yyyy HH:mm");

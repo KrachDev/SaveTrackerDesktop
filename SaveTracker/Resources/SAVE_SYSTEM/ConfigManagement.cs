@@ -225,7 +225,7 @@ namespace SaveTracker.Resources.SAVE_SYSTEM
         {
             try
             {
-                string filePath = Path.Combine(game.InstallDirectory, SaveFileUploadManager.CHECKSUM_FILENAME);
+                string filePath = Path.Combine(game.InstallDirectory, SaveFileUploadManager.ChecksumFilename);
 
                 if (!File.Exists(filePath))
                 {
@@ -237,13 +237,13 @@ namespace SaveTracker.Resources.SAVE_SYSTEM
             }
             catch (Exception ex)
             {
-                DebugConsole.WriteException(ex, $"Failed to read game data for {game.Name}");
+                DebugConsole.WriteException(ex, $"{game.Name} Has No Data ");
                 return null;
             }
         }
         public static async Task<bool?> HasData(Game game)
         {
-            string filePath = Path.Combine(game.InstallDirectory, SaveFileUploadManager.CHECKSUM_FILENAME);
+            string filePath = Path.Combine(game.InstallDirectory, SaveFileUploadManager.ChecksumFilename);
 
             // File doesn't exist → return null
             if (!File.Exists(filePath))
@@ -338,7 +338,7 @@ namespace SaveTracker.Resources.SAVE_SYSTEM
         {
             try
             {
-                string filePath = Path.Combine(game.InstallDirectory, SaveFileUploadManager.CHECKSUM_FILENAME);
+                string filePath = Path.Combine(game.InstallDirectory, SaveFileUploadManager.ChecksumFilename);
                 string jsonContent = JsonSerializer.Serialize(data, new JsonSerializerOptions
                 {
                     WriteIndented = true
@@ -423,7 +423,7 @@ public class Game : INotifyPropertyChanged
 
     public string GetGameDataFile()
     {
-        return Path.Combine(InstallDirectory, SaveFileUploadManager.CHECKSUM_FILENAME);
+        return Path.Combine(InstallDirectory, SaveFileUploadManager.ChecksumFilename);
     }
 
 
@@ -443,6 +443,11 @@ public class Config
     public bool Auto_Upload { get; set; } = true;
     public bool StartMinimized { get; set; } = false;
     public bool ShowDebugConsole { get; set; } = false;
+
+    // Auto-updater settings
+    public bool CheckForUpdatesOnStartup { get; set; } = true;
+    public DateTime LastUpdateCheck { get; set; } = DateTime.MinValue;
+    public string SkipVersion { get; set; } = string.Empty;
 
     public CloudConfig CloudConfig { get; set; } = new CloudConfig();
 }

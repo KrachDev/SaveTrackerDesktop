@@ -283,7 +283,7 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                     return false;
                 }
 
-                string checksumFilePath = Path.Combine(stagingFolder, SaveFileUploadManager.CHECKSUM_FILENAME);
+                string checksumFilePath = Path.Combine(stagingFolder, SaveFileUploadManager.ChecksumFilename);
                 if (!File.Exists(checksumFilePath))
                 {
                     DebugConsole.WriteWarning("Checksum file not found - using fallback");
@@ -367,13 +367,144 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                 }
             }
         }
+        public async Task<bool> DownloadSelectedFilesAsync(string remotePath, Game game, List<string> selectedRelativePaths)
+{
+    string stagingFolder = Path.Combine(Path.GetTempPath(), "SaveTracker_Download_" + Guid.NewGuid().ToString("N"));
 
+    try
+    {
+        DebugConsole.WriteInfo($"Downloading selected cloud saves to staging folder: {stagingFolder}");
+        Directory.CreateDirectory(stagingFolder);
+
+        // First, download the checksum file to know what files are available
+        var checksumResult = await _transferService.DownloadFileWithRetry(
+            remotePath, 
+            stagingFolder, 
+            SaveFileUploadManager.ChecksumFilename);
+
+        if (!checksumResult)
+        {
+            DebugConsole.WriteError($"Failed to download checksum file");
+            return false;
+        }
+
+        string checksumFilePath = Path.Combine(stagingFolder, SaveFileUploadManager.ChecksumFilename);
+        if (!File.Exists(checksumFilePath))
+        {
+            DebugConsole.WriteError("Checksum file not found after download");
+            return false;
+        }
+
+        DebugConsole.WriteInfo("Reading checksum file...");
+        string checksumJson = await File.ReadAllTextAsync(checksumFilePath);
+        var checksumData = JsonConvert.DeserializeObject<GameUploadData>(checksumJson);
+
+        if (checksumData?.Files == null || checksumData.Files.Count == 0)
+        {
+            DebugConsole.WriteWarning("Checksum file is empty or invalid");
+            return false;
+        }
+
+        // Filter to only selected files
+        var selectedFiles = checksumData.Files
+            .Where(f => selectedRelativePaths.Contains(f.Key))
+            .ToList();
+
+        if (selectedFiles.Count == 0)
+        {
+            DebugConsole.WriteWarning("None of the selected files were found in the checksum data");
+            return false;
+        }
+
+        DebugConsole.WriteInfo($"Downloading {selectedFiles.Count} selected files...");
+
+        int successCount = 0;
+        int failCount = 0;
+
+        // Download each selected file individually
+        foreach (var fileEntry in selectedFiles)
+        {
+            try
+            {
+                string relativePath = fileEntry.Key;
+                string fileName = Path.GetFileName(relativePath);
+                
+                // Download the specific file from remote
+                var downloadResult = await _transferService.DownloadFileWithRetry(
+                    remotePath,
+                    stagingFolder,
+                    relativePath);
+
+                if (!downloadResult)
+                {
+                    DebugConsole.WriteWarning($"Failed to download: {relativePath}");
+                    failCount++;
+                    continue;
+                }
+
+                // Try the full relative path first (Rclone preserves structure)
+                string sourceFile = Path.Combine(stagingFolder, relativePath);
+                if (!File.Exists(sourceFile))
+                {
+                    // Fallback to flat filename
+                    sourceFile = Path.Combine(stagingFolder, fileName);
+                }
+
+                string targetPath = fileEntry.Value.GetAbsolutePath(game.InstallDirectory);
+                if (!File.Exists(sourceFile))
+                {
+                    DebugConsole.WriteWarning($"File not found in staging: {fileName}");
+                    failCount++;
+                    continue;
+                }
+
+                string? targetDir = Path.GetDirectoryName(targetPath);
+                if (!string.IsNullOrEmpty(targetDir) && !Directory.Exists(targetDir))
+                {
+                    Directory.CreateDirectory(targetDir);
+                }
+
+                File.Copy(sourceFile, targetPath, overwrite: true);
+                DebugConsole.WriteSuccess($"✓ Restored: {relativePath}");
+                successCount++;
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteError($"✗ Failed to restore {fileEntry.Key}: {ex.Message}");
+                failCount++;
+            }
+        }
+
+        DebugConsole.WriteSuccess($"Download complete: {successCount} files restored, {failCount} failed");
+        return failCount == 0;
+    }
+    catch (Exception ex)
+    {
+        DebugConsole.WriteException(ex, "Selective download failed");
+        return false;
+    }
+    finally
+    {
+        try
+        {
+            if (Directory.Exists(stagingFolder))
+            {
+                Directory.Delete(stagingFolder, recursive: true);
+                DebugConsole.WriteInfo("Staging folder cleaned up");
+            }
+        }
+        catch (Exception ex)
+        {
+            DebugConsole.WriteWarning($"Failed to clean up staging folder: {ex.Message}");
+        }
+    }
+}
         private async Task CopyDirectoryContents(string sourceDir, string targetDir)
         {
             foreach (string file in Directory.GetFiles(sourceDir))
             {
                 string fileName = Path.GetFileName(file);
-                if (fileName == SaveFileUploadManager.CHECKSUM_FILENAME)
+                if (fileName == SaveFileUploadManager.ChecksumFilename)
                     continue;
 
                 string targetPath = Path.Combine(targetDir, fileName);

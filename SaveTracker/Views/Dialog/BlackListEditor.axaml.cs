@@ -366,6 +366,7 @@ namespace SaveTracker
                 string json = JsonConvert.SerializeObject(data, Formatting.Indented);
                 string filePath = Path.Combine(
                     AppDomain.CurrentDomain.BaseDirectory,
+                    "Data",
                     "blacklist_config.json"
                 );
 

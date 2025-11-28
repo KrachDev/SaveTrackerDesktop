@@ -62,7 +62,7 @@
                                         </Border>
                                         <StackPanel Grid.Column="1" Margin="10,0,0,0" VerticalAlignment="Center">
                                             <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="13"/>
-                                            <TextBlock Text="{Binding InstallDirectory}" FontSize="10" Foreground="#858585" TextTrimming="CharacterEllipsis"/>
+                                            <TextBlock Text="{Binding InstallDirectory}" ToolTip.Tip="{Binding InstallDirectory}"  FontSize="10" Foreground="#858585" TextTrimming="CharacterEllipsis"/>
                                         </StackPanel>
                                     </Grid>
                                 </Border>
@@ -160,6 +160,7 @@
                                                     
                                                     <TextBlock Grid.Column="1" 
                                                                Text="{Binding FileName}"
+                                                               ToolTip.Tip="{Binding Checksum}"
                                                                FontSize="13"
                                                                Foreground="White"
                                                                VerticalAlignment="Center"
@@ -167,6 +168,7 @@
                                                     
                                                     <TextBlock Grid.Column="2"
                                                                Text="{Binding Path}"
+                                                               ToolTip.Tip="{Binding Path}"
                                                                FontSize="12"
                                                                Foreground="#858585"
                                                                VerticalAlignment="Center"

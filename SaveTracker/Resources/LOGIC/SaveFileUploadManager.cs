@@ -1,7 +1,5 @@
-﻿using Avalonia.Controls;
-using SaveTracker.Resources.HELPERS;
+﻿using SaveTracker.Resources.HELPERS;
 using SaveTracker.Resources.Logic.RecloneManagement;
-
 using SaveTracker.Resources.SAVE_SYSTEM;
 using System;
 using System.Collections.Generic;
@@ -9,24 +7,27 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using static CloudConfig;
 
 namespace SaveTracker.Resources.Logic
 {
     /// <summary>
     /// Manages the upload process for game save files to cloud storage
     /// </summary>
-    public class SaveFileUploadManager
+    public class SaveFileUploadManager(
+        RcloneInstaller rcloneInstaller,
+        CloudProviderHelper cloudProviderHelper,
+        RcloneFileOperations rcloneFileOperations,
+        string configPath)
     {
         // Constants
-        public const string CHECKSUM_FILENAME = ".savetracker_checksums.json";
-        public const string REMOTE_BASE_FOLDER = "SaveTrackerCloudSave";
+        public const string ChecksumFilename = ".savetracker_checksums.json";
+        public const string RemoteBaseFolder = "SaveTrackerCloudSave";
 
         // Dependencies
-        private readonly RcloneInstaller _rcloneInstaller;
-        private readonly CloudProviderHelper _cloudProviderHelper;
-        private readonly RcloneFileOperations _rcloneFileOperations;
-        private readonly string _configPath;
+        private readonly RcloneInstaller _rcloneInstaller = rcloneInstaller ?? throw new ArgumentNullException(nameof(rcloneInstaller));
+        private readonly CloudProviderHelper _cloudProviderHelper = cloudProviderHelper ?? throw new ArgumentNullException(nameof(cloudProviderHelper));
+        private readonly RcloneFileOperations _rcloneFileOperations = rcloneFileOperations ?? throw new ArgumentNullException(nameof(rcloneFileOperations));
+        private readonly string _configPath = configPath ?? throw new ArgumentNullException(nameof(configPath));
 
         // Properties
         private static string RcloneExePath => Path.Combine(
@@ -36,21 +37,9 @@ namespace SaveTracker.Resources.Logic
         );
 
         // Event for progress updates
-        public event Action<UploadProgressInfo> OnProgressChanged;
-        public event Action<UploadResult> OnUploadCompleted;
+        public event Action<UploadProgressInfo>? OnProgressChanged;
+        public event Action<UploadResult>? OnUploadCompleted;
         public event Func<Task<bool>>? OnCloudConfigRequired;
-
-        public SaveFileUploadManager(
-            RcloneInstaller rcloneInstaller,
-            CloudProviderHelper cloudProviderHelper,
-            RcloneFileOperations rcloneFileOperations,
-            string configPath)
-        {
-            _rcloneInstaller = rcloneInstaller ?? throw new ArgumentNullException(nameof(rcloneInstaller));
-            _cloudProviderHelper = cloudProviderHelper ?? throw new ArgumentNullException(nameof(cloudProviderHelper));
-            _rcloneFileOperations = rcloneFileOperations ?? throw new ArgumentNullException(nameof(rcloneFileOperations));
-            _configPath = configPath ?? throw new ArgumentNullException(nameof(configPath));
-        }
 
         /// <summary>
         /// Main upload method
@@ -302,7 +291,7 @@ namespace SaveTracker.Resources.Logic
             ReportProgress(new UploadProgressInfo
             {
                 Status = "Uploading checksum file...",
-                CurrentFile = CHECKSUM_FILENAME
+                CurrentFile = ChecksumFilename
             });
 
             try
@@ -403,7 +392,7 @@ namespace SaveTracker.Resources.Logic
 
             // Get the remote name from cloud provider (e.g., "gdrive:", "box:", "onedrive:")
             string remoteName = _cloudHelper.GetProviderConfigName(Context.Provider);
-            RemoteBasePath = $"{remoteName}:{SaveFileUploadManager.REMOTE_BASE_FOLDER}/{sanitizedName}";
+            RemoteBasePath = $"{remoteName}:{SaveFileUploadManager.RemoteBaseFolder}/{sanitizedName}";
         }
 
         public void Complete()

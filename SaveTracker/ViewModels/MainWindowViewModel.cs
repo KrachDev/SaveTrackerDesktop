@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.Input;
 using SaveTracker.Resources.HELPERS;
 using SaveTracker.Resources.Logic;
 using SaveTracker.Resources.Logic.RecloneManagement;
+using SaveTracker.Resources.Logic.AutoUpdater;
 using SaveTracker.Resources.LOGIC;
 
 using SaveTracker.Resources.SAVE_SYSTEM;
@@ -87,7 +88,7 @@ namespace SaveTracker.ViewModels
         private bool _isSyncing;
 
         [ObservableProperty]
-        private string _syncButtonText = "?? Sync Now";
+        private string _syncButtonText = "☁️ Sync Now";
 
         [ObservableProperty]
         private bool _canUpload = true;
@@ -97,6 +98,18 @@ namespace SaveTracker.ViewModels
 
         [ObservableProperty]
         private string _appVersion = GetAppVersion();
+
+        // Auto-updater properties
+        [ObservableProperty]
+        private bool _updateAvailable;
+
+        [ObservableProperty]
+        private string _updateVersion = string.Empty;
+
+        [ObservableProperty]
+        private bool _isCheckingForUpdates;
+
+        private UpdateInfo? _latestUpdateInfo;
 
         private Config? _mainConfig;
         private CloudProvider _selectedProvider;
@@ -162,6 +175,12 @@ namespace SaveTracker.ViewModels
                 }
 
                 DebugConsole.WriteInfo("Is Admin: " + AdminHelper.IsAdministrator().Result.ToString());
+
+                // Check for updates on startup if enabled
+                if (_mainConfig?.CheckForUpdatesOnStartup ?? true)
+                {
+                    _ = CheckForUpdatesAsync();
+                }
             }
             catch (Exception ex)
             {
@@ -422,20 +441,24 @@ namespace SaveTracker.ViewModels
                     var rcloneOps = new RcloneFileOperations(game);
                     var remoteName = _providerHelper.GetProviderConfigName(provider.Provider);
                     var sanitizedGameName = SanitizeGameName(game.Name);
-                    var remoteBasePath = $"{remoteName}:{SaveFileUploadManager.REMOTE_BASE_FOLDER}/{sanitizedGameName}";
+                    var remoteBasePath = $"{remoteName}:{SaveFileUploadManager.RemoteBaseFolder}/{sanitizedGameName}";
+                    bool shouldWeCheckForSaveExisi = Misc.ShouldWeCheckForSaveExists(game);
 
-                    bool cloudSavesExist = await rcloneOps.CheckCloudSaveExistsAsync(remoteBasePath);
-
-                    if (cloudSavesExist)
+                    if (shouldWeCheckForSaveExisi)
                     {
-                        if (OnCloudSaveFound != null)
+                        bool cloudSavesExist = await rcloneOps.CheckCloudSaveExistsAsync(remoteBasePath);
+
+                        if (cloudSavesExist)
                         {
-                            bool shouldDownload = await OnCloudSaveFound.Invoke(game.Name);
-                            if (shouldDownload)
+                            if (OnCloudSaveFound != null)
                             {
-                                await rcloneOps.DownloadWithChecksumAsync(remoteBasePath, game);
-                                // Refresh tracked list after download
-                                await UpdateTrackedListAsync(game);
+                                bool shouldDownload = await OnCloudSaveFound.Invoke(game.Name);
+                                if (shouldDownload)
+                                {
+                                    await rcloneOps.DownloadWithChecksumAsync(remoteBasePath, game);
+                                    // Refresh tracked list after download
+                                    await UpdateTrackedListAsync(game);
+                                }
                             }
                         }
                     }
@@ -651,7 +674,7 @@ namespace SaveTracker.ViewModels
             finally
             {
                 IsSyncing = false;
-                SyncButtonText = "?? Sync Now";
+                SyncButtonText = "☁️ Sync Now";
                 SyncStatusText = "Idle";
             }
         }
@@ -747,6 +770,10 @@ namespace SaveTracker.ViewModels
             try
             {
                 var selectedFiles = CloudFiles.Where(f => f.IsSelected).ToList();
+                var game = SelectedGame.Game;
+
+                var rcloneOps = new RcloneFileOperations(game);
+
                 if (selectedFiles.Count == 0)
                 {
                     DebugConsole.WriteWarning("No files selected");
@@ -756,32 +783,36 @@ namespace SaveTracker.ViewModels
                 var config = await ConfigManagement.LoadConfigAsync();
                 if (config?.CloudConfig == null) return;
 
-                var executor = new RcloneExecutor();
-                var configPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ExtraTools", "rclone.conf");
                 var remoteName = _providerHelper.GetProviderConfigName(config.CloudConfig.Provider);
                 var sanitizedGameName = SanitizeGameName(SelectedGame.Game.Name);
 
-                foreach (var fileVm in selectedFiles)
+                // Build the remote path to the game's cloud folder
+                string remotePath = $"{remoteName}:{SaveFileUploadManager.RemoteBaseFolder}/{sanitizedGameName}";
+
+                // Extract just the relative paths (filenames) from selected files
+                var selectedRelativePaths = selectedFiles.Select(f => f.Name).ToList();
+
+                DebugConsole.WriteInfo($"Downloading {selectedRelativePaths.Count} selected files for {SelectedGame.Game.Name}");
+
+                // Use the new selective download method
+                bool success = await rcloneOps.DownloadSelectedFilesAsync(
+                    remotePath,
+                    SelectedGame.Game,
+                    selectedRelativePaths);
+
+                if (success)
                 {
-                    string remotePath = $"{remoteName}:{SaveFileUploadManager.REMOTE_BASE_FOLDER}/{sanitizedGameName}/{fileVm.Name}";
-                    string localPath = Path.Combine(SelectedGame.Game.InstallDirectory, fileVm.Name);
-
-                    var result = await executor.ExecuteRcloneCommand(
-                        $"copyto \"{remotePath}\" \"{localPath}\" --config \"{configPath}\" -v",
-                        TimeSpan.FromMinutes(5)
-                    );
-
-                    if (result.Success)
-                    {
-                        DebugConsole.WriteSuccess($"Downloaded: {fileVm.Name}");
-                    }
+                    DebugConsole.WriteSuccess($"Successfully downloaded all selected files");
+                    await UpdateTrackedListAsync(SelectedGame.Game);
                 }
-
-                await UpdateTrackedListAsync(SelectedGame.Game);
+                else
+                {
+                    DebugConsole.WriteWarning("Some files failed to download");
+                }
             }
             catch (Exception ex)
             {
-                DebugConsole.WriteException(ex, "Failed to download files");
+                DebugConsole.WriteException(ex, "Failed to download selected files");
             }
         }
 
@@ -1046,7 +1077,10 @@ namespace SaveTracker.ViewModels
                 TrackedFiles.Clear();
                 foreach (var file in gameUploadData.Files)
                 {
-                    TrackedFiles.Add(new TrackedFileViewModel(file.Value, game, gameUploadData.LastSyncStatus));
+                    if (!file.Key.Contains(SaveFileUploadManager.ChecksumFilename))
+                    {
+                        TrackedFiles.Add(new TrackedFileViewModel(file.Value, game, gameUploadData.LastSyncStatus));
+                    }
                 }
 
                 UpdateFilesTrackedCount();
@@ -1074,7 +1108,7 @@ namespace SaveTracker.ViewModels
                 var configPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ExtraTools", "rclone.conf");
                 var remoteName = _providerHelper.GetProviderConfigName(config.CloudConfig.Provider);
                 var sanitizedGameName = SanitizeGameName(game.Name);
-                var remotePath = $"{remoteName}:{SaveFileUploadManager.REMOTE_BASE_FOLDER}/{sanitizedGameName}";
+                var remotePath = $"{remoteName}:{SaveFileUploadManager.RemoteBaseFolder}/{sanitizedGameName}";
 
                 var result = await executor.ExecuteRcloneCommand(
                     $"lsjson \"{remotePath}\" --config \"{configPath}\"",
@@ -1207,6 +1241,86 @@ namespace SaveTracker.ViewModels
             {
                 DebugConsole.WriteException(ex, "Failed to handle auto-detected game");
                 _gameProcessWatcher?.UnmarkGame(game.Name);
+            }
+        }
+
+        // ========== AUTO-UPDATER COMMANDS ==========
+
+        [RelayCommand]
+        private async Task CheckForUpdatesAsync()
+        {
+            if (IsCheckingForUpdates) return;
+
+            try
+            {
+                IsCheckingForUpdates = true;
+                DebugConsole.WriteInfo("Checking for updates...");
+
+                var updateChecker = new UpdateChecker();
+                _latestUpdateInfo = await updateChecker.CheckForUpdatesAsync();
+
+                if (_latestUpdateInfo.IsUpdateAvailable)
+                {
+                    UpdateAvailable = true;
+                    UpdateVersion = _latestUpdateInfo.Version;
+                    DebugConsole.WriteSuccess($"Update available: v{_latestUpdateInfo.Version}");
+
+                    // Update last check time
+                    if (_mainConfig != null)
+                    {
+                        _mainConfig.LastUpdateCheck = DateTime.Now;
+                        await ConfigManagement.SaveConfigAsync(_mainConfig);
+                    }
+                }
+                else
+                {
+                    UpdateAvailable = false;
+                    UpdateVersion = string.Empty;
+                    DebugConsole.WriteInfo("No updates available");
+                }
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteException(ex, "Failed to check for updates");
+                UpdateAvailable = false;
+            }
+            finally
+            {
+                IsCheckingForUpdates = false;
+            }
+        }
+
+        [RelayCommand]
+        private async Task DownloadAndInstallUpdateAsync()
+        {
+            if (_latestUpdateInfo == null || !_latestUpdateInfo.IsUpdateAvailable)
+            {
+                DebugConsole.WriteWarning("No update available to install");
+                return;
+            }
+
+            try
+            {
+                DebugConsole.WriteSection($"Installing Update v{_latestUpdateInfo.Version}");
+
+                // Download the update
+                var downloader = new UpdateDownloader();
+                downloader.DownloadProgressChanged += (sender, progress) =>
+                {
+                    DebugConsole.WriteInfo($"Download progress: {progress}%");
+                };
+
+                string downloadedFilePath = await downloader.DownloadUpdateAsync(_latestUpdateInfo.DownloadUrl);
+
+                // Install the update (this will exit the application)
+                var installer = new UpdateInstaller();
+                await installer.InstallUpdateAsync(downloadedFilePath);
+
+                // This line will never be reached as the app will exit
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteException(ex, "Failed to download and install update");
             }
         }
     }

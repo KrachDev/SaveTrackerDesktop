@@ -7,7 +7,7 @@
         x:Class="SaveTracker.Views.Dialog.SettingsWindow"
         x:DataType="vm:SettingsViewModel"
         Title="Settings"
-        Width="400" Height="350"
+        Width="400" Height="500"
         WindowStartupLocation="CenterOwner"
         CanResize="False"
         SystemDecorations="Full"
@@ -25,6 +25,38 @@
             <CheckBox IsChecked="{Binding StartMinimized}" Content="Start Minimized to Tray" Foreground="#CCCCCC"/>
             
             <CheckBox IsChecked="{Binding ShowDebugConsole}" Content="Show Debug Console" Foreground="#CCCCCC"/>
+
+            <!-- Auto-Updater Section -->
+            <Separator Background="#3F3F46" Margin="0,10"/>
+            <TextBlock Text="Auto-Updater" FontSize="16" FontWeight="SemiBold" Foreground="White" Margin="0,10,0,5"/>
+            
+            <CheckBox IsChecked="{Binding CheckForUpdatesOnStartup}" Content="Check for updates on startup" Foreground="#CCCCCC"/>
+            
+            <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,5">
+                <TextBlock Text="Current Version:" Foreground="#CCCCCC" VerticalAlignment="Center"/>
+                <TextBlock Text="{Binding CurrentVersion}" Foreground="#0E639C" FontWeight="SemiBold" VerticalAlignment="Center"/>
+            </StackPanel>
+
+            <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,5">
+                <Button Content="Check for Updates" 
+                        Command="{Binding CheckForUpdatesCommand}"
+                        IsEnabled="{Binding !IsCheckingForUpdates}"
+                        Background="#0E639C" 
+                        Foreground="White" 
+                        Padding="12,6"/>
+                <TextBlock Text="{Binding UpdateVersion}" 
+                           Foreground="#CCCCCC"
+                           FontWeight="SemiBold"
+                           VerticalAlignment="Center"/>
+            </StackPanel>
+
+            <Button Content="🚀 Install Update" 
+                    Command="{Binding InstallUpdateCommand}"
+                    IsVisible="{Binding UpdateAvailable}"
+                    Background="#2D7D2D" 
+                    Foreground="White" 
+                    Padding="12,6"
+                    Margin="0,5"/>
         </StackPanel>
 
         <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10">

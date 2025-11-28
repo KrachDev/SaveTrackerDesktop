@@ -17,7 +17,7 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
 
         public string GetChecksumFilePath(string gameDirectory)
         {
-            return Path.Combine(gameDirectory, SaveFileUploadManager.CHECKSUM_FILENAME);
+            return Path.Combine(gameDirectory, SaveFileUploadManager.ChecksumFilename);
         }
 
         public async Task<string> GetFileChecksum(string filePath)

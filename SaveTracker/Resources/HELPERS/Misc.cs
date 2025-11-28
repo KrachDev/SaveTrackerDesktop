@@ -216,6 +216,17 @@ namespace SaveTracker.Resources.HELPERS
             string newFileName = fileName.Substring(0, lastDot);
             return Path.Combine(directory, newFileName);
         }
+
+        public static bool ShouldWeCheckForSaveExists(Game game)
+        {
+            var Savejson = ConfigManagement.GetGameData(game);
+            if (Savejson == null)
+                return true;
+            
+
+
+            return false;
+        }
     }
 
 }
