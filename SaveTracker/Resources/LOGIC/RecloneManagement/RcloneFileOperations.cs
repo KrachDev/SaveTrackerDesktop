@@ -2,46 +2,30 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
-using System.Security.Cryptography;
 using SaveTracker.Resources.SAVE_SYSTEM;
 using static CloudConfig;
-using SaveTracker.Resources.LOGIC.RecloneManagement;
+using SaveTracker.Resources.Logic.RecloneManagement;
 using SaveTracker.Resources.HELPERS;
 
 namespace SaveTracker.Resources.Logic.RecloneManagement
 {
     public class RcloneFileOperations
     {
-        private readonly RcloneExecutor _executor = new RcloneExecutor();
         private readonly Game _currentGame;
+        private readonly ChecksumService _checksumService = new ChecksumService();
+        private readonly RcloneTransferService _transferService = new RcloneTransferService();
 
-        // Static semaphore to prevent concurrent file access
-        private static readonly SemaphoreSlim _checksumFileLock = new SemaphoreSlim(1, 1);
-
-        public static string RcloneExePath =>
-            Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ExtraTools", "rclone.exe");
-
-        private static readonly string ToolsPath = Path.Combine(
-            AppDomain.CurrentDomain.BaseDirectory,
-            "ExtraTools"
-        );
-
-        private readonly string _configPath = Path.Combine(ToolsPath, "rclone.conf");
-        private readonly int _maxRetries = 3;
-        private readonly TimeSpan _retryDelay = TimeSpan.FromSeconds(2);
-        private readonly TimeSpan _processTimeout = TimeSpan.FromMinutes(10);
+        // Forwarding static properties for backward compatibility if needed, 
+        // though direct usage of RclonePathHelper is preferred.
+        public static string RcloneExePath => RclonePathHelper.RcloneExePath;
 
         public RcloneFileOperations(Game currentGame = null)
         {
             _currentGame = currentGame;
-        }
-
-        private string GetChecksumFilePath(string gameDirectory)
-        {
-            return Path.Combine(gameDirectory, ".savetracker_checksums.json");
         }
 
         private bool EnsureGameDirectoryExists(string gameDirectory)
@@ -129,12 +113,12 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
 
                 DebugConsole.WriteInfo($"UPLOADING: {fileName}");
 
-                bool uploadSuccess = await UploadFileWithRetry(filePath, remotePath, fileName);
+                bool uploadSuccess = await _transferService.UploadFileWithRetry(filePath, remotePath, fileName);
 
                 if (uploadSuccess)
                 {
                     // Update checksum tracking after successful upload
-                    await UpdateFileChecksumRecord(filePath, game);
+                    await _checksumService.UpdateFileChecksumRecord(filePath, gameDirectory);
 
                     DebugConsole.WriteSuccess($"Upload completed: {fileName}");
                     stats.UploadedCount++;
@@ -160,7 +144,7 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             try
             {
                 // Get current file checksum
-                string currentChecksum = await GetFileChecksum(localFilePath);
+                string currentChecksum = await _checksumService.GetFileChecksum(localFilePath);
                 if (string.IsNullOrEmpty(currentChecksum))
                 {
                     DebugConsole.WriteWarning(
@@ -204,72 +188,11 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             }
         }
 
-        private async Task UpdateFileChecksumRecord(string filePath, Game game)
-        {
-            await _checksumFileLock.WaitAsync();
-            try
-            {
-                string fileName = Path.GetFileName(filePath);
-                string checksum = await GetFileChecksum(filePath);
-
-                if (string.IsNullOrEmpty(checksum))
-                {
-                    DebugConsole.WriteWarning(
-                        $"Could not compute checksum for {fileName} - skipping record update"
-                    );
-                    return;
-                }
-
-                var checksumData = await LoadChecksumDataInternal(game.InstallDirectory);
-
-                // Contract the path to portable format before storing
-                string portablePath = PathContractor.ContractPath(filePath, game.InstallDirectory);
-
-                checksumData.Files[fileName] = new FileChecksumRecord
-                {
-                    Checksum = checksum,
-                    LastUpload = DateTime.UtcNow,
-                    FileSize = new FileInfo(filePath).Length,
-                    Path = portablePath
-                };
-
-                await SaveChecksumDataInternal(checksumData, game.InstallDirectory);
-
-                DebugConsole.WriteDebug(
-                    $"Updated checksum record for {fileName} in {game.InstallDirectory}"
-                );
-            }
-            catch (Exception ex)
-            {
-                DebugConsole.WriteException(ex, "Failed to update checksum record");
-            }
-            finally
-            {
-                _checksumFileLock.Release();
-            }
-        }
-
-        public async Task<string> GetFileChecksum(string filePath)
-        {
-            try
-            {
-                using var md5 = MD5.Create();
-                using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-                var hashBytes = await Task.Run(() => md5.ComputeHash(stream));
-                return BitConverter.ToString(hashBytes).Replace("-", "").ToLowerInvariant();
-            }
-            catch (Exception ex)
-            {
-                DebugConsole.WriteException(ex, "Failed to compute file checksum");
-                return null;
-            }
-        }
-
         private async Task<string> GetStoredFileChecksum(string filePath, string gameDirectory)
         {
             try
             {
-                var checksumData = await LoadChecksumData(gameDirectory);
+                var checksumData = await _checksumService.LoadChecksumData(gameDirectory);
                 string fileName = Path.GetFileName(filePath);
 
                 if (checksumData.Files.TryGetValue(fileName, out var fileRecord))
@@ -305,160 +228,16 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             return PathContractor.ExpandPath(portablePath, gameDirectory);
         }
 
-        // Internal method without lock (for use within locked contexts)
-        private async Task<GameUploadData> LoadChecksumDataInternal(string gameDirectory)
-        {
-            try
-            {
-                string checksumFilePath = GetChecksumFilePath(gameDirectory);
-
-                if (!File.Exists(checksumFilePath))
-                {
-                    DebugConsole.WriteDebug(
-                        $"Checksum file doesn't exist at {checksumFilePath} - creating new one"
-                    );
-                    return new GameUploadData();
-                }
-
-                string jsonContent;
-                using (var stream = new FileStream(checksumFilePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
-                using (var reader = new StreamReader(stream))
-                {
-                    jsonContent = await reader.ReadToEndAsync();
-                }
-
-                var data = JsonConvert.DeserializeObject<GameUploadData>(jsonContent);
-
-                DebugConsole.WriteDebug(
-                    $"Loaded checksum data from {checksumFilePath} with {data?.Files?.Count ?? 0} file records"
-                );
-                return data ?? new GameUploadData();
-            }
-            catch (Exception ex)
-            {
-                DebugConsole.WriteException(
-                    ex,
-                    $"Failed to load checksum data from {gameDirectory} - creating new"
-                );
-                return new GameUploadData();
-            }
-        }
-
-        // Public method with lock
-        public async Task<GameUploadData> LoadChecksumData(string gameDirectory)
-        {
-            await _checksumFileLock.WaitAsync();
-            try
-            {
-                return await LoadChecksumDataInternal(gameDirectory);
-            }
-            finally
-            {
-                _checksumFileLock.Release();
-            }
-        }
-
-        // Internal method without lock (for use within locked contexts)
-        private async Task SaveChecksumDataInternal(GameUploadData data, string gameDirectory)
-        {
-            string checksumFilePath = GetChecksumFilePath(gameDirectory);
-
-            if (!EnsureGameDirectoryExists(gameDirectory))
-            {
-                throw new DirectoryNotFoundException(
-                    $"Cannot access game directory: {gameDirectory}"
-                );
-            }
-
-            string jsonContent = JsonConvert.SerializeObject(data, Formatting.Indented);
-
-            using (var stream = new FileStream(checksumFilePath, FileMode.Create, FileAccess.Write, FileShare.Read))
-            using (var writer = new StreamWriter(stream))
-            {
-                await writer.WriteAsync(jsonContent);
-                await writer.FlushAsync();
-            }
-
-            DebugConsole.WriteDebug($"Saved checksum data to {checksumFilePath}");
-            DebugConsole.WriteInfo(
-                $"Checksum file updated with {data.Files.Count} file records"
-            );
-        }
-
-        // Public method with lock
         public async Task SaveChecksumData(GameUploadData data, Game game)
         {
-            await _checksumFileLock.WaitAsync();
-            try
-            {
-                await SaveChecksumDataInternal(data, game.InstallDirectory);
-            }
-            catch (Exception ex)
-            {
-                DebugConsole.WriteException(ex, $"Failed to save checksum data to {game.InstallDirectory}");
-                throw;
-            }
-            finally
-            {
-                _checksumFileLock.Release();
-            }
-        }
-
-        private async Task<bool> UploadFileWithRetry(
-            string localPath,
-            string remotePath,
-            string fileName)
-        {
-            for (int attempt = 1; attempt <= _maxRetries; attempt++)
-            {
-                try
-                {
-                    DebugConsole.WriteDebug(
-                        $"Upload attempt {attempt}/{_maxRetries} for {fileName}"
-                    );
-
-                    var result = await _executor.ExecuteRcloneCommand(
-                        $"copyto \"{localPath}\" \"{remotePath}\" --config \"{_configPath}\" --progress",
-                        _processTimeout
-                    );
-
-                    if (result.Success)
-                    {
-                        DebugConsole.WriteSuccess($"Upload successful on attempt {attempt}");
-                        return true;
-                    }
-                    else
-                    {
-                        DebugConsole.WriteWarning($"Attempt {attempt} failed: {result.Error}");
-
-                        if (attempt < _maxRetries)
-                        {
-                            DebugConsole.WriteInfo(
-                                $"Waiting {_retryDelay.TotalSeconds} seconds before retry..."
-                            );
-                            await Task.Delay(_retryDelay);
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    DebugConsole.WriteException(ex, $"Upload attempt {attempt} exception");
-
-                    if (attempt < _maxRetries)
-                    {
-                        await Task.Delay(_retryDelay);
-                    }
-                }
-            }
-
-            return false;
+            await _checksumService.SaveChecksumData(data, game.InstallDirectory);
         }
 
         public async Task<bool> ShouldUploadFile(string localFilePath, string remotePath)
         {
             try
             {
-                bool remoteExists = await RemoteFileExists(remotePath);
+                bool remoteExists = await _transferService.RemoteFileExists(remotePath);
                 if (!remoteExists)
                 {
                     DebugConsole.WriteInfo("Remote file doesn't exist - upload needed");
@@ -477,67 +256,14 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             }
         }
 
-        private async Task<bool> RemoteFileExists(string remotePath)
-        {
-            try
-            {
-                var result = await _executor.ExecuteRcloneCommand(
-                    $"lsl \"{remotePath}\" --config \"{_configPath}\"",
-                    TimeSpan.FromSeconds(15)
-                );
-                return result.Success && !string.IsNullOrWhiteSpace(result.Output);
-            }
-            catch (Exception ex)
-            {
-                DebugConsole.WriteException(ex, "Failed to check remote file existence");
-                return false;
-            }
-        }
         public async Task<bool> CheckCloudSaveExistsAsync(string remoteBasePath)
         {
-            try
-            {
-                var result = await _executor.ExecuteRcloneCommand(
-                    $"lsf \"{remoteBasePath}\" --config \"{_configPath}\" --max-depth 1",
-                    TimeSpan.FromSeconds(15)
-                );
-
-                return result.Success && !string.IsNullOrWhiteSpace(result.Output);
-            }
-            catch (Exception ex)
-            {
-                DebugConsole.WriteException(ex, "Failed to check cloud save existence");
-                return false;
-            }
+            return await _transferService.CheckCloudSaveExistsAsync(remoteBasePath);
         }
 
         public async Task<bool> DownloadDirectory(string remotePath, string localPath)
         {
-            try
-            {
-                DebugConsole.WriteInfo($"Downloading directory from {remotePath} to {localPath}");
-
-                var result = await _executor.ExecuteRcloneCommand(
-                    $"copy \"{remotePath}\" \"{localPath}\" --config \"{_configPath}\" --progress",
-                    TimeSpan.FromMinutes(5)
-                );
-
-                if (result.Success)
-                {
-                    DebugConsole.WriteSuccess("Directory download successful");
-                    return true;
-                }
-                else
-                {
-                    DebugConsole.WriteError($"Directory download failed: {result.Error}");
-                    return false;
-                }
-            }
-            catch (Exception ex)
-            {
-                DebugConsole.WriteException(ex, "Directory download exception");
-                return false;
-            }
+            return await _transferService.DownloadDirectory(remotePath, localPath);
         }
 
         public async Task<bool> DownloadWithChecksumAsync(string remotePath, Game game)
@@ -549,18 +275,15 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                 DebugConsole.WriteInfo($"Downloading cloud saves to staging folder: {stagingFolder}");
                 Directory.CreateDirectory(stagingFolder);
 
-                var downloadResult = await _executor.ExecuteRcloneCommand(
-                    $"copy \"{remotePath}\" \"{stagingFolder}\" --config \"{_configPath}\" --progress",
-                    TimeSpan.FromMinutes(5)
-                );
+                var downloadResult = await _transferService.DownloadDirectory(remotePath, stagingFolder);
 
-                if (!downloadResult.Success)
+                if (!downloadResult)
                 {
-                    DebugConsole.WriteError($"Failed to download files to staging: {downloadResult.Error}");
+                    DebugConsole.WriteError($"Failed to download files to staging");
                     return false;
                 }
 
-                string checksumFilePath = Path.Combine(stagingFolder, ".savetracker_checksums.json");
+                string checksumFilePath = Path.Combine(stagingFolder, SaveFileUploadManager.CHECKSUM_FILENAME);
                 if (!File.Exists(checksumFilePath))
                 {
                     DebugConsole.WriteWarning("Checksum file not found - using fallback");
@@ -587,9 +310,15 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                     {
                         string relativePath = fileEntry.Key;
                         string fileName = Path.GetFileName(relativePath);
-                        string sourceFile = Path.Combine(stagingFolder, fileName);
-                        string targetPath = fileEntry.Value.GetAbsolutePath(game.InstallDirectory);
+                        // Try the full relative path first (Rclone preserves structure)
+                        string sourceFile = Path.Combine(stagingFolder, relativePath);
+                        if (!File.Exists(sourceFile))
+                        {
+                            // Fallback to flat filename
+                            sourceFile = Path.Combine(stagingFolder, fileName);
+                        }
 
+                        string targetPath = fileEntry.Value.GetAbsolutePath(game.InstallDirectory);
                         if (!File.Exists(sourceFile))
                         {
                             DebugConsole.WriteWarning($"File not found in staging: {fileName}");
@@ -644,7 +373,7 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             foreach (string file in Directory.GetFiles(sourceDir))
             {
                 string fileName = Path.GetFileName(file);
-                if (fileName == ".savetracker_checksums.json")
+                if (fileName == SaveFileUploadManager.CHECKSUM_FILENAME)
                     continue;
 
                 string targetPath = Path.Combine(targetDir, fileName);
@@ -653,6 +382,7 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             }
             await Task.CompletedTask;
         }
+
         public async Task ProcessDownloadFile(
             RemoteFileInfo remoteFile,
             string localDownloadPath,
@@ -759,7 +489,7 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
 
                 DebugConsole.WriteInfo($"DOWNLOADING: {remoteFile.Name}");
 
-                bool downloadSuccess = await DownloadFileWithRetry(
+                bool downloadSuccess = await _transferService.DownloadFileWithRetry(
                     remoteFilePath,
                     localFilePath,
                     remoteFile.Name
@@ -771,7 +501,7 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                     {
                         try
                         {
-                            await UpdateFileChecksumRecord(localFilePath, game);
+                            await _checksumService.UpdateFileChecksumRecord(localFilePath, gameDirectory);
                         }
                         catch (Exception checksumEx)
                         {
@@ -826,169 +556,23 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             }
         }
 
-        public async Task<bool> DownloadFile(string remotePath, string localPath)
-        {
-            try
-            {
-                var result = await _executor.ExecuteRcloneCommand(
-                    $"copyto \"{remotePath}\" \"{localPath}\" --config \"{_configPath}\"",
-                    _processTimeout
-                );
 
-                return result.Success;
-            }
-            catch
-            {
-                return false;
-            }
+        public async Task<string> GetFileChecksum(string filePath)
+        {
+            return await _checksumService.GetFileChecksum(filePath);
         }
 
-        public async Task<bool> DownloadFileWithRetry(
-            string remotePath,
-            string localPath,
-            string fileName)
+        public async Task<bool> DownloadFile(string remotePath, string localPath)
         {
-            for (int attempt = 1; attempt <= _maxRetries; attempt++)
-            {
-                try
-                {
-                    DebugConsole.WriteDebug(
-                        $"Download attempt {attempt}/{_maxRetries} for {fileName}"
-                    );
-
-                    var result = await _executor.ExecuteRcloneCommand(
-                        $"copyto \"{remotePath}\" \"{localPath}\" --config \"{_configPath}\" --progress",
-                        _processTimeout
-                    );
-
-                    if (result.Success)
-                    {
-                        DebugConsole.WriteSuccess($"Download successful on attempt {attempt}");
-                        return true;
-                    }
-                    else
-                    {
-                        DebugConsole.WriteWarning($"Attempt {attempt} failed: {result.Error}");
-
-                        if (attempt < _maxRetries)
-                        {
-                            DebugConsole.WriteInfo(
-                                $"Waiting {_retryDelay.TotalSeconds} seconds before retry..."
-                            );
-                            await Task.Delay(_retryDelay);
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    DebugConsole.WriteException(ex, $"Download attempt {attempt} exception");
-
-                    if (attempt < _maxRetries)
-                    {
-                        await Task.Delay(_retryDelay);
-                    }
-                }
-            }
-
-            return false;
+            return await _transferService.DownloadFileWithRetry(remotePath, localPath, Path.GetFileName(localPath));
         }
 
         public async Task CleanupChecksumRecords(Game game, TimeSpan maxAge)
         {
-            await _checksumFileLock.WaitAsync();
-            try
-            {
-                var checksumData = await LoadChecksumDataInternal(game.InstallDirectory);
-                var cutoffDate = DateTime.UtcNow - maxAge;
-
-                var filesToRemove = checksumData.Files
-                    .Where(kvp => kvp.Value.LastUpload < cutoffDate)
-                    .Select(kvp => kvp.Key)
-                    .ToList();
-
-                foreach (var fileName in filesToRemove)
-                {
-                    checksumData.Files.Remove(fileName);
-                }
-
-                if (filesToRemove.Any())
-                {
-                    await SaveChecksumDataInternal(checksumData, game.InstallDirectory);
-                    DebugConsole.WriteInfo(
-                        $"Cleaned up {filesToRemove.Count} old checksum records from {game.InstallDirectory}"
-                    );
-                }
-            }
-            catch (Exception ex)
-            {
-                DebugConsole.WriteException(ex, "Failed to cleanup checksum records");
-            }
-            finally
-            {
-                _checksumFileLock.Release();
-            }
-        }
-    }
-
-    #region Data Classes
-
-    public class GameUploadData
-    {
-        public Dictionary<string, FileChecksumRecord> Files { get; set; } =
-            new Dictionary<string, FileChecksumRecord>();
-        public DateTime LastUpdated { get; set; } = DateTime.UtcNow;
-        public bool CanTrack { get; set; } = true;
-        public bool CanUploads { get; set; } = true;
-        public CloudProvider GameProvider { get; set; } = CloudProvider.Global;
-        public Dictionary<string, FileChecksumRecord> Blacklist { get; set; } =
-            new Dictionary<string, FileChecksumRecord>();
-        public string LastSyncStatus { get; set; } = "Unknown";
-    }
-
-    public class FileChecksumRecord
-    {
-        public string Checksum { get; set; }
-        public DateTime LastUpload { get; set; }
-        public string Path { get; set; }
-        public long FileSize { get; set; }
-
-        public string GetAbsolutePath(string gameDirectory = null)
-        {
-            if (string.IsNullOrEmpty(Path))
-                return Path;
-
-            if (!string.IsNullOrEmpty(gameDirectory) &&
-                Path.StartsWith("%GAMEPATH%", StringComparison.OrdinalIgnoreCase))
-            {
-                string relativePath = Path.Substring("%GAMEPATH%".Length).TrimStart('/', '\\');
-                return System.IO.Path.Combine(gameDirectory, relativePath);
-            }
-
-            return PathContractor.ExpandPath(Path, gameDirectory);
+            await _checksumService.CleanupChecksumRecords(game.InstallDirectory, maxAge);
         }
 
-        public override string ToString()
-        {
-            return GetAbsolutePath();
-        }
-    }
+        // Data classes moved to RcloneDataTypes.cs
 
-    public class RemoteFileInfo
-    {
-        public string Name { get; set; }
-        public long Size { get; set; }
-        public DateTime ModTime { get; set; }
     }
-
-    public class DownloadResult
-    {
-        public int DownloadedCount { get; set; }
-        public int SkippedCount { get; set; }
-        public int FailedCount { get; set; }
-        public long DownloadedSize { get; set; }
-        public long SkippedSize { get; set; }
-        public List<string> FailedFiles { get; set; } = new List<string>();
-    }
-
-    #endregion
 }

@@ -10,7 +10,7 @@ using System.Net.Http;
 using System.Threading.Tasks;
 using static CloudConfig;
 
-namespace SaveTracker.Resources.LOGIC.RecloneManagement
+namespace SaveTracker.Resources.Logic.RecloneManagement
 {
     public class RcloneInstaller
     {

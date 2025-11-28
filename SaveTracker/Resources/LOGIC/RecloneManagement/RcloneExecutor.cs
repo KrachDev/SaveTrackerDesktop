@@ -5,7 +5,7 @@ using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace SaveTracker.Resources.LOGIC.RecloneManagement
+namespace SaveTracker.Resources.Logic.RecloneManagement
 {
     public class RcloneExecutor
     {

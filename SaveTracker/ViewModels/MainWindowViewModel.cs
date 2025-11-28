@@ -5,7 +5,7 @@ using SaveTracker.Resources.HELPERS;
 using SaveTracker.Resources.Logic;
 using SaveTracker.Resources.Logic.RecloneManagement;
 using SaveTracker.Resources.LOGIC;
-using SaveTracker.Resources.LOGIC.RecloneManagement;
+
 using SaveTracker.Resources.SAVE_SYSTEM;
 using SaveTracker.Views;
 using System;
@@ -422,7 +422,7 @@ namespace SaveTracker.ViewModels
                     var rcloneOps = new RcloneFileOperations(game);
                     var remoteName = _providerHelper.GetProviderConfigName(provider.Provider);
                     var sanitizedGameName = SanitizeGameName(game.Name);
-                    var remoteBasePath = $"{remoteName}:SaveTrackerCloudSave/{sanitizedGameName}";
+                    var remoteBasePath = $"{remoteName}:{SaveFileUploadManager.REMOTE_BASE_FOLDER}/{sanitizedGameName}";
 
                     bool cloudSavesExist = await rcloneOps.CheckCloudSaveExistsAsync(remoteBasePath);
 
@@ -763,7 +763,7 @@ namespace SaveTracker.ViewModels
 
                 foreach (var fileVm in selectedFiles)
                 {
-                    string remotePath = $"{remoteName}:SaveTrackerCloudSave/{sanitizedGameName}/{fileVm.Name}";
+                    string remotePath = $"{remoteName}:{SaveFileUploadManager.REMOTE_BASE_FOLDER}/{sanitizedGameName}/{fileVm.Name}";
                     string localPath = Path.Combine(SelectedGame.Game.InstallDirectory, fileVm.Name);
 
                     var result = await executor.ExecuteRcloneCommand(
@@ -1074,7 +1074,7 @@ namespace SaveTracker.ViewModels
                 var configPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ExtraTools", "rclone.conf");
                 var remoteName = _providerHelper.GetProviderConfigName(config.CloudConfig.Provider);
                 var sanitizedGameName = SanitizeGameName(game.Name);
-                var remotePath = $"{remoteName}:SaveTrackerCloudSave/{sanitizedGameName}";
+                var remotePath = $"{remoteName}:{SaveFileUploadManager.REMOTE_BASE_FOLDER}/{sanitizedGameName}";
 
                 var result = await executor.ExecuteRcloneCommand(
                     $"lsjson \"{remotePath}\" --config \"{configPath}\"",

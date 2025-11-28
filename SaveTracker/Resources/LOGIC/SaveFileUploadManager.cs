@@ -1,7 +1,7 @@
 ﻿using Avalonia.Controls;
 using SaveTracker.Resources.HELPERS;
 using SaveTracker.Resources.Logic.RecloneManagement;
-using SaveTracker.Resources.LOGIC.RecloneManagement;
+
 using SaveTracker.Resources.SAVE_SYSTEM;
 using System;
 using System.Collections.Generic;
@@ -19,8 +19,8 @@ namespace SaveTracker.Resources.Logic
     public class SaveFileUploadManager
     {
         // Constants
-        private const string CHECKSUM_FILENAME = ".savetracker_checksums.json";
-        private const string REMOTE_BASE_FOLDER = "SaveTrackerCloudSave";
+        public const string CHECKSUM_FILENAME = ".savetracker_checksums.json";
+        public const string REMOTE_BASE_FOLDER = "SaveTrackerCloudSave";
 
         // Dependencies
         private readonly RcloneInstaller _rcloneInstaller;
@@ -403,7 +403,7 @@ namespace SaveTracker.Resources.Logic
 
             // Get the remote name from cloud provider (e.g., "gdrive:", "box:", "onedrive:")
             string remoteName = _cloudHelper.GetProviderConfigName(Context.Provider);
-            RemoteBasePath = $"{remoteName}:SaveTrackerCloudSave/{sanitizedName}";
+            RemoteBasePath = $"{remoteName}:{SaveFileUploadManager.REMOTE_BASE_FOLDER}/{sanitizedName}";
         }
 
         public void Complete()

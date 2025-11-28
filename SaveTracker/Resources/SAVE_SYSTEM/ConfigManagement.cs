@@ -9,6 +9,7 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
+using SaveTracker.Resources.Logic;
 
 namespace SaveTracker.Resources.SAVE_SYSTEM
 {
@@ -224,7 +225,7 @@ namespace SaveTracker.Resources.SAVE_SYSTEM
         {
             try
             {
-                string filePath = Path.Combine(game.InstallDirectory, ".savetracker_checksums.json");
+                string filePath = Path.Combine(game.InstallDirectory, SaveFileUploadManager.CHECKSUM_FILENAME);
 
                 if (!File.Exists(filePath))
                 {
@@ -242,7 +243,7 @@ namespace SaveTracker.Resources.SAVE_SYSTEM
         }
         public static async Task<bool?> HasData(Game game)
         {
-            string filePath = Path.Combine(game.InstallDirectory, ".savetracker_checksums.json");
+            string filePath = Path.Combine(game.InstallDirectory, SaveFileUploadManager.CHECKSUM_FILENAME);
 
             // File doesn't exist → return null
             if (!File.Exists(filePath))
@@ -337,7 +338,7 @@ namespace SaveTracker.Resources.SAVE_SYSTEM
         {
             try
             {
-                string filePath = Path.Combine(game.InstallDirectory, ".savetracker_checksums.json");
+                string filePath = Path.Combine(game.InstallDirectory, SaveFileUploadManager.CHECKSUM_FILENAME);
                 string jsonContent = JsonSerializer.Serialize(data, new JsonSerializerOptions
                 {
                     WriteIndented = true
@@ -422,7 +423,7 @@ public class Game : INotifyPropertyChanged
 
     public string GetGameDataFile()
     {
-        return Path.Combine(InstallDirectory, ".savetracker_checksums.json");
+        return Path.Combine(InstallDirectory, SaveFileUploadManager.CHECKSUM_FILENAME);
     }
 
 

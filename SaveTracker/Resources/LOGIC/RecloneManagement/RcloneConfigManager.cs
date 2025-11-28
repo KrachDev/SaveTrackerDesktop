@@ -1,13 +1,13 @@
 ﻿using Newtonsoft.Json;
 using SaveTracker.Resources.HELPERS;
-using SaveTracker.Resources.LOGIC.RecloneManagement;
+
 using System;
 using System.IO;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using static CloudConfig;
 
-namespace SaveTracker.Resources.LOGIC.RecloneManagement
+namespace SaveTracker.Resources.Logic.RecloneManagement
 {
     public class RcloneConfigManager
     {

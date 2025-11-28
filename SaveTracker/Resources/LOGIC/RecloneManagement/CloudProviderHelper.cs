@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace SaveTracker.Resources.LOGIC.RecloneManagement
+namespace SaveTracker.Resources.Logic.RecloneManagement
 {
     public class CloudProviderHelper
     {

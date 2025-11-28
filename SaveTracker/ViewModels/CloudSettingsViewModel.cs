@@ -1,7 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using SaveTracker.Resources.HELPERS;
-using SaveTracker.Resources.LOGIC.RecloneManagement;
+using SaveTracker.Resources.Logic.RecloneManagement;
 using SaveTracker.Resources.Logic;
 using System;
 using System.Collections.ObjectModel;
