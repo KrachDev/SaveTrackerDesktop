@@ -3,32 +3,147 @@
         xmlns:vm="using:SaveTracker.ViewModels"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="700"
+        mc:Ignorable="d" 
+        d:DesignWidth="1200" 
+        d:DesignHeight="700"
         x:Class="SaveTracker.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         Icon="/Assets/avalonia-logo.ico"
         Title="SaveTracker Desktop"
         WindowStartupLocation="CenterScreen"
-        MinWidth="1280" MinHeight="600">
+        MinWidth="1280" 
+        MinHeight="600">
+
+    <Window.Styles>
+        <!-- Button Styles -->
+        <Style Selector="Button">
+            <Setter Property="Background" Value="#3F3F46"/>
+            <Setter Property="Foreground" Value="#CCCCCC"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="CornerRadius" Value="4"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Padding" Value="12,8"/>
+        </Style>
+        <Style Selector="Button:pointerover">
+            <Setter Property="Background" Value="#505050"/>
+        </Style>
+        <Style Selector="Button:pressed">
+            <Setter Property="Background" Value="#2A2A2A"/>
+        </Style>
+        
+        <Style Selector="Button.MenuButton">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="#CCCCCC"/>
+            <Setter Property="Padding" Value="10,6"/>
+        </Style>
+        <Style Selector="Button.MenuButton:pointerover">
+            <Setter Property="Background" Value="#3F3F46"/>
+        </Style>
+        
+        <Style Selector="Button.Primary">
+            <Setter Property="Background" Value="#0E639C"/>
+            <Setter Property="Foreground" Value="White"/>
+        </Style>
+        <Style Selector="Button.Primary:pointerover">
+            <Setter Property="Background" Value="#1177BB"/>
+        </Style>
+        
+        <!-- ListBox Styles -->
+        <Style Selector="ListBoxItem">
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Margin" Value="0"/>
+        </Style>
+        <Style Selector="ListBoxItem:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#2D2D30"/>
+        </Style>
+        <Style Selector="ListBoxItem:selected /template/ ContentPresenter">
+            <Setter Property="Background" Value="#3F3F46"/>
+        </Style>
+        
+        <!-- Input Styles -->
+        <Style Selector="TextBox">
+            <Setter Property="Background" Value="#3F3F46"/>
+            <Setter Property="Foreground" Value="#CCCCCC"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="BorderBrush" Value="#555555"/>
+            <Setter Property="Padding" Value="10,8"/>
+            <Setter Property="CornerRadius" Value="4"/>
+        </Style>
+        <Style Selector="TextBox:focus">
+            <Setter Property="BorderBrush" Value="#007ACC"/>
+        </Style>
+        
+        <Style Selector="ComboBox">
+            <Setter Property="Background" Value="#3F3F46"/>
+            <Setter Property="Foreground" Value="#CCCCCC"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="BorderBrush" Value="#555555"/>
+            <Setter Property="Padding" Value="10,8"/>
+            <Setter Property="CornerRadius" Value="4"/>
+        </Style>
+        
+        <Style Selector="CheckBox">
+            <Setter Property="Foreground" Value="#CCCCCC"/>
+        </Style>
+        
+        <!-- Tab Styles -->
+        <Style Selector="TabItem">
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Padding" Value="16,10"/>
+            <Setter Property="Foreground" Value="#CCCCCC"/>
+        </Style>
+        <Style Selector="TabItem:selected">
+            <Setter Property="Foreground" Value="White"/>
+        </Style>
+    </Window.Styles>
 
     <Grid RowDefinitions="Auto,*,Auto">
+        
         <!-- Top Menu Bar -->
-        <Border Grid.Row="0" Background="#1E1E1E" Padding="10" BorderBrush="#3F3F46" BorderThickness="0,0,0,1">
+        <Border Grid.Row="0" 
+                Background="#1E1E1E" 
+                Padding="15,10" 
+                BorderBrush="#3F3F46" 
+                BorderThickness="0,0,0,1">
             <Grid ColumnDefinitions="Auto,*,Auto">
-                <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                    <TextBlock Text="SaveTracker" FontWeight="Bold" FontSize="16" VerticalAlignment="Center" Foreground="White"/>
+                <StackPanel Orientation="Horizontal" 
+                            Spacing="10" 
+                            VerticalAlignment="Center">
+                    <TextBlock Text="SaveTracker" 
+                               FontWeight="Bold" 
+                               FontSize="16" 
+                               VerticalAlignment="Center" 
+                               Foreground="White"/>
                 </StackPanel>
 
-                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="15" VerticalAlignment="Center">
-                    <TextBlock Text="🔄 Sync Status: " VerticalAlignment="Center" Foreground="#CCCCCC"/>
-                    <TextBlock Text="{Binding SyncStatusText}" VerticalAlignment="Center" Foreground="#4EC9B0"/>
+                <StackPanel Grid.Column="2" 
+                            Orientation="Horizontal" 
+                            Spacing="15" 
+                            VerticalAlignment="Center">
+                    <TextBlock Text="🔄 Sync Status: " 
+                               VerticalAlignment="Center" 
+                               Foreground="#CCCCCC"/>
+                    <TextBlock Text="{Binding SyncStatusText}" 
+                               VerticalAlignment="Center" 
+                               Foreground="#4EC9B0"/>
                     
-                    <Separator Width="1" Background="#3F3F46" Margin="5,0"/>
+                    <Separator Width="1" 
+                               Height="20"
+                               Background="#3F3F46" 
+                               Margin="5,0"/>
 
-                    <Button Command="{Binding OpenCloudSettingsCommand}" Content="☁️ Cloud" Classes="MenuButton"/>
-                    <Button Command="{Binding OpenBlacklistCommand}" Content="⛔ Blacklist" Classes="MenuButton"/>
-                    <Button Command="{Binding OpenSettingsCommand}" Content="⚙️ Settings" Classes="MenuButton"/>
-                    <Button Command="{Binding ReportIssueCommand}" Content="🐛 Report Issue" Classes="MenuButton"/>
+                    <Button Command="{Binding OpenCloudSettingsCommand}" 
+                            Content="☁️ Cloud" 
+                            Classes="MenuButton"/>
+                    <Button Command="{Binding OpenBlacklistCommand}" 
+                            Content="⛔ Blacklist" 
+                            Classes="MenuButton"/>
+                    <Button Command="{Binding OpenSettingsCommand}" 
+                            Content="⚙️ Settings" 
+                            Classes="MenuButton"/>
+                    <Button Command="{Binding ReportIssueCommand}" 
+                            Content="🐛 Report Issue" 
+                            Classes="MenuButton"/>
                 </StackPanel>
             </Grid>
         </Border>
@@ -37,15 +152,20 @@
         <Grid Grid.Row="1" ColumnDefinitions="300,*">
             
             <!-- Left Sidebar - Game List -->
-            <Border Background="#252526" BorderBrush="#3F3F46" BorderThickness="0,0,1,0">
+            <Border Background="#252526" 
+                    BorderBrush="#3F3F46" 
+                    BorderThickness="0,0,1,0">
                 <Grid RowDefinitions="Auto,*,Auto">
                     
                     <!-- Search Box -->
-                    <Border Grid.Row="0" Margin="10" Background="#3F3F46" CornerRadius="4">
+                    <Border Grid.Row="0" 
+                            Margin="10" 
+                            Background="#3F3F46" 
+                            CornerRadius="4">
                         <TextBox Watermark="🔍 Search games..." 
                                  Background="Transparent" 
                                  BorderThickness="0"
-                                 Padding="8"/>
+                                 Padding="10,8"/>
                     </Border>
 
                     <!-- Game List -->
@@ -56,14 +176,32 @@
                              Margin="5">
                         <ListBox.ItemTemplate>
                             <DataTemplate>
-                                <Border Background="Transparent" Padding="10" Margin="0,2">
+                                <Border Background="Transparent" 
+                                        Padding="10" 
+                                        Margin="0,2">
                                     <Grid ColumnDefinitions="40,*">
-                                        <Border Width="32" Height="32" Background="#1E1E1E" CornerRadius="4">
-                                            <Image Source="{Binding Icon}" Width="32" Height="32" Stretch="Uniform"/>
+                                        <Border Width="32" 
+                                                Height="32" 
+                                                Background="#1E1E1E" 
+                                                CornerRadius="4">
+                                            <Image Source="{Binding Icon}" 
+                                                   Width="32" 
+                                                   Height="32" 
+                                                   Stretch="Uniform"/>
                                         </Border>
-                                        <StackPanel Grid.Column="1" Margin="10,0,0,0" VerticalAlignment="Center">
-                                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="13"/>
-                                            <TextBlock Text="{Binding InstallDirectory}" ToolTip.Tip="{Binding InstallDirectory}"  FontSize="10" Foreground="#858585" TextTrimming="CharacterEllipsis"/>
+                                        
+                                        <StackPanel Grid.Column="1" 
+                                                    Margin="10,0,0,0" 
+                                                    VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding Name}" 
+                                                       FontWeight="SemiBold" 
+                                                       FontSize="13"
+                                                       Foreground="White"/>
+                                            <TextBlock Text="{Binding InstallDirectory}" 
+                                                       ToolTip.Tip="{Binding InstallDirectory}"
+                                                       FontSize="10" 
+                                                       Foreground="#858585" 
+                                                       TextTrimming="CharacterEllipsis"/>
                                         </StackPanel>
                                     </Grid>
                                 </Border>
@@ -77,7 +215,7 @@
                             Content="+ Add Game Manually" 
                             HorizontalAlignment="Stretch" 
                             Margin="10"
-                            Padding="10"/>
+                            Padding="12,10"/>
                 </Grid>
             </Border>
 
@@ -85,76 +223,127 @@
             <Grid Grid.Column="1" RowDefinitions="Auto,*">
                 
                 <!-- Game Header -->
-                <Border Grid.Row="0" Background="#2D2D30" Padding="20">
+                <Border Grid.Row="0" 
+                        Background="#2D2D30" 
+                        Padding="20"
+                        BorderBrush="#3F3F46"
+                        BorderThickness="0,0,0,1">
                     <Grid ColumnDefinitions="Auto,*,Auto">
-                        <Border Width="80" Height="80" Background="#1E1E1E" CornerRadius="8" Margin="0,0,15,0">
-                            <Image Source="{Binding GameIcon}" Width="80" Height="80" Stretch="Uniform"/>
+                        <Border Width="80" 
+                                Height="80" 
+                                Background="#1E1E1E" 
+                                CornerRadius="8" 
+                                Margin="0,0,15,0">
+                            <Image Source="{Binding GameIcon}" 
+                                   Width="80" 
+                                   Height="80" 
+                                   Stretch="Uniform"/>
                         </Border>
                         
-                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="5">
-                            <TextBlock Text="{Binding GameTitleText}" FontSize="24" FontWeight="Bold"/>
-                            <TextBlock Text="{Binding GamePathText}" FontSize="12" Foreground="#858585"/>
+                        <StackPanel Grid.Column="1" 
+                                    VerticalAlignment="Center" 
+                                    Spacing="5">
+                            <TextBlock Text="{Binding GameTitleText}" 
+                                       FontSize="24" 
+                                       FontWeight="Bold"
+                                       Foreground="White"/>
+                            <TextBlock Text="{Binding GamePathText}" 
+                                       FontSize="12" 
+                                       Foreground="#858585"/>
                         </StackPanel>
 
-                        <StackPanel Grid.Column="2" Spacing="8" VerticalAlignment="Center">
+                        <StackPanel Grid.Column="2" 
+                                    Spacing="8" 
+                                    VerticalAlignment="Center">
                             <Button Command="{Binding LaunchGameCommand}" 
                                     Content="▶️ Launch &amp; Track" 
-                                    Padding="15,8" 
-                                    Background="#0E639C" 
+                                    Classes="Primary"
                                     IsEnabled="{Binding IsLaunchEnabled}"/>
                             <Button Command="{Binding SyncNowCommand}" 
                                     Content="{Binding SyncButtonText}"
-                                    Padding="15,8" 
                                     IsEnabled="{Binding IsSyncEnabled}"/>
                         </StackPanel>
                     </Grid>
                 </Border>
 
                 <!-- Tabs Section -->
-                <TabControl Grid.Row="1" Background="#1E1E1E" Margin="0">
+                <TabControl Grid.Row="1" 
+                            Background="#1E1E1E"
+                            IsEnabled="{Binding SelectedGame, Converter={x:Static ObjectConverters.IsNotNull}}">
                     
                     <!-- Tracked Files Tab -->
                     <TabItem Header="📁 Tracked Files">
                         <Grid RowDefinitions="Auto,Auto,*,Auto">
                             
                             <!-- Action Bar -->
-                            <Border Grid.Row="0" Background="#252526" Padding="15" BorderBrush="#3F3F46" BorderThickness="0,0,0,1">
+                            <Border Grid.Row="0" 
+                                    Background="#252526" 
+                                    Padding="15" 
+                                    BorderBrush="#3F3F46" 
+                                    BorderThickness="0,0,0,1">
                                 <Grid ColumnDefinitions="*,Auto">
                                     <StackPanel Orientation="Horizontal" Spacing="10">
-                                        <Button Command="{Binding AddFilesCommand}" Content="➕ Add Files" Padding="10,6"/>
-                                        <Button Command="{Binding RemoveSelectedFilesCommand}" Content="🗑️ Remove Selected" Padding="10,6"/>
-                                        <Separator Width="1" Background="#3F3F46" Margin="5,0"/>
+                                        <Button Command="{Binding AddFilesCommand}" 
+                                                Content="➕ Add Files"/>
+                                        <Button Command="{Binding RemoveSelectedFilesCommand}" 
+                                                Content="🗑️ Remove Selected"/>
                                     </StackPanel>
                                     
-                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10">
-                                        <CheckBox Content="Auto-upload" IsChecked="{Binding CanUpload}"/>
+                                    <StackPanel Grid.Column="1" 
+                                                Orientation="Horizontal" 
+                                                Spacing="10">
+                                        <CheckBox Content="Auto-upload" 
+                                                  IsChecked="{Binding CanUpload}"/>
                                     </StackPanel>
                                 </Grid>
                             </Border>
 
                             <!-- File List Header -->
-                            <Border Grid.Row="1" Background="#1E1E1E" BorderBrush="#3F3F46" BorderThickness="0,0,0,1">
-                                <Grid Margin="15,10" ColumnDefinitions="40,2*,3*,100,150,120">
-                                    <TextBlock Grid.Column="0" Text="" FontWeight="SemiBold" FontSize="12" Foreground="#858585"/>
-                                    <TextBlock Grid.Column="1" Text="FILE NAME" FontWeight="SemiBold" FontSize="12" Foreground="#858585"/>
-                                    <TextBlock Grid.Column="2" Text="PATH" FontWeight="SemiBold" FontSize="12" Foreground="#858585"/>
-                                    <TextBlock Grid.Column="3" Text="SIZE" FontWeight="SemiBold" FontSize="12" Foreground="#858585"/>
-                                    <TextBlock Grid.Column="4" Text="LAST MODIFIED" FontWeight="SemiBold" FontSize="12" Foreground="#858585"/>
-                                    <TextBlock Grid.Column="5" Text="STATUS" FontWeight="SemiBold" FontSize="12" Foreground="#858585"/>
+                            <Border Grid.Row="1" 
+                                    Background="#1E1E1E" 
+                                    BorderBrush="#3F3F46" 
+                                    BorderThickness="0,0,0,1"
+                                    Padding="15,10">
+                                <Grid ColumnDefinitions="40,2*,3*,100,150,120">
+                                    <TextBlock Grid.Column="1" 
+                                               Text="FILE NAME" 
+                                               FontWeight="SemiBold" 
+                                               FontSize="11" 
+                                               Foreground="#858585"/>
+                                    <TextBlock Grid.Column="2" 
+                                               Text="PATH" 
+                                               FontWeight="SemiBold" 
+                                               FontSize="11" 
+                                               Foreground="#858585"/>
+                                    <TextBlock Grid.Column="3" 
+                                               Text="SIZE" 
+                                               FontWeight="SemiBold" 
+                                               FontSize="11" 
+                                               Foreground="#858585"/>
+                                    <TextBlock Grid.Column="4" 
+                                               Text="LAST MODIFIED" 
+                                               FontWeight="SemiBold" 
+                                               FontSize="11" 
+                                               Foreground="#858585"/>
+                                    <TextBlock Grid.Column="5" 
+                                               Text="STATUS" 
+                                               FontWeight="SemiBold" 
+                                               FontSize="11" 
+                                               Foreground="#858585"/>
                                 </Grid>
                             </Border>
 
                             <!-- File List -->
-                            <ScrollViewer Grid.Row="2" Margin="0,10,0,0">
+                            <ScrollViewer Grid.Row="2">
                                 <ItemsControl ItemsSource="{Binding TrackedFiles}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
                                             <Border Background="#252526"
                                                     BorderBrush="#3F3F46"
                                                     BorderThickness="0,0,0,1"
-                                                    Padding="0,10"
+                                                    Padding="15,12"
                                                     DoubleTapped="TrackedFile_DoubleTapped">
-                                                <Grid Margin="15,0" ColumnDefinitions="40,2*,3*,100,150,120">
+                                                <Grid ColumnDefinitions="40,2*,3*,100,150,120">
                                                     <CheckBox Grid.Column="0" 
                                                               IsChecked="{Binding IsSelected}"
                                                               VerticalAlignment="Center"/>
@@ -206,8 +395,13 @@
                             </ScrollViewer>
 
                             <!-- Summary Bar -->
-                            <Border Grid.Row="3" Background="#252526" Padding="15" BorderBrush="#3F3F46" BorderThickness="0,1,0,0">
-                                <TextBlock Text="{Binding FilesTrackedText}" Foreground="#CCCCCC"/>
+                            <Border Grid.Row="3" 
+                                    Background="#252526" 
+                                    Padding="15" 
+                                    BorderBrush="#3F3F46" 
+                                    BorderThickness="0,1,0,0">
+                                <TextBlock Text="{Binding FilesTrackedText}" 
+                                           Foreground="#CCCCCC"/>
                             </Border>
                         </Grid>
                     </TabItem>
@@ -217,28 +411,60 @@
                         <Grid RowDefinitions="Auto,Auto,*,Auto">
                             
                             <!-- Action Bar -->
-                            <Border Grid.Row="0" Background="#252526" Padding="15" BorderBrush="#3F3F46" BorderThickness="0,0,0,1">
+                            <Border Grid.Row="0" 
+                                    Background="#252526" 
+                                    Padding="15" 
+                                    BorderBrush="#3F3F46" 
+                                    BorderThickness="0,0,0,1">
                                 <Grid ColumnDefinitions="*,Auto">
                                     <StackPanel Orientation="Horizontal" Spacing="10">
-                                        <Button Command="{Binding RefreshCloudFilesCommand}" Content="🔄 Refresh" Padding="10,6"/>
-                                        <Button Command="{Binding DownloadSelectedFilesCommand}" Content="⬇️ Download Selected" Padding="10,6"/>
+                                        <Button Command="{Binding RefreshCloudFilesCommand}" 
+                                                Content="🔄 Refresh"/>
+                                        <Button Command="{Binding DownloadSelectedFilesCommand}" 
+                                                Content="⬇️ Download Selected"/>
                                     </StackPanel>
                                     
-                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10">
-                                        <TextBlock Text="Cloud Storage:" VerticalAlignment="Center" Foreground="#858585"/>
-                                        <TextBlock Text="{Binding CloudStorageText}" VerticalAlignment="Center" Foreground="#4EC9B0" FontWeight="SemiBold"/>
+                                    <StackPanel Grid.Column="1" 
+                                                Orientation="Horizontal" 
+                                                Spacing="10">
+                                        <TextBlock Text="Cloud Storage:" 
+                                                   VerticalAlignment="Center" 
+                                                   Foreground="#858585"/>
+                                        <TextBlock Text="{Binding CloudStorageText}" 
+                                                   VerticalAlignment="Center" 
+                                                   Foreground="#4EC9B0" 
+                                                   FontWeight="SemiBold"/>
                                     </StackPanel>
                                 </Grid>
                             </Border>
 
                             <!-- File List Header -->
-                            <Border Grid.Row="1" Background="#1E1E1E" BorderBrush="#3F3F46" BorderThickness="0,0,0,1">
-                                <Grid Margin="15,10" ColumnDefinitions="40,3*,150,150,120">
-                                    <TextBlock Grid.Column="0" Text="" FontWeight="SemiBold" FontSize="12" Foreground="#858585"/>
-                                    <TextBlock Grid.Column="1" Text="FILE NAME" FontWeight="SemiBold" FontSize="12" Foreground="#858585"/>
-                                    <TextBlock Grid.Column="2" Text="SIZE" FontWeight="SemiBold" FontSize="12" Foreground="#858585"/>
-                                    <TextBlock Grid.Column="3" Text="UPLOADED" FontWeight="SemiBold" FontSize="12" Foreground="#858585"/>
-                                    <TextBlock Grid.Column="4" Text="STATUS" FontWeight="SemiBold" FontSize="12" Foreground="#858585"/>
+                            <Border Grid.Row="1" 
+                                    Background="#1E1E1E" 
+                                    BorderBrush="#3F3F46" 
+                                    BorderThickness="0,0,0,1"
+                                    Padding="15,10">
+                                <Grid ColumnDefinitions="40,3*,150,150,120">
+                                    <TextBlock Grid.Column="1" 
+                                               Text="FILE NAME" 
+                                               FontWeight="SemiBold" 
+                                               FontSize="11" 
+                                               Foreground="#858585"/>
+                                    <TextBlock Grid.Column="2" 
+                                               Text="SIZE" 
+                                               FontWeight="SemiBold" 
+                                               FontSize="11" 
+                                               Foreground="#858585"/>
+                                    <TextBlock Grid.Column="3" 
+                                               Text="UPLOADED" 
+                                               FontWeight="SemiBold" 
+                                               FontSize="11" 
+                                               Foreground="#858585"/>
+                                    <TextBlock Grid.Column="4" 
+                                               Text="STATUS" 
+                                               FontWeight="SemiBold" 
+                                               FontSize="11" 
+                                               Foreground="#858585"/>
                                 </Grid>
                             </Border>
 
@@ -250,8 +476,8 @@
                                             <Border Background="#252526"
                                                     BorderBrush="#3F3F46"
                                                     BorderThickness="0,0,0,1"
-                                                    Padding="0,10">
-                                                <Grid Margin="15,0" ColumnDefinitions="40,3*,150,150,120">
+                                                    Padding="15,12">
+                                                <Grid ColumnDefinitions="40,3*,150,150,120">
                                                     <CheckBox Grid.Column="0" 
                                                               IsChecked="{Binding IsSelected}"
                                                               VerticalAlignment="Center"/>
@@ -294,88 +520,160 @@
                             </ScrollViewer>
 
                             <!-- Summary Bar -->
-                            <Border Grid.Row="3" Background="#252526" Padding="15" BorderBrush="#3F3F46" BorderThickness="0,1,0,0">
-                                <TextBlock Text="{Binding CloudFilesCountText}" Foreground="#CCCCCC"/>
+                            <Border Grid.Row="3" 
+                                    Background="#252526" 
+                                    Padding="15" 
+                                    BorderBrush="#3F3F46" 
+                                    BorderThickness="0,1,0,0">
+                                <TextBlock Text="{Binding CloudFilesCountText}" 
+                                           Foreground="#CCCCCC"/>
                             </Border>
                         </Grid>
                     </TabItem>
 
-                </TabControl>
+                    <!-- Game Settings Tab -->
+                    <TabItem Header="⚙️ Settings">
+                        <Grid RowDefinitions="Auto,*">
+                            
+                            <!-- Settings Header with Action Buttons -->
+                            <Border Grid.Row="0" 
+                                    Background="#252526" 
+                                    Padding="15" 
+                                    BorderBrush="#3F3F46" 
+                                    BorderThickness="0,0,0,1">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Text="Game-Specific Settings" 
+                                               FontSize="16" 
+                                               FontWeight="SemiBold" 
+                                               Foreground="White"
+                                               VerticalAlignment="Center"/>
+                                    
+                                    <StackPanel Grid.Column="1" 
+                                                Orientation="Horizontal" 
+                                                Spacing="10">
+                                        <Button Command="{Binding ResetGameSettingsToDefaultsCommand}" 
+                                                Content="Reset to Defaults"/>
+                                        <Button Command="{Binding SaveGameSettingsCommand}" 
+                                                Content="💾 Save Settings" 
+                                                Classes="Primary"/>
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
 
+                            <!-- Settings Content -->
+                            <ScrollViewer Grid.Row="1" Padding="20">
+                                <StackPanel Spacing="20" Margin="0,0,0,40">
+                                    
+                                    <!-- Tracking Settings Section -->
+                                    <Border Background="#2D2D30" 
+                                            Padding="20" 
+                                            CornerRadius="8">
+                                        <StackPanel Spacing="15">
+                                            <TextBlock Text="📊 Tracking Settings" 
+                                                       FontSize="14" 
+                                                       FontWeight="SemiBold" 
+                                                       Foreground="#4EC9B0"/>
+                                            
+                                            <CheckBox Content="Enable file tracking for this game" 
+                                                      IsChecked="{Binding GameCanTrack}"/>
+                                            
+                                            <CheckBox Content="Enable automatic uploads for this game" 
+                                                      IsChecked="{Binding GameCanUploads}"/>
+                                            
+                                            <TextBlock Text="When disabled, files will not be tracked or uploaded for this game, even if global settings are enabled." 
+                                                       FontSize="11" 
+                                                       Foreground="#858585" 
+                                                       TextWrapping="Wrap"
+                                                       Margin="0,5,0,0"/>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <!-- Cloud Provider Settings Section -->
+                                    <Border Background="#2D2D30" 
+                                            Padding="20" 
+                                            CornerRadius="8">
+                                        <StackPanel Spacing="15">
+                                            <TextBlock Text="☁️ Cloud Provider" 
+                                                       FontSize="14" 
+                                                       FontWeight="SemiBold" 
+                                                       Foreground="#4EC9B0"/>
+                                            
+                                            <StackPanel Spacing="8">
+                                                <TextBlock Text="Cloud Provider:" 
+                                                           Foreground="#CCCCCC"/>
+                                                <ComboBox ItemsSource="{Binding AvailableProviders}"
+                                                          SelectedItem="{Binding SelectedProviderItem}"
+                                                          MinWidth="250"
+                                                          HorizontalAlignment="Left">
+                                                    <ComboBox.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <TextBlock Text="{Binding DisplayName}"/>
+                                                        </DataTemplate>
+                                                    </ComboBox.ItemTemplate>
+                                                </ComboBox>
+                                            </StackPanel>
+                                            
+                                            <TextBlock Text="Select 'Use Global Setting' to use the default cloud provider configured in Cloud Settings. Choose a specific provider to override for this game only." 
+                                                       FontSize="11" 
+                                                       Foreground="#858585" 
+                                                       TextWrapping="Wrap"
+                                                       Margin="0,5,0,0"/>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <!-- Game Watcher Settings Section -->
+                                    <Border Background="#2D2D30" 
+                                            Padding="20" 
+                                            CornerRadius="8">
+                                        <StackPanel Spacing="15">
+                                            <TextBlock Text="👁️ Game Watcher" 
+                                                       FontSize="14" 
+                                                       FontWeight="SemiBold" 
+                                                       Foreground="#4EC9B0"/>
+                                            
+                                            <CheckBox Content="Allow automatic game detection" 
+                                                      IsChecked="{Binding GameAllowWatcher}"/>
+                                            
+                                            <TextBlock Text="When enabled, the game watcher will automatically detect and track this game when it's launched externally. Disable this if you only want to track the game when launched through SaveTracker." 
+                                                       FontSize="11" 
+                                                       Foreground="#858585" 
+                                                       TextWrapping="Wrap"
+                                                       Margin="0,5,0,0"/>
+                                        </StackPanel>
+                                    </Border>
+                                </StackPanel>
+                            </ScrollViewer>
+                        </Grid>
+                    </TabItem>
+                </TabControl>
             </Grid>
         </Grid>
 
         <!-- Bottom Status Bar -->
-        <Border Grid.Row="2" Background="#007ACC" Padding="10,8">
+        <Border Grid.Row="2" 
+                Background="#007ACC" 
+                Padding="12,8">
             <Grid ColumnDefinitions="Auto,*,Auto">
                 <StackPanel Orientation="Horizontal" Spacing="15">
-                    <TextBlock Text="{Binding AppVersion}" Foreground="White" FontWeight="SemiBold"/>
-                    <Separator Width="1" Background="White" Opacity="0.3"/>
-                    <TextBlock Text="Platform: Windows" Foreground="White"/>
+                    <TextBlock Text="{Binding AppVersion}" 
+                               Foreground="White" 
+                               FontWeight="SemiBold"/>
+                    <Separator Width="1" 
+                               Height="16"
+                               Background="White" 
+                               Opacity="0.3"
+                               VerticalAlignment="Center"/>
+                    <TextBlock Text="Platform: Windows" 
+                               Foreground="White"/>
                 </StackPanel>
                 
-                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="10">
-                    <TextBlock Text="{Binding GamesCountText}" Foreground="White"/>
+                <StackPanel Grid.Column="2" 
+                            Orientation="Horizontal" 
+                            Spacing="10">
+                    <TextBlock Text="{Binding GamesCountText}" 
+                               Foreground="White"/>
                 </StackPanel>
             </Grid>
         </Border>
-
     </Grid>
-
-    <Window.Styles>
-        <Style Selector="Button.MenuButton">
-            <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="Foreground" Value="#CCCCCC"/>
-            <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Padding" Value="10,6"/>
-        </Style>
-        <Style Selector="Button.MenuButton:pointerover">
-            <Setter Property="Background" Value="#3F3F46"/>
-        </Style>
-        
-        <Style Selector="ListBoxItem">
-            <Setter Property="Padding" Value="0"/>
-        </Style>
-        <Style Selector="ListBoxItem:pointerover /template/ ContentPresenter">
-            <Setter Property="Background" Value="#2D2D30"/>
-        </Style>
-        <Style Selector="ListBoxItem:selected /template/ ContentPresenter">
-            <Setter Property="Background" Value="#3F3F46"/>
-        </Style>
-        
-        <Style Selector="Button">
-            <Setter Property="Background" Value="#3F3F46"/>
-            <Setter Property="Foreground" Value="#CCCCCC"/>
-            <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="CornerRadius" Value="4"/>
-            <Setter Property="Cursor" Value="Hand"/>
-        </Style>
-        <Style Selector="Button:pointerover">
-            <Setter Property="Background" Value="#505050"/>
-        </Style>
-        
-        <Style Selector="CheckBox">
-            <Setter Property="Foreground" Value="#CCCCCC"/>
-        </Style>
-        
-        <Style Selector="TabItem">
-            <Setter Property="FontSize" Value="13"/>
-            <Setter Property="Padding" Value="15,10"/>
-        </Style>
-        
-        <Style Selector="TextBox">
-            <Setter Property="Background" Value="#3F3F46"/>
-            <Setter Property="Foreground" Value="#CCCCCC"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="BorderBrush" Value="#555555"/>
-            <Setter Property="Padding" Value="8"/>
-            <Setter Property="CornerRadius" Value="4"/>
-        </Style>
-        
-        <Style Selector="ComboBox">
-            <Setter Property="Background" Value="#3F3F46"/>
-            <Setter Property="Foreground" Value="#CCCCCC"/>
-        </Style>
-    </Window.Styles>
-
 </Window>

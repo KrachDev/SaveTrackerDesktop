@@ -16,6 +16,7 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
         public Dictionary<string, FileChecksumRecord> Blacklist { get; set; } =
             new Dictionary<string, FileChecksumRecord>();
         public string LastSyncStatus { get; set; } = "Unknown";
+        public bool AllowGameWatcher { get; set; } = true;
     }
 
     public class FileChecksumRecord

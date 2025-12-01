@@ -143,6 +143,7 @@ namespace SaveTracker.ViewModels
             _configManagement = new ConfigManagement();
             _rcloneFileOperations = new RcloneFileOperations();
             _providerHelper = new CloudProviderHelper();
+            InitializeGameSettingsProviders();  // ← ADD THIS LINE
 
             InitializeAsync();
         }
@@ -319,7 +320,8 @@ namespace SaveTracker.ViewModels
 
                 // Load tracked files
                 await UpdateTrackedListAsync(game);
-
+                // Load game-specific settings
+                await LoadGameSettingsAsync(game);  // ← ADD THIS LINE
                 // Clear cloud files (load on demand when tab is selected)
                 CloudFiles.Clear();
                 CloudFilesCountText = "Click refresh to load";
@@ -407,13 +409,10 @@ namespace SaveTracker.ViewModels
                 // Check Rclone Config
                 var config = await ConfigManagement.LoadConfigAsync();
                 var provider = config?.CloudConfig;
+                var effectiveProvider = GetEffectiveProviderForGame();
                 var rcloneInstaller = new RcloneInstaller();
 
-                bool rcloneReady = false;
-                if (provider != null)
-                {
-                    rcloneReady = await rcloneInstaller.RcloneCheckAsync(provider.Provider);
-                }
+                bool rcloneReady = await rcloneInstaller.RcloneCheckAsync(effectiveProvider);
 
                 if (!rcloneReady)
                 {
@@ -424,10 +423,9 @@ namespace SaveTracker.ViewModels
                         // Reload config and re-check
                         config = await ConfigManagement.LoadConfigAsync();
                         provider = config?.CloudConfig;
-                        if (provider != null)
-                        {
-                            rcloneReady = await rcloneInstaller.RcloneCheckAsync(provider.Provider);
-                        }
+                        effectiveProvider = GetEffectiveProviderForGame();
+
+                        rcloneReady = await rcloneInstaller.RcloneCheckAsync(effectiveProvider);
                     }
 
                     if (!rcloneReady)
@@ -437,10 +435,10 @@ namespace SaveTracker.ViewModels
                 }
 
                 // Check for Cloud Saves (if Rclone is ready)
-                if (rcloneReady && provider != null)
+                if (rcloneReady)
                 {
                     var rcloneOps = new RcloneFileOperations(game);
-                    var remoteName = _providerHelper.GetProviderConfigName(provider.Provider);
+                    var remoteName = _providerHelper.GetProviderConfigName(effectiveProvider);
                     var sanitizedGameName = SanitizeGameName(game.Name);
                     var remoteBasePath = $"{remoteName}:{SaveFileUploadManager.RemoteBaseFolder}/{sanitizedGameName}";
                     bool shouldWeCheckForSaveExisi = Misc.ShouldWeCheckForSaveExists(game);
@@ -561,7 +559,10 @@ namespace SaveTracker.ViewModels
                     {
                         if (SelectedGame?.Game != null && _trackLogic != null)
                         {
-                            await _trackLogic.Track(SelectedGame.Game);
+                            if (IsTrackingEnabledForGame())
+                            {
+                                await _trackLogic.Track(SelectedGame.Game);
+                            }
                         }
 
                         await Task.Delay(5000, cancellationToken);
@@ -611,9 +612,13 @@ namespace SaveTracker.ViewModels
 
                 DebugConsole.WriteInfo($"Processing {trackedFiles.Count} tracked files...");
 
-                if (CanUpload)
+                if (CanUpload && AreUploadsEnabledForGame())
                 {
                     await UploadFilesAsync(trackedFiles, game);
+                }
+                else if (!AreUploadsEnabledForGame())
+                {
+                    DebugConsole.WriteInfo("Uploads are disabled for this game");
                 }
             }
             catch (Exception ex)
@@ -1170,6 +1175,14 @@ namespace SaveTracker.ViewModels
         {
             try
             {
+                // Check if watcher is allowed for this game
+                var gameData = await ConfigManagement.GetGameData(game);
+                if (gameData != null && !gameData.AllowGameWatcher)
+                {
+                    DebugConsole.WriteInfo($"Auto-detection ignored for {game.Name} (disabled in settings)");
+                    return;
+                }
+
                 DebugConsole.WriteSuccess($"Auto-detected running game: {game.Name} (PID: {processId})");
 
                 // Find the corresponding GameViewModel
