@@ -45,9 +45,13 @@ namespace SaveTracker.ViewModels
                 {
                     GameProvider = value.Provider;
                     OnPropertyChanged(nameof(SelectedProviderItem));
+                    UpdateEffectiveProviderText();
                 }
             }
         }
+
+        [ObservableProperty]
+        private string _effectiveProviderText = string.Empty;
 
         private GameUploadData? _currentGameUploadData;
 
@@ -58,12 +62,18 @@ namespace SaveTracker.ViewModels
         /// </summary>
         private void InitializeGameSettingsProviders()
         {
+            AvailableProviders.Clear();
+
+            // Add "Global" option first
             AvailableProviders.Add(new CloudProviderItem(CloudProvider.Global, "Use Global Setting"));
-            AvailableProviders.Add(new CloudProviderItem(CloudProvider.OneDrive, "OneDrive"));
-            AvailableProviders.Add(new CloudProviderItem(CloudProvider.GoogleDrive, "Google Drive"));
-            AvailableProviders.Add(new CloudProviderItem(CloudProvider.Dropbox, "Dropbox"));
-            AvailableProviders.Add(new CloudProviderItem(CloudProvider.Box, "Box"));
-            AvailableProviders.Add(new CloudProviderItem(CloudProvider.Pcloud, "pCloud"));
+
+            // Add all supported providers using CloudProviderHelper
+            var supportedProviders = _providerHelper.GetSupportedProviders();
+            foreach (var provider in supportedProviders)
+            {
+                var displayName = _providerHelper.GetProviderDisplayName(provider);
+                AvailableProviders.Add(new CloudProviderItem(provider, displayName));
+            }
         }
 
         // ========== LOAD GAME SETTINGS ==========
@@ -85,6 +95,8 @@ namespace SaveTracker.ViewModels
                     GameProvider = _currentGameUploadData.GameProvider;
                     GameAllowWatcher = _currentGameUploadData.AllowGameWatcher;
 
+                    UpdateEffectiveProviderText();
+
                     DebugConsole.WriteInfo($"Loaded settings for {game.Name}: Track={GameCanTrack}, Upload={GameCanUploads}, Provider={GameProvider}");
                 }
                 else
@@ -94,6 +106,8 @@ namespace SaveTracker.ViewModels
                     GameCanUploads = true;
                     GameProvider = CloudProvider.Global;
                     GameAllowWatcher = true;
+
+                    UpdateEffectiveProviderText();
 
                     DebugConsole.WriteInfo($"No settings found for {game.Name}, using defaults");
                 }
@@ -204,6 +218,37 @@ namespace SaveTracker.ViewModels
             // This would need to load the game's settings
             // For now, return true as default
             return _currentGameUploadData?.AllowGameWatcher ?? true;
+        }
+
+        /// <summary>
+        /// Updates the text showing which provider is actually being used
+        /// </summary>
+        public void UpdateEffectiveProviderText()
+        {
+            var effective = GetEffectiveProviderForGame();
+            var providerName = _providerHelper.GetProviderDisplayName(effective);
+
+            if (GameProvider == CloudProvider.Global)
+            {
+                EffectiveProviderText = $"Using Global ({providerName})";
+            }
+            else
+            {
+                EffectiveProviderText = $"Using {providerName}";
+            }
+
+            // Also update the main window status text if this is the selected game
+            if (SelectedGame?.Game != null)
+            {
+                if (effective != _selectedProvider)
+                {
+                    CloudStorageText = $"{_providerHelper.GetProviderDisplayName(_selectedProvider)} (Game: {providerName})";
+                }
+                else
+                {
+                    CloudStorageText = _providerHelper.GetProviderDisplayName(_selectedProvider);
+                }
+            }
         }
     }
 }

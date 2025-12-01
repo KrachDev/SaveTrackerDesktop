@@ -28,6 +28,34 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             _currentGame = currentGame;
         }
 
+        private async Task<CloudProvider> GetEffectiveProvider(Game game)
+        {
+            if (game == null) return CloudProvider.GoogleDrive;
+
+            try
+            {
+                var gameData = await ConfigManagement.GetGameData(game);
+                if (gameData != null && gameData.GameProvider != CloudProvider.Global)
+                {
+                    return gameData.GameProvider;
+                }
+            }
+            catch
+            {
+                // Ignore errors loading game data
+            }
+
+            try
+            {
+                var globalConfig = await ConfigManagement.LoadConfigAsync();
+                return globalConfig?.CloudConfig?.Provider ?? CloudProvider.GoogleDrive;
+            }
+            catch
+            {
+                return CloudProvider.GoogleDrive;
+            }
+        }
+
         private bool EnsureGameDirectoryExists(string gameDirectory)
         {
             try
@@ -53,7 +81,8 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             string filePath,
             string remoteBasePath,
             UploadStats stats,
-            Game game = null)
+            Game game = null,
+            CloudProvider? provider = null)
         {
             // Use provided game or fall back to constructor game
             game = game ?? _currentGame;
@@ -113,7 +142,8 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
 
                 DebugConsole.WriteInfo($"UPLOADING: {fileName}");
 
-                bool uploadSuccess = await _transferService.UploadFileWithRetry(filePath, remotePath, fileName);
+                CloudProvider effectiveProvider = provider ?? await GetEffectiveProvider(game);
+                bool uploadSuccess = await _transferService.UploadFileWithRetry(filePath, remotePath, fileName, effectiveProvider);
 
                 if (uploadSuccess)
                 {
@@ -233,11 +263,12 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             await _checksumService.SaveChecksumData(data, game.InstallDirectory);
         }
 
-        public async Task<bool> ShouldUploadFile(string localFilePath, string remotePath)
+        public async Task<bool> ShouldUploadFile(string localFilePath, string remotePath, CloudProvider? provider = null)
         {
             try
             {
-                bool remoteExists = await _transferService.RemoteFileExists(remotePath);
+                CloudProvider effectiveProvider = provider ?? await GetEffectiveProvider(_currentGame);
+                bool remoteExists = await _transferService.RemoteFileExists(remotePath, effectiveProvider);
                 if (!remoteExists)
                 {
                     DebugConsole.WriteInfo("Remote file doesn't exist - upload needed");
@@ -256,17 +287,19 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             }
         }
 
-        public async Task<bool> CheckCloudSaveExistsAsync(string remoteBasePath)
+        public async Task<bool> CheckCloudSaveExistsAsync(string remoteBasePath, CloudProvider? provider = null)
         {
-            return await _transferService.CheckCloudSaveExistsAsync(remoteBasePath);
+            CloudProvider effectiveProvider = provider ?? await GetEffectiveProvider(_currentGame);
+            return await _transferService.CheckCloudSaveExistsAsync(remoteBasePath, effectiveProvider);
         }
 
-        public async Task<bool> DownloadDirectory(string remotePath, string localPath)
+        public async Task<bool> DownloadDirectory(string remotePath, string localPath, CloudProvider? provider = null)
         {
-            return await _transferService.DownloadDirectory(remotePath, localPath);
+            CloudProvider effectiveProvider = provider ?? await GetEffectiveProvider(_currentGame);
+            return await _transferService.DownloadDirectory(remotePath, localPath, effectiveProvider);
         }
 
-        public async Task<bool> DownloadWithChecksumAsync(string remotePath, Game game)
+        public async Task<bool> DownloadWithChecksumAsync(string remotePath, Game game, CloudProvider? provider = null)
         {
             string stagingFolder = Path.Combine(Path.GetTempPath(), "SaveTracker_Download_" + Guid.NewGuid().ToString("N"));
 
@@ -275,7 +308,8 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                 DebugConsole.WriteInfo($"Downloading cloud saves to staging folder: {stagingFolder}");
                 Directory.CreateDirectory(stagingFolder);
 
-                var downloadResult = await _transferService.DownloadDirectory(remotePath, stagingFolder);
+                CloudProvider effectiveProvider = provider ?? await GetEffectiveProvider(game);
+                var downloadResult = await _transferService.DownloadDirectory(remotePath, stagingFolder, effectiveProvider);
 
                 if (!downloadResult)
                 {
@@ -367,138 +401,142 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                 }
             }
         }
-        public async Task<bool> DownloadSelectedFilesAsync(string remotePath, Game game, List<string> selectedRelativePaths)
-{
-    string stagingFolder = Path.Combine(Path.GetTempPath(), "SaveTracker_Download_" + Guid.NewGuid().ToString("N"));
-
-    try
-    {
-        DebugConsole.WriteInfo($"Downloading selected cloud saves to staging folder: {stagingFolder}");
-        Directory.CreateDirectory(stagingFolder);
-
-        // First, download the checksum file to know what files are available
-        var checksumResult = await _transferService.DownloadFileWithRetry(
-            remotePath, 
-            stagingFolder, 
-            SaveFileUploadManager.ChecksumFilename);
-
-        if (!checksumResult)
+        public async Task<bool> DownloadSelectedFilesAsync(string remotePath, Game game, List<string> selectedRelativePaths, CloudProvider? provider = null)
         {
-            DebugConsole.WriteError($"Failed to download checksum file");
-            return false;
-        }
+            string stagingFolder = Path.Combine(Path.GetTempPath(), "SaveTracker_Download_" + Guid.NewGuid().ToString("N"));
 
-        string checksumFilePath = Path.Combine(stagingFolder, SaveFileUploadManager.ChecksumFilename);
-        if (!File.Exists(checksumFilePath))
-        {
-            DebugConsole.WriteError("Checksum file not found after download");
-            return false;
-        }
-
-        DebugConsole.WriteInfo("Reading checksum file...");
-        string checksumJson = await File.ReadAllTextAsync(checksumFilePath);
-        var checksumData = JsonConvert.DeserializeObject<GameUploadData>(checksumJson);
-
-        if (checksumData?.Files == null || checksumData.Files.Count == 0)
-        {
-            DebugConsole.WriteWarning("Checksum file is empty or invalid");
-            return false;
-        }
-
-        // Filter to only selected files
-        var selectedFiles = checksumData.Files
-            .Where(f => selectedRelativePaths.Contains(f.Key))
-            .ToList();
-
-        if (selectedFiles.Count == 0)
-        {
-            DebugConsole.WriteWarning("None of the selected files were found in the checksum data");
-            return false;
-        }
-
-        DebugConsole.WriteInfo($"Downloading {selectedFiles.Count} selected files...");
-
-        int successCount = 0;
-        int failCount = 0;
-
-        // Download each selected file individually
-        foreach (var fileEntry in selectedFiles)
-        {
             try
             {
-                string relativePath = fileEntry.Key;
-                string fileName = Path.GetFileName(relativePath);
-                
-                // Download the specific file from remote
-                var downloadResult = await _transferService.DownloadFileWithRetry(
+                DebugConsole.WriteInfo($"Downloading selected cloud saves to staging folder: {stagingFolder}");
+                Directory.CreateDirectory(stagingFolder);
+
+                CloudProvider effectiveProvider = provider ?? await GetEffectiveProvider(game);
+
+                // First, download the checksum file to know what files are available
+                var checksumResult = await _transferService.DownloadFileWithRetry(
                     remotePath,
                     stagingFolder,
-                    relativePath);
+                    SaveFileUploadManager.ChecksumFilename,
+                    effectiveProvider);
 
-                if (!downloadResult)
+                if (!checksumResult)
                 {
-                    DebugConsole.WriteWarning($"Failed to download: {relativePath}");
-                    failCount++;
-                    continue;
+                    DebugConsole.WriteError($"Failed to download checksum file");
+                    return false;
                 }
 
-                // Try the full relative path first (Rclone preserves structure)
-                string sourceFile = Path.Combine(stagingFolder, relativePath);
-                if (!File.Exists(sourceFile))
+                string checksumFilePath = Path.Combine(stagingFolder, SaveFileUploadManager.ChecksumFilename);
+                if (!File.Exists(checksumFilePath))
                 {
-                    // Fallback to flat filename
-                    sourceFile = Path.Combine(stagingFolder, fileName);
+                    DebugConsole.WriteError("Checksum file not found after download");
+                    return false;
                 }
 
-                string targetPath = fileEntry.Value.GetAbsolutePath(game.InstallDirectory);
-                if (!File.Exists(sourceFile))
+                DebugConsole.WriteInfo("Reading checksum file...");
+                string checksumJson = await File.ReadAllTextAsync(checksumFilePath);
+                var checksumData = JsonConvert.DeserializeObject<GameUploadData>(checksumJson);
+
+                if (checksumData?.Files == null || checksumData.Files.Count == 0)
                 {
-                    DebugConsole.WriteWarning($"File not found in staging: {fileName}");
-                    failCount++;
-                    continue;
+                    DebugConsole.WriteWarning("Checksum file is empty or invalid");
+                    return false;
                 }
 
-                string? targetDir = Path.GetDirectoryName(targetPath);
-                if (!string.IsNullOrEmpty(targetDir) && !Directory.Exists(targetDir))
+                // Filter to only selected files
+                var selectedFiles = checksumData.Files
+                    .Where(f => selectedRelativePaths.Contains(f.Key))
+                    .ToList();
+
+                if (selectedFiles.Count == 0)
                 {
-                    Directory.CreateDirectory(targetDir);
+                    DebugConsole.WriteWarning("None of the selected files were found in the checksum data");
+                    return false;
                 }
 
-                File.Copy(sourceFile, targetPath, overwrite: true);
-                DebugConsole.WriteSuccess($"✓ Restored: {relativePath}");
-                successCount++;
+                DebugConsole.WriteInfo($"Downloading {selectedFiles.Count} selected files...");
+
+                int successCount = 0;
+                int failCount = 0;
+
+                // Download each selected file individually
+                foreach (var fileEntry in selectedFiles)
+                {
+                    try
+                    {
+                        string relativePath = fileEntry.Key;
+                        string fileName = Path.GetFileName(relativePath);
+
+                        // Download the specific file from remote
+                        var downloadResult = await _transferService.DownloadFileWithRetry(
+                            remotePath,
+                            stagingFolder,
+                            relativePath,
+                            effectiveProvider);
+
+                        if (!downloadResult)
+                        {
+                            DebugConsole.WriteWarning($"Failed to download: {relativePath}");
+                            failCount++;
+                            continue;
+                        }
+
+                        // Try the full relative path first (Rclone preserves structure)
+                        string sourceFile = Path.Combine(stagingFolder, relativePath);
+                        if (!File.Exists(sourceFile))
+                        {
+                            // Fallback to flat filename
+                            sourceFile = Path.Combine(stagingFolder, fileName);
+                        }
+
+                        string targetPath = fileEntry.Value.GetAbsolutePath(game.InstallDirectory);
+                        if (!File.Exists(sourceFile))
+                        {
+                            DebugConsole.WriteWarning($"File not found in staging: {fileName}");
+                            failCount++;
+                            continue;
+                        }
+
+                        string? targetDir = Path.GetDirectoryName(targetPath);
+                        if (!string.IsNullOrEmpty(targetDir) && !Directory.Exists(targetDir))
+                        {
+                            Directory.CreateDirectory(targetDir);
+                        }
+
+                        File.Copy(sourceFile, targetPath, overwrite: true);
+                        DebugConsole.WriteSuccess($"✓ Restored: {relativePath}");
+                        successCount++;
+                    }
+                    catch (Exception ex)
+                    {
+                        DebugConsole.WriteError($"✗ Failed to restore {fileEntry.Key}: {ex.Message}");
+                        failCount++;
+                    }
+                }
+
+                DebugConsole.WriteSuccess($"Download complete: {successCount} files restored, {failCount} failed");
+                return failCount == 0;
             }
             catch (Exception ex)
             {
-                DebugConsole.WriteError($"✗ Failed to restore {fileEntry.Key}: {ex.Message}");
-                failCount++;
+                DebugConsole.WriteException(ex, "Selective download failed");
+                return false;
             }
-        }
-
-        DebugConsole.WriteSuccess($"Download complete: {successCount} files restored, {failCount} failed");
-        return failCount == 0;
-    }
-    catch (Exception ex)
-    {
-        DebugConsole.WriteException(ex, "Selective download failed");
-        return false;
-    }
-    finally
-    {
-        try
-        {
-            if (Directory.Exists(stagingFolder))
+            finally
             {
-                Directory.Delete(stagingFolder, recursive: true);
-                DebugConsole.WriteInfo("Staging folder cleaned up");
+                try
+                {
+                    if (Directory.Exists(stagingFolder))
+                    {
+                        Directory.Delete(stagingFolder, recursive: true);
+                        DebugConsole.WriteInfo("Staging folder cleaned up");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    DebugConsole.WriteWarning($"Failed to clean up staging folder: {ex.Message}");
+                }
             }
         }
-        catch (Exception ex)
-        {
-            DebugConsole.WriteWarning($"Failed to clean up staging folder: {ex.Message}");
-        }
-    }
-}
         private async Task CopyDirectoryContents(string sourceDir, string targetDir)
         {
             foreach (string file in Directory.GetFiles(sourceDir))
@@ -521,9 +559,11 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             DownloadResult downloadResult,
             bool overwriteExisting,
             Game game = null,
-            Action<string> progressCallback = null)
+            Action<string> progressCallback = null,
+            CloudProvider? provider = null)
         {
             game = game ?? _currentGame;
+            CloudProvider effectiveProvider = provider ?? await GetEffectiveProvider(game);
 
             if (remoteFile == null)
             {
@@ -604,7 +644,7 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                     );
                 }
 
-                bool shouldDownload = await ShouldDownloadFile(localFilePath, overwriteExisting);
+                bool shouldDownload = await ShouldDownloadFile(localFilePath, overwriteExisting, effectiveProvider);
 
                 if (!shouldDownload)
                 {
@@ -623,7 +663,8 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                 bool downloadSuccess = await _transferService.DownloadFileWithRetry(
                     remoteFilePath,
                     localFilePath,
-                    remoteFile.Name
+                    remoteFile.Name,
+                    effectiveProvider
                 );
 
                 if (downloadSuccess)
@@ -659,7 +700,7 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             }
         }
 
-        private Task<bool> ShouldDownloadFile(string localFilePath, bool overwriteExisting)
+        private Task<bool> ShouldDownloadFile(string localFilePath, bool overwriteExisting, CloudProvider? provider = null)
         {
             try
             {
@@ -693,9 +734,10 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             return await _checksumService.GetFileChecksum(filePath);
         }
 
-        public async Task<bool> DownloadFile(string remotePath, string localPath)
+        public async Task<bool> DownloadFile(string remotePath, string localPath, CloudProvider? provider = null)
         {
-            return await _transferService.DownloadFileWithRetry(remotePath, localPath, Path.GetFileName(localPath));
+            CloudProvider effectiveProvider = provider ?? await GetEffectiveProvider(_currentGame);
+            return await _transferService.DownloadFileWithRetry(remotePath, localPath, Path.GetFileName(localPath), effectiveProvider);
         }
 
         public async Task CleanupChecksumRecords(Game game, TimeSpan maxAge)

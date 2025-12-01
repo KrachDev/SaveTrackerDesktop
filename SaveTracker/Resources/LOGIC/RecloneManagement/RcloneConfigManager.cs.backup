@@ -1,7 +1,7 @@
 ﻿using Newtonsoft.Json;
 using SaveTracker.Resources.HELPERS;
+
 using System;
-using System.Diagnostics;
 using System.IO;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
@@ -22,18 +22,12 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             "ExtraTools"
         );
 
-        // Config paths are now provider-specific via RclonePathHelper.GetConfigPath(provider)
+        private readonly string _configPath = Path.Combine(ToolsPath, "rclone.conf");
 
         /// <summary>
         /// Validates if the rclone config file is valid for the specified provider
         /// </summary>
-        public Task<bool> IsValidConfig(CloudProvider provider)
-        {
-            string path = RclonePathHelper.GetConfigPath(provider);
-            return IsValidConfigInternal(path, provider);
-        }
-
-        private Task<bool> IsValidConfigInternal(string path, CloudProvider provider)
+        public Task<bool> IsValidConfig(string path, CloudProvider provider)
         {
             string providerName = _cloudProviderHelper.GetProviderConfigName(provider);
             string providerType = _cloudProviderHelper.GetProviderConfigType(provider);
@@ -104,32 +98,6 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
         }
 
         /// <summary>
-        /// Migrates legacy rclone.conf to provider-specific config if needed
-        /// </summary>
-        private async Task MigrateLegacyConfigIfNeeded(CloudProvider provider)
-        {
-            string legacyPath = RclonePathHelper.LegacyConfigPath;
-            string newPath = RclonePathHelper.GetConfigPath(provider);
-
-            if (File.Exists(legacyPath) && !File.Exists(newPath))
-            {
-                DebugConsole.WriteInfo($"Migrating legacy config to {Path.GetFileName(newPath)}");
-
-                // Check if legacy config is for this provider
-                if (await IsValidConfigInternal(legacyPath, provider))
-                {
-                    File.Copy(legacyPath, newPath);
-                    DebugConsole.WriteSuccess("Legacy config migrated successfully");
-
-                    // Rename legacy to backup
-                    string backupPath = $"{legacyPath}.migrated_{DateTime.Now:yyyyMMdd_HHmmss}";
-                    File.Move(legacyPath, backupPath);
-                    DebugConsole.WriteInfo($"Legacy config backed up to: {backupPath}");
-                }
-            }
-        }
-
-        /// <summary>
         /// Creates a new rclone config for the specified provider (opens browser for OAuth)
         /// </summary>
         public async Task<bool> CreateConfig(CloudProvider provider)
@@ -142,31 +110,23 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
 
             try
             {
-                string configPath = RclonePathHelper.GetConfigPath(provider);
-
-                // Kill any existing rclone processes to avoid port conflicts
-                KillExistingRcloneProcesses();
-
-                // Migrate legacy config if it exists
-                await MigrateLegacyConfigIfNeeded(provider);
-
                 // Backup existing config if it exists
-                if (File.Exists(configPath))
+                if (File.Exists(_configPath))
                 {
-                    string backupPath = $"{configPath}.backup_{DateTime.Now:yyyyMMdd_HHmmss}";
-                    File.Move(configPath, backupPath);
+                    string backupPath = $"{_configPath}.backup_{DateTime.Now:yyyyMMdd_HHmmss}";
+                    File.Move(_configPath, backupPath);
                     DebugConsole.WriteInfo($"Backed up existing config to: {backupPath}");
                 }
 
                 // Execute rclone config create command
                 var result = await _rcloneExecutor.ExecuteRcloneCommand(
-                    $"config create {providerName} {providerType} --config \"{configPath}\"",
+                    $"config create {providerName} {providerType} --config \"{_configPath}\"",
                     TimeSpan.FromMinutes(5),
                     false
                 );
 
                 // Validate the created config
-                if (result.Success && await IsValidConfig(provider))
+                if (result.Success && await IsValidConfig(_configPath, provider))
                 {
                     DebugConsole.WriteSuccess(
                         $"{displayName} configuration completed successfully"
@@ -195,14 +155,13 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
         {
             string providerName = _cloudProviderHelper.GetProviderConfigName(provider);
             string displayName = _cloudProviderHelper.GetProviderDisplayName(provider);
-            string configPath = RclonePathHelper.GetConfigPath(provider);
 
             DebugConsole.WriteInfo($"Testing {displayName} connection...");
 
             try
             {
                 var result = await _rcloneExecutor.ExecuteRcloneCommand(
-                    $"lsd {providerName}: --max-depth 1 --config \"{configPath}\"",
+                    $"lsd {providerName}: --max-depth 1 --config \"{_configPath}\"",
                     TimeSpan.FromSeconds(30)
                 );
 
@@ -227,15 +186,14 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
         /// <summary>
         /// Opens rclone config in interactive mode for manual setup
         /// </summary>
-        public async Task<bool> OpenInteractiveConfig(CloudProvider provider)
+        public async Task<bool> OpenInteractiveConfig()
         {
-            string configPath = RclonePathHelper.GetConfigPath(provider);
             DebugConsole.WriteInfo("Opening rclone interactive config...");
 
             try
             {
                 var result = await _rcloneExecutor.ExecuteRcloneCommand(
-                    $"config --config \"{configPath}\"",
+                    $"config --config \"{_configPath}\"",
                     TimeSpan.FromMinutes(10),
                     false // Don't hide console - user needs to interact
                 );
@@ -252,15 +210,14 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
         /// <summary>
         /// Lists all configured remotes in the config file
         /// </summary>
-        public async Task<string[]> ListRemotes(CloudProvider provider)
+        public async Task<string[]> ListRemotes()
         {
-            string configPath = RclonePathHelper.GetConfigPath(provider);
             DebugConsole.WriteInfo("Listing configured remotes...");
 
             try
             {
                 var result = await _rcloneExecutor.ExecuteRcloneCommand(
-                    $"listremotes --config \"{configPath}\"",
+                    $"listremotes --config \"{_configPath}\"",
                     TimeSpan.FromSeconds(10)
                 );
 
@@ -288,15 +245,14 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
         /// <summary>
         /// Deletes a specific remote from the config
         /// </summary>
-        public async Task<bool> DeleteRemote(CloudProvider provider, string remoteName)
+        public async Task<bool> DeleteRemote(string remoteName)
         {
-            string configPath = RclonePathHelper.GetConfigPath(provider);
             DebugConsole.WriteInfo($"Deleting remote: {remoteName}");
 
             try
             {
                 var result = await _rcloneExecutor.ExecuteRcloneCommand(
-                    $"config delete {remoteName} --config \"{configPath}\"",
+                    $"config delete {remoteName} --config \"{_configPath}\"",
                     TimeSpan.FromSeconds(10)
                 );
 
@@ -315,40 +271,6 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             {
                 DebugConsole.WriteException(ex, "Error deleting remote");
                 return false;
-            }
-        }
-
-        /// <summary>
-        /// Kills any running rclone processes to free up ports (e.g. 53682)
-        /// </summary>
-        private void KillExistingRcloneProcesses()
-        {
-            try
-            {
-                var processes = Process.GetProcessesByName("rclone");
-                if (processes.Length > 0)
-                {
-                    DebugConsole.WriteInfo($"Found {processes.Length} running rclone process(es). Terminating...");
-                    foreach (var p in processes)
-                    {
-                        try
-                        {
-                            if (!p.HasExited)
-                            {
-                                p.Kill();
-                                p.WaitForExit(1000);
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            DebugConsole.WriteWarning($"Failed to kill rclone process {p.Id}: {ex.Message}");
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                DebugConsole.WriteWarning($"Error checking for rclone processes: {ex.Message}");
             }
         }
     }

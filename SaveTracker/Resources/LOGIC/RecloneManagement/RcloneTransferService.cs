@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using SaveTracker.Resources.HELPERS;
+using static CloudConfig;
 
 namespace SaveTracker.Resources.Logic.RecloneManagement
 {
@@ -15,7 +16,8 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
         public async Task<bool> UploadFileWithRetry(
             string localPath,
             string remotePath,
-            string fileName)
+            string fileName,
+            CloudProvider provider)
         {
             for (int attempt = 1; attempt <= _maxRetries; attempt++)
             {
@@ -25,8 +27,9 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                         $"Upload attempt {attempt}/{_maxRetries} for {fileName}"
                     );
 
+                    string configPath = RclonePathHelper.GetConfigPath(provider);
                     var result = await _executor.ExecuteRcloneCommand(
-                        $"copyto \"{localPath}\" \"{remotePath}\" --config \"{RclonePathHelper.ConfigPath}\" --progress",
+                        $"copyto \"{localPath}\" \"{remotePath}\" --config \"{configPath}\" --progress",
                         _processTimeout
                     );
 
@@ -65,7 +68,8 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
         public async Task<bool> DownloadFileWithRetry(
             string remotePath,
             string localPath,
-            string fileName)
+            string fileName,
+            CloudProvider provider)
         {
             for (int attempt = 1; attempt <= _maxRetries; attempt++)
             {
@@ -75,8 +79,9 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                         $"Download attempt {attempt}/{_maxRetries} for {fileName}"
                     );
 
+                    string configPath = RclonePathHelper.GetConfigPath(provider);
                     var result = await _executor.ExecuteRcloneCommand(
-                        $"copyto \"{remotePath}\" \"{localPath}\" --config \"{RclonePathHelper.ConfigPath}\" --progress",
+                        $"copyto \"{remotePath}\" \"{localPath}\" --config \"{configPath}\" --progress",
                         _processTimeout
                     );
 
@@ -112,14 +117,15 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             return false;
         }
 
-        public async Task<bool> DownloadDirectory(string remotePath, string localPath)
+        public async Task<bool> DownloadDirectory(string remotePath, string localPath, CloudProvider provider)
         {
             try
             {
                 DebugConsole.WriteInfo($"Downloading directory from {remotePath} to {localPath}");
 
+                string configPath = RclonePathHelper.GetConfigPath(provider);
                 var result = await _executor.ExecuteRcloneCommand(
-                    $"copy \"{remotePath}\" \"{localPath}\" --config \"{RclonePathHelper.ConfigPath}\" --progress",
+                    $"copy \"{remotePath}\" \"{localPath}\" --config \"{configPath}\" --progress",
                     TimeSpan.FromMinutes(5)
                 );
 
@@ -141,12 +147,13 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             }
         }
 
-        public async Task<bool> RemoteFileExists(string remotePath)
+        public async Task<bool> RemoteFileExists(string remotePath, CloudProvider provider)
         {
             try
             {
+                string configPath = RclonePathHelper.GetConfigPath(provider);
                 var result = await _executor.ExecuteRcloneCommand(
-                    $"lsl \"{remotePath}\" --config \"{RclonePathHelper.ConfigPath}\"",
+                    $"lsl \"{remotePath}\" --config \"{configPath}\"",
                     TimeSpan.FromSeconds(15)
                 );
                 return result.Success && !string.IsNullOrWhiteSpace(result.Output);
@@ -158,12 +165,13 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             }
         }
 
-        public async Task<bool> CheckCloudSaveExistsAsync(string remoteBasePath)
+        public async Task<bool> CheckCloudSaveExistsAsync(string remoteBasePath, CloudProvider provider)
         {
             try
             {
+                string configPath = RclonePathHelper.GetConfigPath(provider);
                 var result = await _executor.ExecuteRcloneCommand(
-                    $"lsf \"{remoteBasePath}\" --config \"{RclonePathHelper.ConfigPath}\" --max-depth 1",
+                    $"lsf \"{remoteBasePath}\" --config \"{configPath}\" --max-depth 1",
                     TimeSpan.FromSeconds(15)
                 );
 

@@ -259,7 +259,9 @@ namespace SaveTracker.Resources.Logic
                 await _rcloneFileOperations.ProcessFile(
                     file,
                     session.RemoteBasePath,
-                    session.Stats
+                    session.Stats,
+                    null,
+                    session.Context.Provider
                 );
 
                 DebugConsole.WriteSuccess($"✓ {fileName} uploaded successfully");
@@ -299,7 +301,9 @@ namespace SaveTracker.Resources.Logic
                 await _rcloneFileOperations.ProcessFile(
                     checksumManager.ChecksumFilePath,
                     session.RemoteBasePath,
-                    session.Stats
+                    session.Stats,
+                    null,
+                    session.Context.Provider
                 );
 
                 DebugConsole.WriteSuccess("✓ Checksum file uploaded successfully");

@@ -256,6 +256,9 @@ namespace SaveTracker.ViewModels
                     _selectedProvider = _mainConfig.CloudConfig.Provider;
                     CloudStorageText = _providerHelper.GetProviderDisplayName(_selectedProvider);
 
+                    // Update effective provider text for the currently selected game
+                    UpdateEffectiveProviderText();
+
                     // Update game process watcher if automatic tracking setting changed
                     var gamelist = await ConfigManagement.LoadAllGamesAsync();
                     if (_mainConfig.EnableAutomaticTracking && _gameProcessWatcher == null)
@@ -991,7 +994,7 @@ namespace SaveTracker.ViewModels
                 {
                     Title = "Cloud Storage Settings",
                     Width = 500,
-                    Height = 450,
+                    Height = 500,
                     WindowStartupLocation = WindowStartupLocation.CenterOwner,
                     Content = view,
                     SystemDecorations = SystemDecorations.BorderOnly, // Custom chrome in UC

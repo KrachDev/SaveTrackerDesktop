@@ -13,6 +13,18 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             "ExtraTools"
         );
 
-        public static string ConfigPath => Path.Combine(ToolsPath, "rclone.conf");
+        /// <summary>
+        /// Gets the config path for a specific cloud provider
+        /// </summary>
+        public static string GetConfigPath(CloudProvider provider)
+        {
+            string providerName = provider.ToString().ToLowerInvariant();
+            return Path.Combine(ToolsPath, $"rclone_{providerName}.conf");
+        }
+
+        /// <summary>
+        /// Gets the legacy config path (for migration)
+        /// </summary>
+        public static string LegacyConfigPath => Path.Combine(ToolsPath, "rclone.conf");
     }
 }

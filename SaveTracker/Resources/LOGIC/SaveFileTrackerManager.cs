@@ -28,6 +28,7 @@ namespace SaveTracker.Resources.LOGIC
         bool trackReads = false;
         // Session state
         private TrackingSession _currentSession;
+        private List<string> _lastSessionUploadList;
 
         public SaveFileTrackerManager()
         {
@@ -68,12 +69,13 @@ namespace SaveTracker.Resources.LOGIC
 
                 // Display results
                 var uploadFiles = _currentSession.GetUploadList();
+                _lastSessionUploadList = uploadFiles; // Cache for external access
                 DisplayResults(uploadFiles);
             }
             catch (UnauthorizedAccessException)
             {
                 DebugConsole.WriteLine("Access denied. Run as Admin.");
-                await RestartAsAdmin();
+
             }
             catch (Exception ex)
             {
@@ -121,7 +123,11 @@ namespace SaveTracker.Resources.LOGIC
         /// </summary>
         public List<string> GetUploadList()
         {
-            return _currentSession.GetUploadList();
+            if (_currentSession != null)
+            {
+                return _currentSession.GetUploadList();
+            }
+            return _lastSessionUploadList ?? new List<string>();
         }
 
         private void DisplayResults(List<string> uploadFiles)
@@ -140,8 +146,9 @@ namespace SaveTracker.Resources.LOGIC
 
         private async Task RestartAsAdmin()
         {
-            // var adminHelper = new AdminPrivilegeHelper();
-            // await adminHelper.RestartAsAdmin();
+            var adminHelper = new AdminPrivilegeHelper();
+            adminHelper.RestartAsAdmin();
+            await Task.CompletedTask;
         }
     }
 
@@ -565,8 +572,6 @@ namespace SaveTracker.Resources.LOGIC
 
             return finalList;
         }
-
-        
 
         private static async Task WaitForProcessExitAsync(Process process, CancellationToken cancellationToken)
         {

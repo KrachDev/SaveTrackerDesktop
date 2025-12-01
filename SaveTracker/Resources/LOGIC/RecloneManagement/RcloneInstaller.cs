@@ -1,4 +1,4 @@
-﻿using Newtonsoft.Json.Linq;
+using Newtonsoft.Json.Linq;
 using SaveTracker.Resources.HELPERS;
 using System;
 using System.Collections.Generic;
@@ -106,10 +106,11 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                 }
 
                 // Check if config is valid
+                string configPath = RclonePathHelper.GetConfigPath(provider);
                 if (
-                    string.IsNullOrWhiteSpace(_configPath)
-                    || !File.Exists(_configPath)
-                    || !await _rcloneConfigManager.IsValidConfig(_configPath, provider)
+                    string.IsNullOrWhiteSpace(configPath)
+                    || !File.Exists(configPath)
+                    || !await _rcloneConfigManager.IsValidConfig(provider)
                 )
                 {
                     DebugConsole.WriteWarning("Rclone config invalid or missing, setup required");

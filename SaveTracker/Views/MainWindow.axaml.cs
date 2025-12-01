@@ -1,6 +1,7 @@
 ﻿using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia;
+using Avalonia.Platform.Storage;
 using SaveTracker.Resources.HELPERS;
 using SaveTracker.Resources.SAVE_SYSTEM;
 using SaveTracker.ViewModels;
@@ -84,46 +85,14 @@ namespace SaveTracker.Views
 
         private bool IsAdministrator()
         {
-            try
-            {
-                if (OperatingSystem.IsWindows())
-                {
-                    var identity = WindowsIdentity.GetCurrent();
-                    var principal = new WindowsPrincipal(identity);
-                    return principal.IsInRole(WindowsBuiltInRole.Administrator);
-                }
-                return true;
-            }
-            catch
-            {
-                return false;
-            }
+            var adminHelper = new AdminPrivilegeHelper();
+            return adminHelper.IsAdministrator();
         }
 
         private void RestartAsAdmin()
         {
-            try
-            {
-                var exePath = Environment.ProcessPath;
-                if (string.IsNullOrEmpty(exePath))
-                {
-                    exePath = Process.GetCurrentProcess().MainModule?.FileName;
-                }
-
-                var processInfo = new ProcessStartInfo
-                {
-                    FileName = exePath ?? "SaveTracker.exe",
-                    UseShellExecute = true,
-                    Verb = "runas"
-                };
-
-                Process.Start(processInfo);
-                Environment.Exit(0);
-            }
-            catch (Exception ex)
-            {
-                DebugConsole.WriteException(ex, "Failed to restart as admin");
-            }
+            var adminHelper = new AdminPrivilegeHelper();
+            adminHelper.RestartAsAdmin();
         }
 
         private void OnDataContextChanged(object? sender, EventArgs e)
@@ -137,15 +106,16 @@ namespace SaveTracker.Views
 
                 DebugConsole.WriteInfo("Subscribing to ViewModel events...");
 
-                _viewModel.OnAddGameRequested += ShowAddGameDialog;
-                _viewModel.OnAddFilesRequested += ShowAddFilesDialog;
-                _viewModel.OnCloudSettingsRequested += ShowCloudSettings;
-                _viewModel.OnBlacklistRequested += ShowBlacklist;
-                _viewModel.OnRcloneSetupRequired += ShowRcloneSetup;
-                _viewModel.OnSettingsRequested += ShowSettingsDialog;
-                _viewModel.RequestMinimize += MinimizeWindow;
-                _viewModel.OnCloudSaveFound += ShowCloudSaveFoundDialog;
-                _viewModel.OnUpdateAvailable += ShowUpdateDialog;
+                // Use local variable 'viewModel' to avoid potential null reference warnings
+                viewModel.OnAddGameRequested += ShowAddGameDialog;
+                viewModel.OnAddFilesRequested += ShowAddFilesDialog;
+                viewModel.OnCloudSettingsRequested += ShowCloudSettings;
+                viewModel.OnBlacklistRequested += ShowBlacklist;
+                viewModel.OnRcloneSetupRequired += ShowRcloneSetup;
+                viewModel.OnSettingsRequested += ShowSettingsDialog;
+                viewModel.RequestMinimize += MinimizeWindow;
+                viewModel.OnCloudSaveFound += ShowCloudSaveFoundDialog;
+                viewModel.OnUpdateAvailable += ShowUpdateDialog;
 
                 DebugConsole.WriteSuccess("ViewModel event subscriptions complete");
             }
@@ -188,16 +158,18 @@ namespace SaveTracker.Views
             {
                 if (_viewModel.SelectedGame == null) return;
 
-                var fileDialog = new OpenFileDialog
+                var startLocation = await this.StorageProvider.TryGetFolderFromPathAsync(_viewModel.SelectedGame.Game.InstallDirectory);
+
+                var files = await this.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
                 {
                     Title = "Select Files to Track",
                     AllowMultiple = true,
-                    Directory = _viewModel.SelectedGame.Game.InstallDirectory
-                };
+                    SuggestedStartLocation = startLocation
+                });
 
-                var selectedFiles = await fileDialog.ShowAsync(this);
-                if (selectedFiles != null && selectedFiles.Length > 0)
+                if (files.Count > 0)
                 {
+                    var selectedFiles = files.Select(f => f.Path.LocalPath).ToArray();
                     await _viewModel.OnFilesAddedAsync(selectedFiles);
                 }
             }
@@ -372,7 +344,7 @@ namespace SaveTracker.Views
             {
                 Title = "Cloud Storage Settings",
                 Width = 500,
-                Height = 450,
+                Height = 500,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
                 Content = view,
                 SystemDecorations = SystemDecorations.BorderOnly,

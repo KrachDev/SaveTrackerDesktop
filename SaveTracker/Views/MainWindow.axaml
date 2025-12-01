@@ -611,6 +611,11 @@
                                                         </DataTemplate>
                                                     </ComboBox.ItemTemplate>
                                                 </ComboBox>
+                                                <TextBlock Text="{Binding EffectiveProviderText}"
+                                                           FontSize="12"
+                                                           Foreground="#4EC9B0"
+                                                           Margin="0,4,0,0"
+                                                           FontStyle="Italic"/>
                                             </StackPanel>
                                             
                                             <TextBlock Text="Select 'Use Global Setting' to use the default cloud provider configured in Cloud Settings. Choose a specific provider to override for this game only." 
