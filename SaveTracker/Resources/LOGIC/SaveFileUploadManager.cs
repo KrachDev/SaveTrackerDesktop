@@ -16,8 +16,7 @@ namespace SaveTracker.Resources.Logic
     public class SaveFileUploadManager(
         RcloneInstaller rcloneInstaller,
         CloudProviderHelper cloudProviderHelper,
-        RcloneFileOperations rcloneFileOperations,
-        string configPath)
+        RcloneFileOperations rcloneFileOperations)
     {
         // Constants
         public const string ChecksumFilename = ".savetracker_checksums.json";
@@ -27,7 +26,7 @@ namespace SaveTracker.Resources.Logic
         private readonly RcloneInstaller _rcloneInstaller = rcloneInstaller ?? throw new ArgumentNullException(nameof(rcloneInstaller));
         private readonly CloudProviderHelper _cloudProviderHelper = cloudProviderHelper ?? throw new ArgumentNullException(nameof(cloudProviderHelper));
         private readonly RcloneFileOperations _rcloneFileOperations = rcloneFileOperations ?? throw new ArgumentNullException(nameof(rcloneFileOperations));
-        private readonly string _configPath = configPath ?? throw new ArgumentNullException(nameof(configPath));
+        private readonly RcloneConfigManager _configManager = new RcloneConfigManager();
 
         // Properties
         private static string RcloneExePath => Path.Combine(
@@ -92,10 +91,11 @@ namespace SaveTracker.Resources.Logic
                 context.Provider = provider;
             }
 
-            // Validate rclone installation
+            // Validate rclone installation and config
             bool rcloneValid = await _rcloneInstaller.RcloneCheckAsync(context.Provider);
+            bool configValid = await _configManager.IsValidConfig(context.Provider);
 
-            if (!rcloneValid || !File.Exists(RcloneExePath) || !File.Exists(_configPath))
+            if (!rcloneValid || !File.Exists(RcloneExePath) || !configValid)
             {
                 if (OnCloudConfigRequired != null)
                 {
@@ -104,7 +104,8 @@ namespace SaveTracker.Resources.Logic
                     {
                         // Retry validation
                         rcloneValid = await _rcloneInstaller.RcloneCheckAsync(context.Provider);
-                        if (rcloneValid && File.Exists(RcloneExePath) && File.Exists(_configPath))
+                        configValid = await _configManager.IsValidConfig(context.Provider);
+                        if (rcloneValid && File.Exists(RcloneExePath) && configValid)
                         {
                             return true;
                         }
@@ -487,19 +488,65 @@ namespace SaveTracker.Resources.Logic
     public class ChecksumFileManager
     {
         private readonly Game _game;
+        private readonly ChecksumService _checksumService;
         public string ChecksumFilePath { get; private set; }
         public bool HasChecksumFile => !string.IsNullOrEmpty(ChecksumFilePath) && File.Exists(ChecksumFilePath);
 
         public ChecksumFileManager(Game game)
         {
             _game = game;
+            _checksumService = new ChecksumService();
         }
 
         public async Task PrepareChecksumFileAsync(List<string> validFiles)
         {
-            // Create checksum file logic here
-            // For now, placeholder
-            await Task.CompletedTask;
+            try
+            {
+                // Get the game's save directory
+                string gameDirectory = _game.InstallDirectory;
+                if (string.IsNullOrEmpty(gameDirectory))
+                {
+                    DebugConsole.WriteWarning("Game save directory is not set - skipping checksum file creation");
+                    return;
+                }
+
+                // Load existing checksum data
+                var checksumData = await _checksumService.LoadChecksumData(gameDirectory);
+
+                // Update checksums for all files being uploaded
+                foreach (var file in validFiles)
+                {
+                    string fileName = Path.GetFileName(file);
+                    string checksum = await _checksumService.GetFileChecksum(file);
+
+                    if (!string.IsNullOrEmpty(checksum))
+                    {
+                        // Contract the path to portable format
+                        string portablePath = PathContractor.ContractPath(file, gameDirectory);
+
+                        checksumData.Files[fileName] = new FileChecksumRecord
+                        {
+                            Checksum = checksum,
+                            LastUpload = DateTime.UtcNow,
+                            FileSize = new FileInfo(file).Length,
+                            Path = portablePath
+                        };
+                    }
+                }
+
+                // Save the updated checksum data
+                await _checksumService.SaveChecksumData(checksumData, gameDirectory);
+
+                // Set the checksum file path for upload
+                ChecksumFilePath = _checksumService.GetChecksumFilePath(gameDirectory);
+
+                DebugConsole.WriteSuccess($"Checksum file prepared with {validFiles.Count} file records");
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteException(ex, "Failed to prepare checksum file");
+                ChecksumFilePath = null;
+            }
         }
 
         public void Cleanup()

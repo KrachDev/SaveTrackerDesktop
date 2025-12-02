@@ -25,6 +25,36 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
         // Config paths are now provider-specific via RclonePathHelper.GetConfigPath(provider)
 
         /// <summary>
+        /// Resolves the effective config path to use (provider-specific or legacy fallback)
+        /// </summary>
+        public async Task<string> ResolveConfigPath(CloudProvider provider)
+        {
+            string specificPath = RclonePathHelper.GetConfigPath(provider);
+
+            // 1. Prefer specific config if it exists
+            if (File.Exists(specificPath))
+            {
+                return specificPath;
+            }
+
+            // 2. Fallback to legacy config if it exists and is valid for this provider
+            string legacyPath = RclonePathHelper.LegacyConfigPath;
+            if (File.Exists(legacyPath))
+            {
+                // We use IsValidConfigInternal to check if the legacy file actually contains the config we need
+                // This prevents using a generic rclone.conf that doesn't have the provider configured
+                if (await IsValidConfigInternal(legacyPath, provider))
+                {
+                    DebugConsole.WriteInfo($"Using legacy config for {provider}: {legacyPath}");
+                    return legacyPath;
+                }
+            }
+
+            // 3. Default to specific path (for creation)
+            return specificPath;
+        }
+
+        /// <summary>
         /// Validates if the rclone config file is valid for the specified provider
         /// </summary>
         public Task<bool> IsValidConfig(CloudProvider provider)

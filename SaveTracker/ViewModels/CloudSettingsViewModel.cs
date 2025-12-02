@@ -97,9 +97,20 @@ namespace SaveTracker.ViewModels
                         RcloneVersion = "Installed (Version check failed)";
                     }
 
-                    // Check config
-                    string configPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ExtraTools", "rclone.conf");
-                    IsRcloneConfigured = File.Exists(configPath);
+
+                    // Check if any provider config exists
+                    var configManager = new RcloneConfigManager();
+                    // Check global provider config
+                    var globalConfig = await ConfigManagement.LoadConfigAsync();
+                    if (globalConfig?.CloudConfig?.Provider != null)
+                    {
+                        IsRcloneConfigured = await configManager.IsValidConfig(globalConfig.CloudConfig.Provider);
+                    }
+                    else
+                    {
+                        // Check if any provider config file exists
+                        IsRcloneConfigured = Directory.GetFiles(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ExtraTools"), "rclone_*.conf").Length > 0;
+                    }
                 }
                 else
                 {

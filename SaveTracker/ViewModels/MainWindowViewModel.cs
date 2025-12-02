@@ -716,13 +716,10 @@ namespace SaveTracker.ViewModels
                     }
                 }
 
-                var configPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ExtraTools", "rclone.conf");
-
                 _uploadManager = new SaveFileUploadManager(
                     rcloneInstaller,
                     _providerHelper,
-                    new RcloneFileOperations(game),
-                    configPath
+                    new RcloneFileOperations(game)
                 );
 
                 _uploadManager.OnCloudConfigRequired += async () =>
@@ -1114,7 +1111,8 @@ namespace SaveTracker.ViewModels
                 if (!rcloneReady) return;
 
                 var executor = new RcloneExecutor();
-                var configPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ExtraTools", "rclone.conf");
+                var configManager = new RcloneConfigManager();
+                var configPath = await configManager.ResolveConfigPath(config.CloudConfig.Provider);
                 var remoteName = _providerHelper.GetProviderConfigName(config.CloudConfig.Provider);
                 var sanitizedGameName = SanitizeGameName(game.Name);
                 var remotePath = $"{remoteName}:{SaveFileUploadManager.RemoteBaseFolder}/{sanitizedGameName}";
