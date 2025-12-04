@@ -17,6 +17,7 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             new Dictionary<string, FileChecksumRecord>();
         public string LastSyncStatus { get; set; } = "Unknown";
         public bool AllowGameWatcher { get; set; } = true;
+        public TimeSpan  PlayTime { get; set; } = TimeSpan.Zero;
     }
 
     public class FileChecksumRecord

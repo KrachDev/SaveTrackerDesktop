@@ -9,6 +9,7 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using SaveTracker.Resources.SAVE_SYSTEM;
 
 namespace SaveTracker.Resources.LOGIC
 {
@@ -41,7 +42,8 @@ namespace SaveTracker.Resources.LOGIC
         public async Task Track(Game gameArg)
         {
             DebugConsole.WriteLine("== SaveTracker DebugConsole Started ==");
-
+            var gamedata = ConfigManagement.GetGameData(gameArg);
+            var StartDate = DateTime.Now;
             // Check if already tracking
             if (_currentSession != null && _currentSession.IsTracking)
             {
@@ -162,6 +164,9 @@ namespace SaveTracker.Resources.LOGIC
         private TraceEventSession _etwSession;
         private bool _isTracking;
         private bool _isDisposed;
+        private DateTime _trackingStartUtc = DateTime.MinValue;
+        private bool _playtimeCommitted = false;
+        private DateTime _processExitUtc = DateTime.MinValue;
 
         // Process tracking
         private ProcessMonitor _processMonitor;
@@ -243,6 +248,7 @@ namespace SaveTracker.Resources.LOGIC
             {
                 _etwSession = new TraceEventSession(ETW_SESSION_NAME);
                 _isTracking = true;
+                _trackingStartUtc = DateTime.UtcNow;
 
                 DebugConsole.WriteLine("Starting ETW session...");
 
@@ -484,12 +490,29 @@ private void HandleFileAccess(string filePath)
                 if (mainProcess.HasExited)
                 {
                     DebugConsole.WriteLine("Process already exited.");
+                    try
+                    {
+                        // Process.ExitTime is in local time
+                        _processExitUtc = mainProcess.ExitTime.ToUniversalTime();
+                    }
+                    catch
+                    {
+                        _processExitUtc = DateTime.UtcNow;
+                    }
                 }
                 else
                 {
                     DebugConsole.WriteLine("Waiting for process to exit...");
                     await WaitForProcessExitAsync(mainProcess, _cancellationTokenSource.Token);
                     DebugConsole.WriteLine("Main game process exited.");
+                    try
+                    {
+                        _processExitUtc = mainProcess.ExitTime.ToUniversalTime();
+                    }
+                    catch
+                    {
+                        _processExitUtc = DateTime.UtcNow;
+                    }
                 }
 
                 // Grace period for filesystem to settle (renames, final writes)
@@ -524,6 +547,40 @@ private void HandleFileAccess(string filePath)
             DebugConsole.WriteLine("Stopping tracking session...");
 
             _isTracking = false;
+
+            // Calculate and persist playtime (fire-and-forget to keep Stop() sync)
+            if (!_playtimeCommitted && _trackingStartUtc != DateTime.MinValue)
+            {
+                _playtimeCommitted = true; // ensure we only add once per session
+                var sessionEndUtc = _processExitUtc != DateTime.MinValue ? _processExitUtc : DateTime.UtcNow;
+                var sessionDuration = sessionEndUtc - _trackingStartUtc;
+                if (sessionDuration < TimeSpan.Zero)
+                {
+                    sessionDuration = TimeSpan.Zero;
+                }
+                if (sessionDuration > TimeSpan.Zero)
+                {
+                    Task.Run(async () =>
+                    {
+                        try
+                        {
+                            var data = await ConfigManagement.GetGameData(_game);
+                            if (data == null)
+                            {
+                                // Avoid explicit type to not require additional using
+                                data = new SaveTracker.Resources.Logic.RecloneManagement.GameUploadData();
+                            }
+                            data.PlayTime += sessionDuration;
+                            await ConfigManagement.SaveGameData(_game, data);
+                            DebugConsole.WriteLine($"PlayTime updated for '{_game.Name}': start={_trackingStartUtc:o}, end={sessionEndUtc:o}, +{sessionDuration}, total {data.PlayTime}");
+                        }
+                        catch (Exception ex)
+                        {
+                            DebugConsole.WriteWarning($"Failed to update PlayTime: {ex.Message}");
+                        }
+                    });
+                }
+            }
 
             // Cancel all background tasks
             try

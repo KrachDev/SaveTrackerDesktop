@@ -49,7 +49,10 @@ namespace SaveTracker.ViewModels
 
         [ObservableProperty]
         private string _gamePathText = "No game selected";
-
+        
+        [ObservableProperty]
+        private string _gamePlayTimeText = "Play Time: Never";
+        
         [ObservableProperty]
         private string _cloudStorageText = "Not configured";
 
@@ -310,8 +313,12 @@ namespace SaveTracker.ViewModels
             try
             {
                 var game = gameViewModel.Game;
-
+                var data = await ConfigManagement.GetGameData(game);
                 GameTitleText = game.Name;
+                if (data.PlayTime != TimeSpan.Zero)
+                    GamePlayTimeText = "Play Time: " + data.PlayTime.ToString(@"hh\:mm\:ss");
+                else
+                    GamePlayTimeText = "Play Time: Never";
                 GamePathText = $"Install Path: {game.InstallDirectory}";
                 IsLaunchEnabled = true;
 
@@ -593,9 +600,9 @@ namespace SaveTracker.ViewModels
 
         private async Task OnGameExitedAsync(Process process)
         {
+            var game = SelectedGame?.Game; // capture once for use in try/finally
             try
             {
-                var game = SelectedGame?.Game;
                 if (game == null) return;
 
                 DebugConsole.WriteInfo($"{game.Name} closed. Exit code: {process.ExitCode}");
@@ -609,11 +616,11 @@ namespace SaveTracker.ViewModels
 
                 if (trackedFiles == null || trackedFiles.Count == 0)
                 {
-                    DebugConsole.WriteWarning("No files were tracked during gameplay");
-                    return;
+                    DebugConsole.WriteInfo("No files were tracked during gameplay - performing checksum-only upload");
+                    trackedFiles = new List<string>(); // trigger checksum-only upload
                 }
 
-                DebugConsole.WriteInfo($"Processing {trackedFiles.Count} tracked files...");
+                DebugConsole.WriteInfo($"Processing {trackedFiles.Count} tracked files (checksum will always be uploaded)...");
 
                 if (CanUpload && AreUploadsEnabledForGame())
                 {
@@ -638,7 +645,42 @@ namespace SaveTracker.ViewModels
                 {
                     _gameProcessWatcher?.UnmarkGame(SelectedGame.Game.Name);
                 }
+
+                // Refresh PlayTime in UI after tracking stops (allow a brief moment for async save to complete)
+                if (game != null)
+                {
+                    try
+                    {
+                        await RefreshPlayTimeAsync(game);
+                    }
+                    catch (Exception refreshEx)
+                    {
+                        DebugConsole.WriteWarning($"Failed to refresh PlayTime: {refreshEx.Message}");
+                    }
+                }
             }
+        }
+
+        private async Task RefreshPlayTimeAsync(Game game)
+        {
+            // Retry a few times to account for async save completion in TrackingSession.Stop()
+            const int maxAttempts = 5;
+            const int delayMs = 200;
+
+            GameUploadData? lastData = null;
+            for (int attempt = 0; attempt < maxAttempts; attempt++)
+            {
+                lastData = await ConfigManagement.GetGameData(game);
+                if (lastData != null && lastData.PlayTime > TimeSpan.Zero)
+                    break;
+                await Task.Delay(delayMs);
+            }
+
+            var play = lastData?.PlayTime ?? TimeSpan.Zero;
+            if (play > TimeSpan.Zero)
+                GamePlayTimeText = play.ToString(@"hh\:mm\:ss");
+            else
+                GamePlayTimeText = "Never";
         }
 
         [RelayCommand(CanExecute = nameof(IsSyncEnabled))]

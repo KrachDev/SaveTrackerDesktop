@@ -250,6 +250,9 @@
                             <TextBlock Text="{Binding GamePathText}" 
                                        FontSize="12" 
                                        Foreground="#858585"/>
+                            <TextBlock Text="{Binding GamePlayTimeText}" 
+                                       FontSize="12" 
+                                       Foreground="#858585"/>
                         </StackPanel>
 
                         <StackPanel Grid.Column="2" 
