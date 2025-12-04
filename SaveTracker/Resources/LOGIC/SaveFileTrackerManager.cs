@@ -179,13 +179,8 @@ namespace SaveTracker.Resources.LOGIC
         // Temp file resolution - NON-STATIC to avoid cross-session contamination
         private readonly HashSet<string> _trackedFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private readonly HashSet<string> _uploadCandidates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        private readonly object _listLock = new object();
-
-        // Common temp extensions
-        private static readonly HashSet<string> TempExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            ".tmp", ".temp", ".bak", ".backup", ".~", ".old", ".orig"
-        };
+        private readonly object _listLock = new();
+        
 
         bool trackWrites = true;
         bool trackReads = false;
@@ -362,62 +357,79 @@ namespace SaveTracker.Resources.LOGIC
             DebugConsole.WriteInfo($"Track reads: {trackReads}");
         }
 
-        private void HandleFileAccess(string filePath)
+private void HandleFileAccess(string filePath)
+{
+    if (string.IsNullOrEmpty(filePath) || _isDisposed)
+        return;
+
+    try
+    {
+        // Normalize path
+        string normalizedPath = filePath.Replace('/', '\\');
+
+        // FIRST: Check for double extensions and track both versions
+        string extension = Path.GetExtension(normalizedPath);
+        string companionFile = null;
+        
+        if (!string.IsNullOrEmpty(extension))
         {
-            if (string.IsNullOrEmpty(filePath) || _isDisposed)
-                return;
+            string fileWithoutExt = Path.Combine(
+                Path.GetDirectoryName(normalizedPath) ?? "",
+                Path.GetFileNameWithoutExtension(normalizedPath)
+            );
 
-            try
+            // If removing extension still leaves an extension, it's a double extension
+            if (!string.IsNullOrEmpty(Path.GetExtension(fileWithoutExt)))
             {
-                // Normalize path
-                string normalizedPath = filePath.Replace('/', '\\');
-
-                // Check if should be ignored
-                if (_fileCollector.ShouldIgnore(normalizedPath))
-                    return;
-
-                // Add to file collector
-                if (!_fileCollector.AddFile(normalizedPath))
-                    return;
-
-                // Simple solution: Track the file AND version without last extension
-                lock (_listLock)
-                {
-                    // Always track the file we detected
-                    if (!_trackedFiles.Contains(normalizedPath))
-                    {
-                        _trackedFiles.Add(normalizedPath);
-                        _uploadCandidates.Add(normalizedPath);
-                        DebugConsole.WriteLine($"Tracked: {normalizedPath}");
-                    }
-
-                    // If file has ANY extension, also track version without that extension
-                    string extension = Path.GetExtension(normalizedPath);
-                    if (!string.IsNullOrEmpty(extension))
-                    {
-                        string fileWithoutExt = Path.Combine(
-                            Path.GetDirectoryName(normalizedPath) ?? "",
-                            Path.GetFileNameWithoutExtension(normalizedPath)
-                        );
-
-                        // Only add if it still has an extension (was double extension)
-                        if (!string.IsNullOrEmpty(Path.GetExtension(fileWithoutExt)))
-                        {
-                            if (!_uploadCandidates.Contains(fileWithoutExt))
-                            {
-                                _uploadCandidates.Add(fileWithoutExt);
-                                DebugConsole.WriteLine($"  -> Also tracking: {fileWithoutExt}");
-                            }
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                DebugConsole.WriteWarning($"Error handling file access for {filePath}: {ex.Message}");
+                companionFile = fileWithoutExt;
             }
         }
 
+        // NOW check if should be ignored
+        if (_fileCollector.ShouldIgnore(normalizedPath))
+        {
+            // Even if THIS file is ignored, track the companion if it exists
+            if (companionFile != null && !_fileCollector.ShouldIgnore(companionFile))
+            {
+                lock (_listLock)
+                {
+                    if (!_uploadCandidates.Contains(companionFile))
+                    {
+                        _uploadCandidates.Add(companionFile);
+                        DebugConsole.WriteLine($"Tracked companion: {companionFile}");
+                    }
+                }
+            }
+            return;
+        }
+
+        // Add to file collector
+        if (!_fileCollector.AddFile(normalizedPath))
+            return;
+
+        // Track the main file
+        lock (_listLock)
+        {
+            if (!_trackedFiles.Contains(normalizedPath))
+            {
+                _trackedFiles.Add(normalizedPath);
+                _uploadCandidates.Add(normalizedPath);
+                DebugConsole.WriteLine($"Tracked: {normalizedPath}");
+            }
+
+            // Also track companion file if it's a double extension
+            if (companionFile != null && !_uploadCandidates.Contains(companionFile))
+            {
+                _uploadCandidates.Add(companionFile);
+                DebugConsole.WriteLine($"  -> Also tracking: {companionFile}");
+            }
+        }
+    }
+    catch (Exception ex)
+    {
+        DebugConsole.WriteWarning($"Error handling file access for {filePath}: {ex.Message}");
+    }
+}
         private void StartBackgroundProcessing()
         {
             // ETW processing task
