@@ -13,19 +13,22 @@ namespace SaveTracker.Resources.HELPERS
         private static bool _isEnabled;
         private static bool _isConsoleAllocated;
 
-        [DllImport("kernel32.dll")]
+        private static readonly bool _isWindows = System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows);
+
+        // Windows‑only P/Invoke declarations – only compiled when running on Windows
+        [System.Runtime.InteropServices.DllImport("kernel32.dll")]
         private static extern bool AllocConsole();
 
-        [DllImport("kernel32.dll")]
+        [System.Runtime.InteropServices.DllImport("kernel32.dll")]
         private static extern bool FreeConsole();
 
-        [DllImport("kernel32.dll")]
-        private static extern IntPtr GetConsoleWindow();
+        [System.Runtime.InteropServices.DllImport("kernel32.dll")]
+        private static extern System.IntPtr GetConsoleWindow();
 
-        [DllImport("user32.dll")]
-        private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern bool ShowWindow(System.IntPtr hWnd, int nCmdShow);
 
-        [DllImport("kernel32.dll")]
+        [System.Runtime.InteropServices.DllImport("kernel32.dll")]
         private static extern bool SetConsoleTitle(string lpConsoleTitle);
 
         private const int SwHide = 0;
@@ -60,24 +63,29 @@ namespace SaveTracker.Resources.HELPERS
         {
             if (!_isConsoleAllocated)
             {
-                AllocConsole();
+                if (_isWindows)
+                {
+                    AllocConsole();
+                    // Set console title (Windows only)
+                    SetConsoleTitle("SaveTracker Debug Console");
+                }
                 _isConsoleAllocated = true;
 
-                // Redirect console output
+                // Redirect console output (works on all platforms)
                 Console.SetOut(new StreamWriter(Console.OpenStandardOutput()) { AutoFlush = true });
                 Console.SetError(new StreamWriter(Console.OpenStandardError()) { AutoFlush = true });
-
-                // Set console title
-                SetConsoleTitle("SaveTracker Debug Console");
 
                 WriteHeader();
             }
             else
             {
-                IntPtr consoleWindow = GetConsoleWindow();
-                if (consoleWindow != IntPtr.Zero)
+                if (_isWindows)
                 {
-                    ShowWindow(consoleWindow, SwRestore);
+                    IntPtr consoleWindow = GetConsoleWindow();
+                    if (consoleWindow != IntPtr.Zero)
+                    {
+                        ShowWindow(consoleWindow, SwRestore);
+                    }
                 }
             }
         }
@@ -87,11 +95,15 @@ namespace SaveTracker.Resources.HELPERS
         /// </summary>
         public static void HideConsole()
         {
-            IntPtr consoleWindow = GetConsoleWindow();
-            if (consoleWindow != IntPtr.Zero)
+            if (_isWindows)
             {
-                ShowWindow(consoleWindow, SwHide);
+                IntPtr consoleWindow = GetConsoleWindow();
+                if (consoleWindow != IntPtr.Zero)
+                {
+                    ShowWindow(consoleWindow, SwHide);
+                }
             }
+            // No‑op on non‑Windows platforms
         }
 
         /// <summary>
@@ -101,7 +113,10 @@ namespace SaveTracker.Resources.HELPERS
         {
             if (_isConsoleAllocated)
             {
-                FreeConsole();
+                if (_isWindows)
+                {
+                    FreeConsole();
+                }
                 _isConsoleAllocated = false;
             }
         }

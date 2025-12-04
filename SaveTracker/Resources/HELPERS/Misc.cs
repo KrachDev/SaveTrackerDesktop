@@ -2,6 +2,7 @@
 using Avalonia.Controls;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
+using Ico.Reader;
 using MsBox.Avalonia.Enums;
 using SaveTracker.Resources.Logic.RecloneManagement;
 
@@ -119,18 +120,8 @@ namespace SaveTracker.Resources.HELPERS
 
             try
             {
-                // Windows-specific icon extraction
-                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                {
-                    return ExtractIconWindows(exePath);
-                }
-                // Linux - no native icon extraction, return null for fallback
-                else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
-                {
-                    // On Linux, executables don't have embedded icons
-                    // You might want to check for .desktop files or icon themes instead
-                    return null;
-                }
+                // Cross-platform icon extraction using PeNet
+                return ExtractIconCrossPlatform(exePath);
             }
             catch
             {
@@ -140,26 +131,71 @@ namespace SaveTracker.Resources.HELPERS
             return null;
         }
 
-        private static Bitmap? ExtractIconWindows(string exePath)
+        private static Bitmap? ExtractIconCrossPlatform(string exePath)
         {
-            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                return null;
-
             try
             {
-                // Use Windows-specific System.Drawing.Common (requires NuGet package)
-                // Install: dotnet add package System.Drawing.Common
-                var icon = System.Drawing.Icon.ExtractAssociatedIcon(exePath);
-                if (icon == null)
-                    return null;
+                Console.WriteLine($"[DEBUG] Attempting to extract icon from: {exePath}");
 
-                using var ms = new MemoryStream();
-                icon.ToBitmap().Save(ms, System.Drawing.Imaging.ImageFormat.Png);
-                ms.Position = 0;
-                return new Bitmap(ms);
+                // Create IcoReader instance
+                var icoReader = new IcoReader();
+
+                // Read icon data from the executable
+                var icoData = icoReader.Read(exePath);
+
+                if (icoData == null || icoData.Groups == null || icoData.Groups.Count == 0)
+                {
+                    Console.WriteLine("[DEBUG] No icon groups found in executable");
+                    return null;
+                }
+
+                // Get the first group (standalone exes typically have one icon group)
+                var group = icoData.Groups[0];
+
+                if (group.DirectoryEntries == null || group.DirectoryEntries.Length == 0)
+                {
+                    Console.WriteLine("[DEBUG] No images found in icon group");
+                    return null;
+                }
+
+                // Find the largest icon for best quality
+                // ImageReferences are sorted, so we can pick the largest by dimensions
+                int largestIndex = 0;
+                int maxSize = 0;
+
+                for (int i = 0; i < group.DirectoryEntries.Length; i++)
+                {
+                    var entry = group.DirectoryEntries[i];
+                    int size = entry.Width * entry.Height;
+                    if (size > maxSize)
+                    {
+                        maxSize = size;
+                        largestIndex = i;
+                    }
+                }
+
+                Console.WriteLine($"[DEBUG] Extracting icon at index {largestIndex} with size {group.DirectoryEntries[largestIndex].Width}x{group.DirectoryEntries[largestIndex].Height}");
+
+                // Extract the image as PNG data
+                byte[] pngData = icoData.GetImage(group, largestIndex);
+
+                if (pngData == null || pngData.Length == 0)
+                {
+                    Console.WriteLine("[DEBUG] Failed to extract PNG data");
+                    return null;
+                }
+
+                // Convert PNG byte array to Avalonia Bitmap
+                using (var memoryStream = new MemoryStream(pngData))
+                {
+                    var bitmap = new Bitmap(memoryStream);
+                    Console.WriteLine("[DEBUG] Successfully created Avalonia Bitmap from icon");
+                    return bitmap;
+                }
             }
-            catch
+            catch (Exception ex)
             {
+                Console.WriteLine($"[DEBUG] Exception during icon extraction: {ex.Message}");
                 return null;
             }
         }
@@ -222,7 +258,7 @@ namespace SaveTracker.Resources.HELPERS
             var Savejson = ConfigManagement.GetGameData(game);
             if (Savejson == null)
                 return true;
-            
+
 
 
             return false;
