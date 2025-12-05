@@ -31,6 +31,9 @@ namespace SaveTracker.ViewModels
         private bool _gameAllowWatcher = true;
 
         [ObservableProperty]
+        private bool _gameEnableSmartSync = true;
+
+        [ObservableProperty]
         private ObservableCollection<CloudProviderItem> _availableProviders = new();
 
         /// <summary>
@@ -94,6 +97,7 @@ namespace SaveTracker.ViewModels
                     GameCanUploads = _currentGameUploadData.CanUploads;
                     GameProvider = _currentGameUploadData.GameProvider;
                     GameAllowWatcher = _currentGameUploadData.AllowGameWatcher;
+                    GameEnableSmartSync = _currentGameUploadData.EnableSmartSync;
 
                     UpdateEffectiveProviderText();
 
@@ -106,6 +110,7 @@ namespace SaveTracker.ViewModels
                     GameCanUploads = true;
                     GameProvider = CloudProvider.Global;
                     GameAllowWatcher = true;
+                    GameEnableSmartSync = true;
 
                     UpdateEffectiveProviderText();
 
@@ -121,6 +126,7 @@ namespace SaveTracker.ViewModels
                 GameCanUploads = true;
                 GameProvider = CloudProvider.Global;
                 GameAllowWatcher = true;
+                GameEnableSmartSync = true;
             }
         }
 
@@ -151,6 +157,7 @@ namespace SaveTracker.ViewModels
                 data.CanUploads = GameCanUploads;
                 data.GameProvider = GameProvider;
                 data.AllowGameWatcher = GameAllowWatcher;
+                data.EnableSmartSync = GameEnableSmartSync;
                 data.LastUpdated = DateTime.UtcNow;
 
                 // Save to file
@@ -174,6 +181,7 @@ namespace SaveTracker.ViewModels
             GameCanUploads = true;
             GameProvider = CloudProvider.Global;
             GameAllowWatcher = true;
+            GameEnableSmartSync = true;
 
             DebugConsole.WriteInfo("Game settings reset to defaults");
         }

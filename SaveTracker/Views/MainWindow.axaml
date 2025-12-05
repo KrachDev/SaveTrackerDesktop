@@ -649,6 +649,27 @@
                                                        Margin="0,5,0,0"/>
                                         </StackPanel>
                                     </Border>
+
+                                    <!-- Smart Sync Settings Section -->
+                                    <Border Background="#2D2D30" 
+                                            Padding="20" 
+                                            CornerRadius="8">
+                                        <StackPanel Spacing="15">
+                                            <TextBlock Text="🔄 Smart Sync" 
+                                                       FontSize="14" 
+                                                       FontWeight="SemiBold" 
+                                                       Foreground="#4EC9B0"/>
+                                            
+                                            <CheckBox Content="Enable Smart Sync for this game" 
+                                                      IsChecked="{Binding GameEnableSmartSync}"/>
+                                            
+                                            <TextBlock Text="Smart Sync compares your local and cloud save progress (PlayTime) before syncing. If cloud has more progress, it will offer to download instead of uploading. Works with Launch, Sync, and Auto-Hook features." 
+                                                       FontSize="11" 
+                                                       Foreground="#858585" 
+                                                       TextWrapping="Wrap"
+                                                       Margin="0,5,0,0"/>
+                                        </StackPanel>
+                                    </Border>
                                 </StackPanel>
                             </ScrollViewer>
                         </Grid>

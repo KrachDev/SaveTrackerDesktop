@@ -330,7 +330,20 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                     return false;
                 }
 
+                // The checksum file might be in a subdirectory due to path preservation
+                // Search for it recursively
                 string checksumFilePath = Path.Combine(stagingFolder, SaveFileUploadManager.ChecksumFilename);
+                if (!File.Exists(checksumFilePath))
+                {
+                    // Search in subdirectories
+                    var foundFiles = Directory.GetFiles(stagingFolder, SaveFileUploadManager.ChecksumFilename, SearchOption.AllDirectories);
+                    if (foundFiles.Length > 0)
+                    {
+                        checksumFilePath = foundFiles[0];
+                        DebugConsole.WriteInfo($"Found checksum file in subdirectory: {checksumFilePath}");
+                    }
+                }
+
                 if (!File.Exists(checksumFilePath))
                 {
                     DebugConsole.WriteWarning("Checksum file not found - using fallback");

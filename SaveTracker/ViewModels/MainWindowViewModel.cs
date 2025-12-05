@@ -18,6 +18,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Input;
+using MsBox.Avalonia;
 
 namespace SaveTracker.ViewModels
 {
@@ -447,64 +448,68 @@ namespace SaveTracker.ViewModels
                     }
                 }
 
-                // Check for Cloud Saves (if Rclone is ready)
-                DebugConsole.WriteInfo($"Cloud save check: rcloneReady={rcloneReady}");
+                // Smart Sync: Check cloud vs local PlayTime before launching
+                DebugConsole.WriteInfo($"Smart Sync check: rcloneReady={rcloneReady}");
+                
                 if (rcloneReady)
                 {
-                    var rcloneOps = new RcloneFileOperations(game);
-                    var remoteName = _providerHelper.GetProviderConfigName(effectiveProvider);
-                    var sanitizedGameName = SanitizeGameName(game.Name);
-                    var remoteBasePath = $"{remoteName}:{SaveFileUploadManager.RemoteBaseFolder}/{sanitizedGameName}";
-                    bool shouldWeCheckForSaveExisi = Misc.ShouldWeCheckForSaveExists(game);
-
-                    DebugConsole.WriteInfo($"Cloud save check: shouldCheck={shouldWeCheckForSaveExisi}, remotePath={remoteBasePath}");
-
-                    if (shouldWeCheckForSaveExisi)
+                    // Check if Smart Sync is enabled for this game
+                    var gameData = await ConfigManagement.GetGameData(game);
+                    bool smartSyncEnabled = gameData?.EnableSmartSync ?? true;
+                    
+                    if (smartSyncEnabled)
                     {
-                        DebugConsole.WriteInfo("Checking if cloud saves exist...");
-                        bool cloudSavesExist = await rcloneOps.CheckCloudSaveExistsAsync(remoteBasePath);
+                        var smartSync = new SmartSyncService();
+                        var comparison = await smartSync.CompareProgressAsync(
+                            game,
+                            TimeSpan.FromMinutes(10),
+                            effectiveProvider
+                        );
 
-                        DebugConsole.WriteInfo($"Cloud save check result: cloudSavesExist={cloudSavesExist}");
+                        DebugConsole.WriteInfo($"Smart Sync Result: {comparison.Status}");
+                        DebugConsole.WriteInfo($"Local PlayTime: {FormatTimeSpan(comparison.LocalPlayTime)}");
+                        DebugConsole.WriteInfo($"Cloud PlayTime: {FormatTimeSpan(comparison.CloudPlayTime)}");
 
-                        if (cloudSavesExist)
+                        // If cloud is ahead, offer to download before launching
+                        if (comparison.Status == SmartSyncService.ProgressStatus.CloudAhead)
                         {
-                            DebugConsole.WriteInfo($"Cloud saves found! OnCloudSaveFound is null: {OnCloudSaveFound == null}");
-                            if (OnCloudSaveFound != null)
+                            DebugConsole.WriteWarning("Cloud save is ahead! Prompting before launch...");
+                            var result = await ShowSmartSyncPromptAsync(
+                                "Smart Sync: Download Before Launch?",
+                                $"Your cloud save has more playtime ({FormatTimeSpan(comparison.CloudPlayTime)}) than local ({FormatTimeSpan(comparison.LocalPlayTime)}).\n\n" +
+                                $"Difference: {FormatTimeSpan(comparison.Difference)}\n\n" +
+                                "Download cloud save before launching?",
+                                "Download & Launch",
+                                "Launch with Local"
+                            );
+
+                            if (result == true)
                             {
-                                DebugConsole.WriteInfo($"Invoking OnCloudSaveFound for game: {game.Name}");
-                                bool shouldDownload = await OnCloudSaveFound.Invoke(game.Name);
-                                DebugConsole.WriteInfo($"User choice: shouldDownload={shouldDownload}");
-                                if (shouldDownload)
-                                {
-                                    DebugConsole.WriteInfo("Starting download...");
-                                    await rcloneOps.DownloadWithChecksumAsync(remoteBasePath, game);
-                                    // Refresh tracked list after download
-                                    await UpdateTrackedListAsync(game);
-                                    DebugConsole.WriteSuccess("Cloud save download completed");
-                                }
-                                else
-                                {
-                                    DebugConsole.WriteInfo("User declined download");
-                                }
+                                DebugConsole.WriteInfo("User chose to download cloud save before launch");
+                                await DownloadCloudSaveAsync(game);
                             }
                             else
                             {
-                                DebugConsole.WriteWarning("OnCloudSaveFound event not wired up!");
+                                DebugConsole.WriteInfo("User chose to launch with local save");
                             }
+                        }
+                        else if (comparison.Status == SmartSyncService.ProgressStatus.CloudNotFound)
+                        {
+                            DebugConsole.WriteInfo("No cloud save found - proceeding with launch");
                         }
                         else
                         {
-                            DebugConsole.WriteInfo("No cloud saves found for this game");
+                            DebugConsole.WriteInfo($"Smart Sync: {comparison.Status} - proceeding with launch");
                         }
                     }
                     else
                     {
-                        DebugConsole.WriteInfo("Skipping cloud save check (game already has local data)");
+                        DebugConsole.WriteInfo("Smart Sync disabled for this game - skipping check");
                     }
                 }
                 else
                 {
-                    DebugConsole.WriteWarning("Rclone not ready - skipping cloud save check");
+                    DebugConsole.WriteWarning("Rclone not ready - skipping Smart Sync check");
                 }
 
                 if (!File.Exists(game.ExecutablePath))
@@ -750,10 +755,61 @@ namespace SaveTracker.ViewModels
             try
             {
                 IsSyncing = true;
-                SyncButtonText = "? Syncing...";
+                SyncButtonText = "⏳ Syncing...";
                 SyncStatusText = "Syncing...";
 
                 var game = SelectedGame.Game;
+                
+                // Smart Sync: Check if cloud is ahead before uploading
+                DebugConsole.WriteInfo("=== Smart Sync Check ===");
+                
+                // Check if Smart Sync is enabled for this game
+                var gameData = await ConfigManagement.GetGameData(game);
+                bool smartSyncEnabled = gameData?.EnableSmartSync ?? true;
+                
+                if (smartSyncEnabled)
+                {
+                    var smartSync = new SmartSyncService();
+                    var comparison = await smartSync.CompareProgressAsync(
+                        game,
+                        TimeSpan.FromMinutes(10)
+                    );
+
+                    DebugConsole.WriteInfo($"Smart Sync Result: {comparison.Status}");
+                    DebugConsole.WriteInfo($"Local PlayTime: {FormatTimeSpan(comparison.LocalPlayTime)}");
+                    DebugConsole.WriteInfo($"Cloud PlayTime: {FormatTimeSpan(comparison.CloudPlayTime)}");
+                    DebugConsole.WriteInfo($"Difference: {FormatTimeSpan(comparison.Difference)}");
+                    DebugConsole.WriteInfo($"Message: {comparison.Message}");
+
+                    if (comparison.Status == SmartSyncService.ProgressStatus.CloudAhead)
+                    {
+                        DebugConsole.WriteWarning("Cloud is ahead! Showing prompt to user...");
+                        var result = await ShowSmartSyncPromptAsync(
+                            "Smart Sync: Download Instead?",
+                            $"Your cloud save has more playtime ({FormatTimeSpan(comparison.CloudPlayTime)}) than local ({FormatTimeSpan(comparison.LocalPlayTime)}).\n\n" +
+                            $"Difference: {FormatTimeSpan(comparison.Difference)}\n\n" +
+                            "Download cloud save instead of uploading?",
+                            "Download Cloud Save",
+                            "Upload Local Save"
+                        );
+
+                        if (result == true)
+                        {
+                            DebugConsole.WriteInfo("User chose to download cloud save");
+                            await DownloadCloudSaveAsync(game);
+                            return;
+                        }
+                        else
+                        {
+                            DebugConsole.WriteInfo("User chose to upload local save");
+                        }
+                    }
+                }
+                else
+                {
+                    DebugConsole.WriteInfo("Smart Sync disabled for this game - skipping check");
+                }
+
                 var gameUploadData = await ConfigManagement.GetGameData(game);
 
                 if (gameUploadData?.Files == null || gameUploadData.Files.Count == 0)
@@ -1287,6 +1343,97 @@ namespace SaveTracker.ViewModels
 
                 DebugConsole.WriteSuccess($"Auto-detected running game: {game.Name} (PID: {processId})");
 
+                // Smart Sync: Check if cloud save is ahead
+                var config = await ConfigManagement.LoadConfigAsync();
+                if (config?.CloudConfig != null)
+                {
+                    // Check if Smart Sync is enabled for this game
+                    var gameSettings = await ConfigManagement.GetGameData(game);
+                    bool smartSyncEnabled = gameSettings?.EnableSmartSync ?? true;
+                    
+                    if (smartSyncEnabled)
+                    {
+                        try
+                        {
+                            var effectiveProvider = GetEffectiveProviderForGame();
+                            var smartSync = new SmartSyncService();
+                            var comparison = await smartSync.CompareProgressAsync(
+                                game,
+                                TimeSpan.FromMinutes(10),
+                                effectiveProvider
+                            );
+
+                            DebugConsole.WriteInfo($"Smart Sync (Auto-Hook) Result: {comparison.Status}");
+
+                            if (comparison.Status == SmartSyncService.ProgressStatus.CloudAhead)
+                            {
+                                DebugConsole.WriteWarning("Cloud save is ahead during auto-hook! Prompting user...");
+                                
+                                var result = await ShowSmartSyncPromptAsync(
+                                    "Smart Sync: Restart Game with Cloud Save?",
+                                    $"Your cloud save has more playtime ({FormatTimeSpan(comparison.CloudPlayTime)}) than local ({FormatTimeSpan(comparison.LocalPlayTime)}).\n\n" +
+                                    $"Difference: {FormatTimeSpan(comparison.Difference)}\n\n" +
+                                    "The game will close, sync cloud save, and relaunch automatically.\n\n" +
+                                    "Restart with cloud save?",
+                                    "Yes, Restart & Sync",
+                                    "No, Use Local"
+                                );
+
+                                if (result == true)
+                                {
+                                    DebugConsole.WriteInfo("User chose to restart with cloud save");
+                                    
+                                    // Close the game
+                                    try
+                                    {
+                                        var process = Process.GetProcessById(processId);
+                                        if (process != null && !process.HasExited)
+                                        {
+                                            DebugConsole.WriteInfo($"Closing game process (PID: {processId})...");
+                                            process.Kill();
+                                            process.WaitForExit(5000); // Wait up to 5 seconds
+                                        }
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        DebugConsole.WriteException(ex, "Failed to close game process");
+                                    }
+
+                                    // Download cloud save
+                                    await DownloadCloudSaveAsync(game);
+
+                                    // Relaunch the game
+                                    if (File.Exists(game.ExecutablePath))
+                                    {
+                                        DebugConsole.WriteInfo("Relaunching game with cloud save...");
+                                        Process.Start(game.ExecutablePath);
+                                        
+                                        // Don't continue with tracking the old process
+                                        return;
+                                    }
+                                    else
+                                    {
+                                        DebugConsole.WriteError("Cannot relaunch - executable not found");
+                                        return;
+                                    }
+                                }
+                                else
+                                {
+                                    DebugConsole.WriteInfo("User chose to continue with local save");
+                                }
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            DebugConsole.WriteException(ex, "Smart Sync check failed during auto-hook");
+                        }
+                    }
+                    else
+                    {
+                        DebugConsole.WriteInfo("Smart Sync disabled for this game - skipping auto-hook check");
+                    }
+                }
+
                 // Find the corresponding GameViewModel
                 var gameViewModel = Games.FirstOrDefault(g => g.Game.Name == game.Name);
                 if (gameViewModel == null)
@@ -1462,5 +1609,79 @@ namespace SaveTracker.ViewModels
                 DebugConsole.WriteException(ex, "Failed to open issues page");
             }
         }
+
+        #region Smart Sync Helper Methods
+
+        private async Task<bool?> ShowSmartSyncPromptAsync(
+            string title,
+            string message,
+            string yesButtonText,
+            string noButtonText)
+        {
+            try
+            {
+                var box = MessageBoxManager.GetMessageBoxStandard(new MsBox.Avalonia.Dto.MessageBoxStandardParams
+                {
+                    ButtonDefinitions = MsBox.Avalonia.Enums.ButtonEnum.YesNo,
+                    ContentTitle = title,
+                    ContentMessage = message,
+                    Icon = MsBox.Avalonia.Enums.Icon.Question,
+                    WindowStartupLocation = WindowStartupLocation.CenterScreen
+                });
+
+                var result = await box.ShowAsync();
+                return result == MsBox.Avalonia.Enums.ButtonResult.Yes;
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteException(ex, "Failed to show Smart Sync prompt");
+                return null;
+            }
+        }
+
+        private async Task DownloadCloudSaveAsync(Game game)
+        {
+            try
+            {
+                DebugConsole.WriteInfo("Downloading cloud save (Smart Sync)...");
+                
+                var config = await ConfigManagement.LoadConfigAsync();
+                if (config?.CloudConfig == null)
+                {
+                    DebugConsole.WriteError("Cloud configuration not found");
+                    return;
+                }
+
+                var remoteName = _providerHelper.GetProviderConfigName(config.CloudConfig.Provider);
+                var sanitizedGameName = SanitizeGameName(game.Name);
+                var remotePath = $"{remoteName}:{SaveFileUploadManager.RemoteBaseFolder}/{sanitizedGameName}";
+
+                var rcloneOps = new RcloneFileOperations();
+                bool success = await rcloneOps.DownloadWithChecksumAsync(remotePath, game, config.CloudConfig.Provider);
+
+                if (success)
+                {
+                    DebugConsole.WriteSuccess("Cloud save downloaded successfully");
+                }
+                else
+                {
+                    DebugConsole.WriteError("Failed to download cloud save");
+                }
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteException(ex, "Failed to download cloud save");
+            }
+        }
+
+        private static string FormatTimeSpan(TimeSpan time)
+        {
+            if (time < TimeSpan.Zero)
+                time = time.Negate();
+            
+            return $"{(int)time.TotalHours:D2}:{time.Minutes:D2}:{time.Seconds:D2}";
+        }
+
+        #endregion
     }
 }
