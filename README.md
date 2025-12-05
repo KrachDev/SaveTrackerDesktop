@@ -1,6 +1,6 @@
 # 🎮 SaveTracker Desktop
 
-> **Version 0.3.0 Beta** - Automatic Game Save File Tracking & Cloud Sync
+> **Version 0.4.1 Beta** - Automatic Game Save File Tracking & Cloud Sync
 
 [![.NET](https://img.shields.io/badge/.NET-8.0-512BD4?logo=dotnet)](https://dotnet.microsoft.com/)
 [![Avalonia](https://img.shields.io/badge/Avalonia-11.3.9-8B44AC)](https://avaloniaui.net/)
