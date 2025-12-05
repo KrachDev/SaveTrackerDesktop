@@ -510,37 +510,20 @@ namespace SaveTracker.Resources.Logic
                     return;
                 }
 
-                // Load existing checksum data
+                // Load existing checksum data (or create new if doesn't exist)
                 var checksumData = await _checksumService.LoadChecksumData(gameDirectory);
 
-                // Update checksums for all files being uploaded
-                foreach (var file in validFiles)
-                {
-                    string fileName = Path.GetFileName(file);
-                    string checksum = await _checksumService.GetFileChecksum(file);
+                // DON'T update checksums here - they should only be updated AFTER successful upload
+                // This method just ensures the checksum file exists and is ready to be uploaded
+                // Individual file checksums will be updated by ProcessFile after successful upload
 
-                    if (!string.IsNullOrEmpty(checksum))
-                    {
-                        // Contract the path to portable format
-                        string portablePath = PathContractor.ContractPath(file, gameDirectory);
-
-                        checksumData.Files[fileName] = new FileChecksumRecord
-                        {
-                            Checksum = checksum,
-                            LastUpload = DateTime.UtcNow,
-                            FileSize = new FileInfo(file).Length,
-                            Path = portablePath
-                        };
-                    }
-                }
-
-                // Save the updated checksum data
+                // Save the checksum data (with existing checksums, not updated ones)
                 await _checksumService.SaveChecksumData(checksumData, gameDirectory);
 
                 // Set the checksum file path for upload
                 ChecksumFilePath = _checksumService.GetChecksumFilePath(gameDirectory);
 
-                DebugConsole.WriteSuccess($"Checksum file prepared with {validFiles.Count} file records");
+                DebugConsole.WriteSuccess($"Checksum file prepared (checksums will be updated after successful uploads)");
             }
             catch (Exception ex)
             {

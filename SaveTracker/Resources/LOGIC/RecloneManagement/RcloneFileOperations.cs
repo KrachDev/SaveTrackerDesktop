@@ -377,6 +377,21 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                     }
                 }
 
+                // Copy checksum file to game install directory for future tracking
+                try
+                {
+                    string targetChecksumPath = Path.Combine(game.InstallDirectory, SaveFileUploadManager.ChecksumFilename);
+                    if (File.Exists(checksumFilePath))
+                    {
+                        File.Copy(checksumFilePath, targetChecksumPath, overwrite: true);
+                        DebugConsole.WriteSuccess($"✓ Checksum file saved to install directory");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    DebugConsole.WriteWarning($"Failed to copy checksum file to install directory: {ex.Message}");
+                }
+
                 DebugConsole.WriteSuccess($"Download complete: {successCount} files restored, {failCount} failed");
                 return failCount == 0;
             }
@@ -511,6 +526,21 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                         DebugConsole.WriteError($"✗ Failed to restore {fileEntry.Key}: {ex.Message}");
                         failCount++;
                     }
+                }
+
+                // Copy checksum file to game install directory for future tracking
+                try
+                {
+                    string targetChecksumPath = Path.Combine(game.InstallDirectory, SaveFileUploadManager.ChecksumFilename);
+                    if (File.Exists(checksumFilePath))
+                    {
+                        File.Copy(checksumFilePath, targetChecksumPath, overwrite: true);
+                        DebugConsole.WriteSuccess($"✓ Checksum file saved to install directory");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    DebugConsole.WriteWarning($"Failed to copy checksum file to install directory: {ex.Message}");
                 }
 
                 DebugConsole.WriteSuccess($"Download complete: {successCount} files restored, {failCount} failed");

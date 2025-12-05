@@ -4,6 +4,7 @@ using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using Ico.Reader;
 using MsBox.Avalonia.Enums;
+using SaveTracker.Resources.Logic;
 using SaveTracker.Resources.Logic.RecloneManagement;
 
 using SaveTracker.Resources.SAVE_SYSTEM;
@@ -255,8 +256,9 @@ namespace SaveTracker.Resources.HELPERS
 
         public static bool ShouldWeCheckForSaveExists(Game game)
         {
-            var Savejson = ConfigManagement.GetGameData(game);
-            if (Savejson == null)
+            var Savejson = Path.Combine(game.InstallDirectory, SaveFileUploadManager.ChecksumFilename);
+
+            if (!File.Exists(Savejson))
                 return true;
 
 

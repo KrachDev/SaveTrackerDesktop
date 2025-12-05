@@ -49,10 +49,10 @@ namespace SaveTracker.ViewModels
 
         [ObservableProperty]
         private string _gamePathText = "No game selected";
-        
+
         [ObservableProperty]
         private string _gamePlayTimeText = "Play Time: Never";
-        
+
         [ObservableProperty]
         private string _cloudStorageText = "Not configured";
 
@@ -116,6 +116,7 @@ namespace SaveTracker.ViewModels
 
         private Config? _mainConfig;
         private CloudProvider _selectedProvider;
+        private Task? _trackingTask;
 
         private static string GetAppVersion()
         {
@@ -315,7 +316,9 @@ namespace SaveTracker.ViewModels
                 var game = gameViewModel.Game;
                 var data = await ConfigManagement.GetGameData(game);
                 GameTitleText = game.Name;
-                if (data.PlayTime != TimeSpan.Zero)
+
+                // Check if data exists before accessing properties
+                if (data != null && data.PlayTime != TimeSpan.Zero)
                     GamePlayTimeText = "Play Time: " + data.PlayTime.ToString(@"hh\:mm\:ss");
                 else
                     GamePlayTimeText = "Play Time: Never";
@@ -445,6 +448,7 @@ namespace SaveTracker.ViewModels
                 }
 
                 // Check for Cloud Saves (if Rclone is ready)
+                DebugConsole.WriteInfo($"Cloud save check: rcloneReady={rcloneReady}");
                 if (rcloneReady)
                 {
                     var rcloneOps = new RcloneFileOperations(game);
@@ -453,24 +457,54 @@ namespace SaveTracker.ViewModels
                     var remoteBasePath = $"{remoteName}:{SaveFileUploadManager.RemoteBaseFolder}/{sanitizedGameName}";
                     bool shouldWeCheckForSaveExisi = Misc.ShouldWeCheckForSaveExists(game);
 
+                    DebugConsole.WriteInfo($"Cloud save check: shouldCheck={shouldWeCheckForSaveExisi}, remotePath={remoteBasePath}");
+
                     if (shouldWeCheckForSaveExisi)
                     {
+                        DebugConsole.WriteInfo("Checking if cloud saves exist...");
                         bool cloudSavesExist = await rcloneOps.CheckCloudSaveExistsAsync(remoteBasePath);
+
+                        DebugConsole.WriteInfo($"Cloud save check result: cloudSavesExist={cloudSavesExist}");
 
                         if (cloudSavesExist)
                         {
+                            DebugConsole.WriteInfo($"Cloud saves found! OnCloudSaveFound is null: {OnCloudSaveFound == null}");
                             if (OnCloudSaveFound != null)
                             {
+                                DebugConsole.WriteInfo($"Invoking OnCloudSaveFound for game: {game.Name}");
                                 bool shouldDownload = await OnCloudSaveFound.Invoke(game.Name);
+                                DebugConsole.WriteInfo($"User choice: shouldDownload={shouldDownload}");
                                 if (shouldDownload)
                                 {
+                                    DebugConsole.WriteInfo("Starting download...");
                                     await rcloneOps.DownloadWithChecksumAsync(remoteBasePath, game);
                                     // Refresh tracked list after download
                                     await UpdateTrackedListAsync(game);
+                                    DebugConsole.WriteSuccess("Cloud save download completed");
+                                }
+                                else
+                                {
+                                    DebugConsole.WriteInfo("User declined download");
                                 }
                             }
+                            else
+                            {
+                                DebugConsole.WriteWarning("OnCloudSaveFound event not wired up!");
+                            }
+                        }
+                        else
+                        {
+                            DebugConsole.WriteInfo("No cloud saves found for this game");
                         }
                     }
+                    else
+                    {
+                        DebugConsole.WriteInfo("Skipping cloud save check (game already has local data)");
+                    }
+                }
+                else
+                {
+                    DebugConsole.WriteWarning("Rclone not ready - skipping cloud save check");
                 }
 
                 if (!File.Exists(game.ExecutablePath))
@@ -519,7 +553,7 @@ namespace SaveTracker.ViewModels
                     // Mark game as tracked to prevent duplicate auto-detection
                     _gameProcessWatcher?.MarkGameAsTracked(game.Name);
 
-                    _ = TrackGameProcessAsync(targetProcess, _trackingCancellation.Token);
+                    _trackingTask = TrackGameProcessAsync(targetProcess, _trackingCancellation.Token);
 
                     targetProcess.Exited += async (s, e) =>
                     {
@@ -609,6 +643,20 @@ namespace SaveTracker.ViewModels
 
                 _trackingCancellation?.Cancel();
 
+                // Wait for tracking session to complete and resolve final file list
+                if (_trackingTask != null)
+                {
+                    try
+                    {
+                        await _trackingTask;
+                        DebugConsole.WriteInfo("Tracking session completed");
+                    }
+                    catch (Exception ex)
+                    {
+                        DebugConsole.WriteWarning($"Tracking task error: {ex.Message}");
+                    }
+                }
+
                 game.LastTracked = DateTime.Now;
                 await ConfigManagement.SaveGameAsync(game);
 
@@ -678,9 +726,9 @@ namespace SaveTracker.ViewModels
 
             var play = lastData?.PlayTime ?? TimeSpan.Zero;
             if (play > TimeSpan.Zero)
-                GamePlayTimeText = play.ToString(@"hh\:mm\:ss");
+                GamePlayTimeText = "Play Time: " + play.ToString(@"hh\:mm\:ss");
             else
-                GamePlayTimeText = "Never";
+                GamePlayTimeText = "Play Time: Never";
         }
 
         [RelayCommand(CanExecute = nameof(IsSyncEnabled))]
