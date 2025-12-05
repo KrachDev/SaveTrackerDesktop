@@ -107,7 +107,8 @@ namespace SaveTracker.Resources.HELPERS
             ".map",
             ".symbols",
             ".debug",
-            ".parc"
+            ".parc",
+            ".exe"
         };
 
         public static readonly HashSet<string> IgnoredFileNames = new HashSet<string>(
@@ -143,8 +144,7 @@ namespace SaveTracker.Resources.HELPERS
             "config",
             "sentry",
             "sentrynative",
-            "event",
-            "autosave.bak"
+            "event"
         };
     }
 }

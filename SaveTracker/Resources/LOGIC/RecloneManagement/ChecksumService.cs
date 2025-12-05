@@ -154,7 +154,7 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                 // Contract the path to portable format before storing
                 string portablePath = PathContractor.ContractPath(filePath, gameDirectory);
 
-                checksumData.Files[fileName] = new FileChecksumRecord
+                checksumData.Files[portablePath] = new FileChecksumRecord
                 {
                     Checksum = checksum,
                     LastUpload = DateTime.UtcNow,
@@ -165,7 +165,7 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                 await SaveChecksumDataInternal(checksumData, gameDirectory);
 
                 DebugConsole.WriteDebug(
-                    $"Updated checksum record for {fileName} in {gameDirectory}"
+                    $"Updated checksum record for {portablePath} in {gameDirectory}"
                 );
             }
             catch (Exception ex)

@@ -87,9 +87,6 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             // Use provided game or fall back to constructor game
             game = game ?? _currentGame;
 
-            string fileName = Path.GetFileName(filePath);
-            string remotePath = $"{remoteBasePath}/{fileName}";
-
             if (game == null)
             {
                 DebugConsole.WriteError("No game provided - cannot determine game directory");
@@ -112,8 +109,13 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                 return;
             }
 
+            // Get relative path from game directory to preserve folder structure in cloud
+            string relativePath = PathContractor.ContractPath(filePath, gameDirectory);
+            string fileName = Path.GetFileName(filePath);
+            string remotePath = $"{remoteBasePath}/{relativePath}";
+
             DebugConsole.WriteSeparator('-', 40);
-            DebugConsole.WriteInfo($"Processing: {fileName}");
+            DebugConsole.WriteInfo($"Processing: {relativePath}");
             DebugConsole.WriteKeyValue("Game directory", gameDirectory);
 
             try
@@ -223,17 +225,28 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             try
             {
                 var checksumData = await _checksumService.LoadChecksumData(gameDirectory);
-                string fileName = Path.GetFileName(filePath);
+                // Use contracted path as dictionary key (new format)
+                string contractedPath = PathContractor.ContractPath(filePath, gameDirectory);
 
-                if (checksumData.Files.TryGetValue(fileName, out var fileRecord))
+                if (checksumData.Files.TryGetValue(contractedPath, out var fileRecord))
                 {
                     DebugConsole.WriteDebug(
-                        $"Found stored checksum for {fileName} from {fileRecord.LastUpload:yyyy-MM-dd HH:mm:ss}"
+                        $"Found stored checksum for {contractedPath} from {fileRecord.LastUpload:yyyy-MM-dd HH:mm:ss}"
                     );
                     return fileRecord.Checksum;
                 }
 
-                DebugConsole.WriteDebug($"No stored checksum found for {fileName}");
+                // Backward compatibility: Try old flat filename format
+                string fileName = Path.GetFileName(filePath);
+                if (checksumData.Files.TryGetValue(fileName, out var legacyFileRecord))
+                {
+                    DebugConsole.WriteDebug(
+                        $"Found stored checksum (legacy format) for {fileName} from {legacyFileRecord.LastUpload:yyyy-MM-dd HH:mm:ss}"
+                    );
+                    return legacyFileRecord.Checksum;
+                }
+
+                DebugConsole.WriteDebug($"No stored checksum found for {contractedPath}");
                 return null;
             }
             catch (Exception ex)

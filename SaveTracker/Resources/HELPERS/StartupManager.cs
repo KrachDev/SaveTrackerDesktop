@@ -1,41 +1,24 @@
-using Microsoft.Win32;
 using System;
 using System.Diagnostics;
+using System.IO;
 
 namespace SaveTracker.Resources.HELPERS
 {
     public static class StartupManager
     {
-        private const string AppName = "SaveTrackerDesktop";
+        private const string TaskName = "SaveTrackerDesktop";
 
         public static void SetStartup(bool enable)
         {
             try
             {
-                string runKey = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run";
-                using (RegistryKey? key = Registry.CurrentUser.OpenSubKey(runKey, true))
+                if (enable)
                 {
-                    if (key == null)
-                    {
-                        DebugConsole.WriteError("Failed to open Registry Run key.");
-                        return;
-                    }
-
-                    if (enable)
-                    {
-                        string? modulePath = Process.GetCurrentProcess().MainModule?.FileName;
-                        if (!string.IsNullOrEmpty(modulePath))
-                        {
-                            // Add quotes to handle spaces in path
-                            key.SetValue(AppName, $"\"{modulePath}\"");
-                            DebugConsole.WriteSuccess($"Added {AppName} to startup.");
-                        }
-                    }
-                    else
-                    {
-                        key.DeleteValue(AppName, false);
-                        DebugConsole.WriteSuccess($"Removed {AppName} from startup.");
-                    }
+                    CreateStartupTask();
+                }
+                else
+                {
+                    DeleteStartupTask();
                 }
             }
             catch (Exception ex)
@@ -44,16 +27,170 @@ namespace SaveTracker.Resources.HELPERS
             }
         }
 
+        private static void CreateStartupTask()
+        {
+            try
+            {
+                string? exePath = Process.GetCurrentProcess().MainModule?.FileName;
+                if (string.IsNullOrEmpty(exePath))
+                {
+                    DebugConsole.WriteError("Failed to get executable path");
+                    return;
+                }
+
+                // First, delete any existing task
+                DeleteStartupTask();
+
+                // Create XML task definition with highest privileges
+                string taskXml = $@"<?xml version=""1.0"" encoding=""UTF-16""?>
+<Task version=""1.2"" xmlns=""http://schemas.microsoft.com/windows/2004/02/mit/task"">
+  <RegistrationInfo>
+    <Description>SaveTracker Desktop - Automatic game save backup</Description>
+    <Author>{Environment.UserName}</Author>
+  </RegistrationInfo>
+  <Triggers>
+    <LogonTrigger>
+      <Enabled>true</Enabled>
+      <UserId>{Environment.UserDomainName}\\{Environment.UserName}</UserId>
+    </LogonTrigger>
+  </Triggers>
+  <Principals>
+    <Principal id=""Author"">
+      <UserId>{Environment.UserDomainName}\\{Environment.UserName}</UserId>
+      <LogonType>InteractiveToken</LogonType>
+      <RunLevel>HighestAvailable</RunLevel>
+    </Principal>
+  </Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <AllowHardTerminate>true</AllowHardTerminate>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
+    <IdleSettings>
+      <StopOnIdleEnd>false</StopOnIdleEnd>
+      <RestartOnIdle>false</RestartOnIdle>
+    </IdleSettings>
+    <AllowStartOnDemand>true</AllowStartOnDemand>
+    <Enabled>true</Enabled>
+    <Hidden>false</Hidden>
+    <RunOnlyIfIdle>false</RunOnlyIfIdle>
+    <WakeToRun>false</WakeToRun>
+    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+    <Priority>7</Priority>
+  </Settings>
+  <Actions Context=""Author"">
+    <Exec>
+      <Command>{exePath}</Command>
+    </Exec>
+  </Actions>
+</Task>";
+
+                // Save XML to temp file
+                string tempXmlPath = Path.Combine(Path.GetTempPath(), $"{TaskName}.xml");
+                File.WriteAllText(tempXmlPath, taskXml);
+
+                // Use schtasks.exe to create the task
+                var startInfo = new ProcessStartInfo
+                {
+                    FileName = "schtasks.exe",
+                    Arguments = $"/Create /TN \"{TaskName}\" /XML \"{tempXmlPath}\" /F",
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true
+                };
+
+                using (var process = Process.Start(startInfo))
+                {
+                    if (process != null)
+                    {
+                        process.WaitForExit();
+                        string output = process.StandardOutput.ReadToEnd();
+                        string error = process.StandardError.ReadToEnd();
+
+                        if (process.ExitCode == 0)
+                        {
+                            DebugConsole.WriteSuccess($"Added {TaskName} to startup (will run with admin rights)");
+                        }
+                        else
+                        {
+                            DebugConsole.WriteError($"Failed to create startup task: {error}");
+                        }
+                    }
+                }
+
+                // Clean up temp file
+                try
+                {
+                    if (File.Exists(tempXmlPath))
+                        File.Delete(tempXmlPath);
+                }
+                catch { }
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteException(ex, "Failed to create startup task");
+            }
+        }
+
+        private static void DeleteStartupTask()
+        {
+            try
+            {
+                var startInfo = new ProcessStartInfo
+                {
+                    FileName = "schtasks.exe",
+                    Arguments = $"/Delete /TN \"{TaskName}\" /F",
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true
+                };
+
+                using (var process = Process.Start(startInfo))
+                {
+                    if (process != null)
+                    {
+                        process.WaitForExit();
+                        if (process.ExitCode == 0)
+                        {
+                            DebugConsole.WriteSuccess($"Removed {TaskName} from startup");
+                        }
+                        // If exit code is 1 (task doesn't exist), that's fine - don't log an error
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteException(ex, "Failed to delete startup task");
+            }
+        }
+
         public static bool IsStartupEnabled()
         {
             try
             {
-                string runKey = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run";
-                using (RegistryKey? key = Registry.CurrentUser.OpenSubKey(runKey, false))
+                var startInfo = new ProcessStartInfo
                 {
-                    if (key == null) return false;
-                    return key.GetValue(AppName) != null;
+                    FileName = "schtasks.exe",
+                    Arguments = $"/Query /TN \"{TaskName}\"",
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true
+                };
+
+                using (var process = Process.Start(startInfo))
+                {
+                    if (process != null)
+                    {
+                        process.WaitForExit();
+                        return process.ExitCode == 0;
+                    }
                 }
+                return false;
             }
             catch
             {

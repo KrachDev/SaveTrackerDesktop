@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using SaveTracker.Resources.SAVE_SYSTEM;
 
 namespace SaveTracker.Resources.HELPERS
 {
@@ -34,35 +35,50 @@ namespace SaveTracker.Resources.HELPERS
             string normalizedPath = filePath.Replace('/', '\\');
             bool shouldLog = _loggedFiles.Add(normalizedPath); // Returns false if already exists
 
-           /* // 1. Game-specific blacklist check (highest priority)
+
+            // 1. Game-specific blacklist check (highest priority)
             if (_game != null)
             {
-                if (data?.Blacklist != null)
+                try
                 {
-                    foreach (var blacklistItem in data.Blacklist)
+                    var data = ConfigManagement.GetGameData(_game).Result;
+                    if (data?.Blacklist != null && data.Blacklist.Count > 0)
                     {
-                        // Normalize blacklist path once per iteration
-                        string normalizedBlacklist = blacklistItem.Value.Path.Replace('/', '\\');
-
-                        // Combined exact path match
-                        if (string.Equals(normalizedPath, normalizedBlacklist, StringComparison.OrdinalIgnoreCase))
+                        foreach (var blacklistItem in data.Blacklist)
                         {
-                            if (shouldLog)
-                                DebugConsole.WriteWarning($"Skipped (Game Blacklist - Exact): {filePath}");
-                            return true;
-                        }
+                            // Get the path from the FileChecksumRecord
+                            string blacklistPath = blacklistItem.Value?.Path;
+                            if (string.IsNullOrEmpty(blacklistPath))
+                                continue;
 
-                        // Check if file is within blacklisted directory
-                        if (normalizedPath.StartsWith(normalizedBlacklist + "\\", StringComparison.OrdinalIgnoreCase))
-                        {
-                            if (shouldLog)
-                                DebugConsole.WriteWarning($"Skipped (Game Blacklist - Directory): {filePath}");
-                            return true;
+                            // Normalize blacklist path once per iteration
+                            string normalizedBlacklist = blacklistPath.Replace('/', '\\');
+
+                            // Combined exact path match
+                            if (string.Equals(normalizedPath, normalizedBlacklist, StringComparison.OrdinalIgnoreCase))
+                            {
+                                if (shouldLog)
+                                    DebugConsole.WriteWarning($"Skipped (Game Blacklist - Exact): {filePath}");
+                                return true;
+                            }
+
+                            // Check if file is within blacklisted directory
+                            if (normalizedPath.StartsWith(normalizedBlacklist + "\\", StringComparison.OrdinalIgnoreCase))
+                            {
+                                if (shouldLog)
+                                    DebugConsole.WriteWarning($"Skipped (Game Blacklist - Directory): {filePath}");
+                                return true;
+                            }
                         }
                     }
                 }
+                catch (Exception ex)
+                {
+                    // Silently continue if blacklist check fails
+                    DebugConsole.WriteWarning($"Blacklist check failed: {ex.Message}");
+                }
             }
-           */
+
             try
             {
                 // 2. Quick directory check - most performant filter

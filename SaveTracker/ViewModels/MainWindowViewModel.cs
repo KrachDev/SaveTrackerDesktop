@@ -670,13 +670,24 @@ namespace SaveTracker.ViewModels
 
                 DebugConsole.WriteInfo($"Processing {trackedFiles.Count} tracked files (checksum will always be uploaded)...");
 
+                // Debug: Log upload eligibility
+                DebugConsole.WriteInfo($"Upload check: CanUpload={CanUpload}, AreUploadsEnabledForGame()={AreUploadsEnabledForGame()}, _currentGameUploadData is null: {_currentGameUploadData == null}");
+
                 if (CanUpload && AreUploadsEnabledForGame())
                 {
+                    DebugConsole.WriteInfo("Starting upload process...");
                     await UploadFilesAsync(trackedFiles, game);
                 }
-                else if (!AreUploadsEnabledForGame())
+                else
                 {
-                    DebugConsole.WriteInfo("Uploads are disabled for this game");
+                    if (!CanUpload)
+                    {
+                        DebugConsole.WriteWarning("Upload skipped: CanUpload is false");
+                    }
+                    if (!AreUploadsEnabledForGame())
+                    {
+                        DebugConsole.WriteWarning("Upload skipped: Uploads are disabled for this game");
+                    }
                 }
             }
             catch (Exception ex)
