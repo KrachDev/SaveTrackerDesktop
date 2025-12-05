@@ -1219,7 +1219,7 @@ namespace SaveTracker.ViewModels
                 var remotePath = $"{remoteName}:{SaveFileUploadManager.RemoteBaseFolder}/{sanitizedGameName}";
 
                 var result = await executor.ExecuteRcloneCommand(
-                    $"lsjson \"{remotePath}\" --config \"{configPath}\"",
+                    $"lsjson \"{remotePath}\" --recursive --config \"{configPath}\"",
                     TimeSpan.FromSeconds(30)
                 );
 
