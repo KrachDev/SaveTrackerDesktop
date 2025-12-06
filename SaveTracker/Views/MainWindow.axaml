@@ -208,14 +208,18 @@
                             </DataTemplate>
                         </ListBox.ItemTemplate>
                     </ListBox>
-
-                    <!-- Add Game Button -->
-                    <Button Grid.Row="2"
-                            Command="{Binding AddGameCommand}"
-                            Content="+ Add Game Manually" 
-                            HorizontalAlignment="Stretch" 
-                            Margin="10"
-                            Padding="12,10"/>
+                    <!-- Add Game Buttons -->
+                    <StackPanel Grid.Row="2" Spacing="8" Margin="10">
+                        <Button Command="{Binding AddGameCommand}"
+                                Content="+ Add Game Manually" 
+                                HorizontalAlignment="Stretch" 
+                                Padding="12,10"/>
+                        <Button Command="{Binding ImportFromPlayniteCommand}"
+                                Content="📦 Import from Playnite" 
+                                HorizontalAlignment="Stretch" 
+                                Padding="12,10"
+                                Background="#16825D"/>
+                    </StackPanel>
                 </Grid>
             </Border>
 

@@ -19,6 +19,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using MsBox.Avalonia;
+using SaveTracker.Views.Dialog;
 
 namespace SaveTracker.ViewModels
 {
@@ -392,6 +393,45 @@ namespace SaveTracker.ViewModels
                 DebugConsole.WriteException(ex, "Failed to show add game dialog");
             }
         }
+
+        [RelayCommand]
+        private async Task ImportFromPlayniteAsync()
+        {
+            try
+            {
+                DebugConsole.WriteInfo("=== ImportFromPlayniteCommand executed ===");
+                // Get the main window
+                var mainWindow = Avalonia.Application.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop
+                    ? desktop.MainWindow as MainWindow
+                    : null;
+                if (mainWindow == null)
+                {
+                    DebugConsole.WriteError("Could not get MainWindow reference");
+                    return;
+                }
+                var dialog = new UC_ImportFromPlaynite();
+                var result = await dialog.ShowDialog<List<Game>?>(mainWindow);
+                if (result != null && result.Count > 0)
+                {
+                    DebugConsole.WriteSuccess($"Importing {result.Count} games from Playnite");
+
+                    foreach (var game in result)
+                    {
+                        await OnGameAddedAsync(game);
+                    }
+
+                    DebugConsole.WriteSuccess($"Successfully imported {result.Count} games");
+                }
+                else
+                {
+                    DebugConsole.WriteInfo("No games were imported");
+                }
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteException(ex, "Failed to show Playnite import dialog");
+            }
+        }
         public async Task OnGameAddedAsync(Game newGame)
         {
             try
@@ -450,13 +490,13 @@ namespace SaveTracker.ViewModels
 
                 // Smart Sync: Check cloud vs local PlayTime before launching
                 DebugConsole.WriteInfo($"Smart Sync check: rcloneReady={rcloneReady}");
-                
+
                 if (rcloneReady)
                 {
                     // Check if Smart Sync is enabled for this game
                     var gameData = await ConfigManagement.GetGameData(game);
                     bool smartSyncEnabled = gameData?.EnableSmartSync ?? true;
-                    
+
                     if (smartSyncEnabled)
                     {
                         var smartSync = new SmartSyncService();
@@ -759,14 +799,14 @@ namespace SaveTracker.ViewModels
                 SyncStatusText = "Syncing...";
 
                 var game = SelectedGame.Game;
-                
+
                 // Smart Sync: Check if cloud is ahead before uploading
                 DebugConsole.WriteInfo("=== Smart Sync Check ===");
-                
+
                 // Check if Smart Sync is enabled for this game
                 var gameData = await ConfigManagement.GetGameData(game);
                 bool smartSyncEnabled = gameData?.EnableSmartSync ?? true;
-                
+
                 if (smartSyncEnabled)
                 {
                     var smartSync = new SmartSyncService();
@@ -1350,7 +1390,7 @@ namespace SaveTracker.ViewModels
                     // Check if Smart Sync is enabled for this game
                     var gameSettings = await ConfigManagement.GetGameData(game);
                     bool smartSyncEnabled = gameSettings?.EnableSmartSync ?? true;
-                    
+
                     if (smartSyncEnabled)
                     {
                         try
@@ -1368,7 +1408,7 @@ namespace SaveTracker.ViewModels
                             if (comparison.Status == SmartSyncService.ProgressStatus.CloudAhead)
                             {
                                 DebugConsole.WriteWarning("Cloud save is ahead during auto-hook! Prompting user...");
-                                
+
                                 var result = await ShowSmartSyncPromptAsync(
                                     "Smart Sync: Restart Game with Cloud Save?",
                                     $"Your cloud save has more playtime ({FormatTimeSpan(comparison.CloudPlayTime)}) than local ({FormatTimeSpan(comparison.LocalPlayTime)}).\n\n" +
@@ -1382,7 +1422,7 @@ namespace SaveTracker.ViewModels
                                 if (result == true)
                                 {
                                     DebugConsole.WriteInfo("User chose to restart with cloud save");
-                                    
+
                                     // Close the game
                                     try
                                     {
@@ -1407,7 +1447,7 @@ namespace SaveTracker.ViewModels
                                     {
                                         DebugConsole.WriteInfo("Relaunching game with cloud save...");
                                         Process.Start(game.ExecutablePath);
-                                        
+
                                         // Don't continue with tracking the old process
                                         return;
                                     }
@@ -1644,7 +1684,7 @@ namespace SaveTracker.ViewModels
             try
             {
                 DebugConsole.WriteInfo("Downloading cloud save (Smart Sync)...");
-                
+
                 var config = await ConfigManagement.LoadConfigAsync();
                 if (config?.CloudConfig == null)
                 {
@@ -1678,7 +1718,7 @@ namespace SaveTracker.ViewModels
         {
             if (time < TimeSpan.Zero)
                 time = time.Negate();
-            
+
             return $"{(int)time.TotalHours:D2}:{time.Minutes:D2}:{time.Seconds:D2}";
         }
 
