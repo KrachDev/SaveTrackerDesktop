@@ -166,6 +166,7 @@
                             Background="#3F3F46" 
                             CornerRadius="4">
                         <TextBox Watermark="🔍 Search games..." 
+                                 Text="{Binding SearchText}"
                                  Background="Transparent" 
                                  BorderThickness="0"
                                  Padding="10,8"/>

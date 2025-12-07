@@ -37,6 +37,44 @@ namespace SaveTracker.ViewModels
         [ObservableProperty]
         private ObservableCollection<GameViewModel> _games = new();
 
+        // Backing list for search filtering
+        private List<GameViewModel> _allGames = new();
+
+        [ObservableProperty]
+        private string _searchText = "";
+
+        partial void OnSearchTextChanged(string value)
+        {
+            ApplySearchFilter();
+        }
+
+        private void ApplySearchFilter()
+        {
+            string query = SearchText?.Trim() ?? "";
+
+            Games.Clear();
+
+            if (string.IsNullOrWhiteSpace(query))
+            {
+                foreach (var game in _allGames)
+                {
+                    Games.Add(game);
+                }
+            }
+            else
+            {
+                var filtered = _allGames.Where(g => g.Name.Contains(query, StringComparison.OrdinalIgnoreCase)).ToList();
+                foreach (var game in filtered)
+                {
+                    Games.Add(game);
+                }
+            }
+
+            // If selected game was filtered out, deselect it? 
+            // Better behavior: keep it if possible, but standard behavior usually deselects if removed from view. 
+            // Avalonia/WPF might handle this automatically or keep the selection object even if not in view.
+        }
+
         [ObservableProperty]
         private GameViewModel? _selectedGame;
 
@@ -177,7 +215,7 @@ namespace SaveTracker.ViewModels
             _configManagement = new ConfigManagement();
             _rcloneFileOperations = new RcloneFileOperations();
             _providerHelper = new CloudProviderHelper();
-            InitializeGameSettingsProviders();  // ← ADD THIS LINE
+            InitializeGameSettingsProviders(); // ← ADD THIS LINE
 
             InitializeAsync();
         }
@@ -230,21 +268,19 @@ namespace SaveTracker.ViewModels
             {
                 // Load games
                 var gamelist = await ConfigManagement.LoadAllGamesAsync();
+
+                // Populate _allGames list
+                _allGames.Clear();
                 if (gamelist != null)
                 {
-                    Games.Clear();
                     foreach (var game in gamelist)
                     {
-                        // Skip deleted games - don't load them into the UI
-                        if (game.IsDeleted)
-                        {
-                            DebugConsole.WriteInfo($"Skipping deleted game: {game.Name}");
-                            continue;
-                        }
+                        // Skip deleted games (though LoadAllGamesAsync already handles removal)
+                        if (game.IsDeleted) continue;
 
                         try
                         {
-                            Games.Add(new GameViewModel(game));
+                            _allGames.Add(new GameViewModel(game));
                         }
                         catch (Exception ex)
                         {
@@ -252,6 +288,9 @@ namespace SaveTracker.ViewModels
                         }
                     }
                 }
+
+                // Populate visible Games collection via filter
+                ApplySearchFilter();
 
                 UpdateGamesCount();
 
@@ -475,7 +514,10 @@ namespace SaveTracker.ViewModels
                     // 2. Remove game watcher for this game if active
                     _gameProcessWatcher?.UnmarkGame(game.Name);
 
-                    // 3. Remove from UI collection
+                    // 3. Remove from Master List and UI list
+                    var vmToRemove = _allGames.FirstOrDefault(g => g.Game.Name == game.Name);
+                    if (vmToRemove != null) _allGames.Remove(vmToRemove);
+
                     Games.Remove(SelectedGame);
 
                     // 4. Update UI
@@ -538,8 +580,8 @@ namespace SaveTracker.ViewModels
         {
             try
             {
-                // Check if game already exists in the UI list by Name OR ExecutablePath
-                var existingVM = Games.FirstOrDefault(vm =>
+                // Check if game already exists in _allGames list by Name OR ExecutablePath
+                var existingVM = _allGames.FirstOrDefault(vm =>
                     vm.Game.Name.Equals(newGame.Name, StringComparison.OrdinalIgnoreCase) ||
                     (!string.IsNullOrEmpty(newGame.ExecutablePath) &&
                      vm.Game.ExecutablePath.Equals(newGame.ExecutablePath, StringComparison.OrdinalIgnoreCase)));
@@ -581,7 +623,16 @@ namespace SaveTracker.ViewModels
                 else
                 {
                     // Add new game
-                    Games.Add(new GameViewModel(newGame));
+                    var newVM = new GameViewModel(newGame);
+                    _allGames.Add(newVM);
+
+                    // Add to UI if it matches filter
+                    string query = SearchText?.Trim() ?? "";
+                    if (string.IsNullOrEmpty(query) || newGame.Name.Contains(query, StringComparison.OrdinalIgnoreCase))
+                    {
+                        Games.Add(newVM);
+                    }
+
                     await ConfigManagement.SaveGameAsync(newGame);
                     DebugConsole.WriteSuccess($"Game added: {newGame.Name}");
                     UpdateGamesCount();
@@ -596,7 +647,6 @@ namespace SaveTracker.ViewModels
                 DebugConsole.WriteException(ex, "Failed to save new game");
             }
         }
-
         [RelayCommand(CanExecute = nameof(IsLaunchEnabled))]
         private async Task LaunchGameAsync()
         {
