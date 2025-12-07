@@ -423,6 +423,57 @@ namespace SaveTracker.ViewModels
         }
 
         [RelayCommand]
+        private async Task DeleteGameAsync()
+        {
+            if (SelectedGame?.Game == null) return;
+
+            try
+            {
+                var game = SelectedGame.Game;
+
+                // Prompt user for confirmation
+                var box = MessageBoxManager.GetMessageBoxStandard(new MsBox.Avalonia.Dto.MessageBoxStandardParams
+                {
+                    ButtonDefinitions = MsBox.Avalonia.Enums.ButtonEnum.YesNo,
+                    ContentTitle = "Delete Game",
+                    ContentMessage = $"Are you sure you want to delete '{game.Name}'?\n\nThis will remove it from SaveTracker but will NOT delete any local files on your computer.",
+                    Icon = MsBox.Avalonia.Enums.Icon.Warning,
+                    WindowStartupLocation = WindowStartupLocation.CenterScreen
+                });
+
+                var result = await box.ShowAsync();
+
+                if (result == MsBox.Avalonia.Enums.ButtonResult.Yes)
+                {
+                    DebugConsole.WriteInfo($"Deleting game: {game.Name}");
+
+                    // 1. Delete from config/storage
+                    await ConfigManagement.DeleteGameAsync(game.Name);
+
+                    // 2. Remove game watcher for this game if active
+                    _gameProcessWatcher?.UnmarkGame(game.Name);
+
+                    // 3. Remove from UI collection
+                    Games.Remove(SelectedGame);
+
+                    // 4. Update UI
+                    SelectedGame = null;
+                    UpdateGamesCount();
+
+                    // 5. Update watcher list
+                    var updatedGamesList = await ConfigManagement.LoadAllGamesAsync();
+                    _gameProcessWatcher?.UpdateGamesList(updatedGamesList);
+
+                    DebugConsole.WriteSuccess($"Game '{game.Name}' deleted successfully");
+                }
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteException(ex, "Failed to delete game");
+            }
+        }
+
+        [RelayCommand]
         private async Task ImportFromPlayniteAsync()
         {
             try

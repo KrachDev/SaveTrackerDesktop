@@ -568,6 +568,11 @@
                                     <StackPanel Grid.Column="1" 
                                                 Orientation="Horizontal" 
                                                 Spacing="10">
+                                        <Button Command="{Binding DeleteGameCommand}" 
+                                                Content="🗑️ Delete Game"
+                                                Background="#C42B1C"
+                                                Foreground="White"
+                                                Margin="0,0,10,0"/>
                                         <Button Command="{Binding ResetGameSettingsToDefaultsCommand}" 
                                                 Content="Reset to Defaults"/>
                                         <Button Command="{Binding SaveGameSettingsCommand}" 
