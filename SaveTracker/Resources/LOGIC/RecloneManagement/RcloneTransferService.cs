@@ -183,5 +183,37 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                 return false;
             }
         }
+
+        public async Task<bool> RenameFolder(string oldRemotePath, string newRemotePath, CloudProvider provider)
+        {
+            try
+            {
+                DebugConsole.WriteInfo($"Renaming cloud folder from {oldRemotePath} to {newRemotePath}");
+
+                string configPath = RclonePathHelper.GetConfigPath(provider);
+
+                // rclone moveto source dest
+                var result = await _executor.ExecuteRcloneCommand(
+                    $"moveto \"{oldRemotePath}\" \"{newRemotePath}\" --config \"{configPath}\"",
+                    TimeSpan.FromMinutes(2) // Give it some time if it needs to move a lot (though moveto is usually fast for rename)
+                );
+
+                if (result.Success)
+                {
+                    DebugConsole.WriteSuccess("Cloud folder rename successful");
+                    return true;
+                }
+                else
+                {
+                    DebugConsole.WriteError($"Cloud folder rename failed: {result.Error}");
+                    return false;
+                }
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteException(ex, "Cloud folder rename exception");
+                return false;
+            }
+        }
     }
 }

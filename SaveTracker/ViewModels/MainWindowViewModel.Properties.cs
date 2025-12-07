@@ -283,6 +283,7 @@ namespace SaveTracker.ViewModels
                 var game = SelectedGame.Game;
                 string newName = EditableGameName.Trim();
                 string newPath = EditableExecutablePath.Trim();
+                string oldName = game.Name;
 
                 if (string.IsNullOrEmpty(newName))
                 {
@@ -306,7 +307,7 @@ namespace SaveTracker.ViewModels
                 }
 
                 // Check if name changed and if it conflicts
-                if (!game.Name.Equals(newName, StringComparison.OrdinalIgnoreCase))
+                if (!oldName.Equals(newName, StringComparison.OrdinalIgnoreCase))
                 {
                     bool exists = await ConfigManagement.GameExistsAsync(newName);
                     if (exists)
@@ -319,44 +320,108 @@ namespace SaveTracker.ViewModels
                         }).ShowAsync();
                         return;
                     }
+
+                    // --- CLOUD RENAME LOGIC ---
+
+                    // 1. Sanitize Names
+                    string oldSanitized = SanitizeGameNameForCheck(oldName);
+                    string newSanitized = SanitizeGameNameForCheck(newName);
+
+                    // 2. Prepare paths
+                    var provider = game.LocalConfig.CloudConfig?.UseGlobalSettings == false
+                        ? game.LocalConfig.CloudConfig.Provider
+                        : (await ConfigManagement.LoadConfigAsync()).CloudConfig.Provider;
+
+                    string configName = new CloudProviderHelper().GetProviderConfigName(provider);
+                    string oldRemotePath = $"{configName}:{SaveFileUploadManager.RemoteBaseFolder}/{oldSanitized}";
+                    string newRemotePath = $"{configName}:{SaveFileUploadManager.RemoteBaseFolder}/{newSanitized}";
+
+                    // 3. Check if cloud folder exists
+                    var rcloneOps = new RcloneFileOperations(game);
+                    bool cloudExists = await rcloneOps.CheckCloudSaveExistsAsync(oldRemotePath, provider);
+
+                    if (cloudExists)
+                    {
+                        // 4. Ask to rename
+                        var moveResult = await MessageBoxManager.GetMessageBoxStandard(new MsBox.Avalonia.Dto.MessageBoxStandardParams
+                        {
+                            ButtonDefinitions = MsBox.Avalonia.Enums.ButtonEnum.YesNoCancel,
+                            ContentTitle = "Rename Cloud Folder?",
+                            ContentMessage = $"Found matching cloud folder for '{oldName}'.\n\nDo you want to rename it to '{newName}' as well?\n\nYes: Rename local + cloud (Recommended)\nNo: Rename local ONLY (Unlinks from old cloud save)\nCancel: Abort entire operation",
+                            Icon = Icon.Question
+                        }).ShowAsync();
+
+                        if (moveResult == MsBox.Avalonia.Enums.ButtonResult.Cancel) return;
+
+                        if (moveResult == MsBox.Avalonia.Enums.ButtonResult.Yes)
+                        {
+                            // Status update
+                            DebugConsole.WriteInfo("Renaming cloud folder...");
+
+                            bool success = await rcloneOps.RenameCloudFolder(oldRemotePath, newRemotePath, provider);
+                            if (!success)
+                            {
+                                await MessageBoxManager.GetMessageBoxStandard(new MsBox.Avalonia.Dto.MessageBoxStandardParams
+                                {
+                                    ContentTitle = "Error",
+                                    ContentMessage = "Failed to rename cloud folder. Check internet connection or permissions.\n\nOperation aborted.",
+                                    Icon = Icon.Error
+                                }).ShowAsync();
+                                return;
+                            }
+                        }
+                    }
                 }
 
                 // Logic to update game
-                var oldName = game.Name;
-                bool nameChanged = !oldName.Equals(newName, StringComparison.OrdinalIgnoreCase);
+                var oldInstallDir = game.InstallDirectory;
+                var newInstallDir = Path.GetDirectoryName(newPath);
 
                 // Update properties on the object
                 game.Name = newName;
                 game.ExecutablePath = newPath;
-                game.InstallDirectory = Path.GetDirectoryName(newPath);
+                game.InstallDirectory = newInstallDir;
+
+                bool nameChanged = !oldName.Equals(newName, StringComparison.OrdinalIgnoreCase);
 
                 if (nameChanged)
                 {
                     await ConfigManagement.DeleteGameAsync(oldName);
                 }
 
+                // If Install Directory changed, try to move the local checksum file
+                if (!string.Equals(oldInstallDir, newInstallDir, StringComparison.OrdinalIgnoreCase))
+                {
+                    try
+                    {
+                        var checksumService = new ChecksumService();
+                        string oldChecksumPath = checksumService.GetChecksumFilePath(oldInstallDir);
+                        string newChecksumPath = checksumService.GetChecksumFilePath(newInstallDir);
+
+                        if (File.Exists(oldChecksumPath))
+                        {
+                            if (!Directory.Exists(newInstallDir))
+                            {
+                                Directory.CreateDirectory(newInstallDir);
+                            }
+
+                            File.Copy(oldChecksumPath, newChecksumPath, true);
+                            File.Delete(oldChecksumPath);
+                            DebugConsole.WriteInfo($"Moved local checksums from {oldInstallDir} to {newInstallDir}");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        DebugConsole.WriteWarning($"Failed to move local checksum file: {ex.Message}");
+                    }
+                }
+
                 await ConfigManagement.SaveGameAsync(game);
 
                 // Update ViewModel
                 SelectedGame.Name = newName;
-                // Manually notify changes if needed, but the observable property on GameViewModel wraps Game object fields which are not notifying?
-                // GameViewModel implementation copies values.
-                // So we need to set them on SelectedGame (GameViewModel).
-                // I need to add public setters or methods to GameViewModel to update these, OR re-create the GameViewModel.
-
-                // Since I added _executablePath with ObservableProperty in GameViewModel, I can set it if I expose it.
-                // But Name is also there.
-                // Assuming I can set them:
-                // SelectedGame.Name = newName; // This calls setter on GameViewModel!
-                // BUT GameViewModel.Name setter just sets the private field? No, it sets _name.
-                // Does it push back to Game object?
-                // Checking GameViewModel.cs:
-                // public string Name { get => _name; set { _name = value; OnPropertyChanged(); } }
-                // It does NOT update the underlying Game object automatically unless I linked them.
-                // But I updated the underlying Game object above (`game.Name = newName`).
-                // So now I just update the UI ViewModel to match.
-
-                // Update Icon
+                SelectedGame.InstallDirectory = game.InstallDirectory;
+                SelectedGame.ExecutablePath = game.ExecutablePath;
                 SelectedGame.Icon = Misc.ExtractIconFromExe(game.ExecutablePath);
 
                 // Update Watcher
@@ -368,10 +433,19 @@ namespace SaveTracker.ViewModels
                 EditableExecutablePath = newPath;
 
                 DebugConsole.WriteSuccess($"Game properties updated: {newName}");
+
+                // Refresh cloud check
+                OnEditableGameNameChanged(newName);
             }
             catch (Exception ex)
             {
                 DebugConsole.WriteException(ex, "Failed to save game properties");
+                await MessageBoxManager.GetMessageBoxStandard(new MsBox.Avalonia.Dto.MessageBoxStandardParams
+                {
+                    ContentTitle = "Error",
+                    ContentMessage = $"Failed to save changes: {ex.Message}",
+                    Icon = Icon.Error
+                }).ShowAsync();
             }
         }
     }

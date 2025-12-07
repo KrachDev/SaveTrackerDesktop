@@ -312,6 +312,12 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             return await _transferService.DownloadDirectory(remotePath, localPath, effectiveProvider);
         }
 
+        public async Task<bool> RenameCloudFolder(string oldRemoteBasePath, string newRemoteBasePath, CloudProvider? provider = null)
+        {
+            CloudProvider effectiveProvider = provider ?? await GetEffectiveProvider(_currentGame);
+            return await _transferService.RenameFolder(oldRemoteBasePath, newRemoteBasePath, effectiveProvider);
+        }
+
         public async Task<bool> DownloadWithChecksumAsync(string remotePath, Game game, CloudProvider? provider = null)
         {
             string stagingFolder = Path.Combine(Path.GetTempPath(), "SaveTracker_Download_" + Guid.NewGuid().ToString("N"));
