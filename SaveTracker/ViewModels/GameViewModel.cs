@@ -53,10 +53,10 @@ namespace SaveTracker.ViewModels
 
         [ObservableProperty]
         private string _fileName;
-        
+
         [ObservableProperty]
         private string _checksum;
-        
+
         [ObservableProperty]
         private string _path;
 
@@ -140,6 +140,8 @@ namespace SaveTracker.ViewModels
             _size = Misc.FormatFileSize(fileInfo.Size);
             _uploadDate = fileInfo.ModTime.ToLocalTime().ToString("MM/dd/yyyy HH:mm");
         }
+
+        public string Path => _fileInfo.Path;
     }
 
     // RcloneFileInfo class (if not already defined elsewhere)

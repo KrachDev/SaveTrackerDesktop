@@ -454,63 +454,68 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                 CloudProvider effectiveProvider = provider ?? await GetEffectiveProvider(game);
 
                 // First, download the checksum file to know what files are available
+                string checksumLocalSpec = Path.Combine(game.InstallDirectory, SaveFileUploadManager.ChecksumFilename);
+                string checksumRelative = PathContractor.ContractPath(checksumLocalSpec, game.InstallDirectory);
+                string checksumRemotePath = $"{remotePath}/{checksumRelative}";
+                string checksumLocalPath = Path.Combine(stagingFolder, SaveFileUploadManager.ChecksumFilename);
+
                 var checksumResult = await _transferService.DownloadFileWithRetry(
-                    remotePath,
-                    stagingFolder,
+                    checksumRemotePath,
+                    checksumLocalPath,
                     SaveFileUploadManager.ChecksumFilename,
                     effectiveProvider);
 
                 if (!checksumResult)
                 {
-                    DebugConsole.WriteError($"Failed to download checksum file");
-                    return false;
+                    DebugConsole.WriteWarning("Checksum file not found - will use relative paths for restore");
                 }
 
+                Dictionary<string, FileChecksumRecord> checksumFiles = null;
                 string checksumFilePath = Path.Combine(stagingFolder, SaveFileUploadManager.ChecksumFilename);
-                if (!File.Exists(checksumFilePath))
+
+                if (File.Exists(checksumFilePath))
                 {
-                    DebugConsole.WriteError("Checksum file not found after download");
-                    return false;
+                    DebugConsole.WriteInfo("Reading checksum file...");
+                    string checksumJson = await File.ReadAllTextAsync(checksumFilePath);
+                    var checksumData = JsonConvert.DeserializeObject<GameUploadData>(checksumJson);
+                    checksumFiles = checksumData?.Files;
                 }
 
-                DebugConsole.WriteInfo("Reading checksum file...");
-                string checksumJson = await File.ReadAllTextAsync(checksumFilePath);
-                var checksumData = JsonConvert.DeserializeObject<GameUploadData>(checksumJson);
+                // If checksum data exists, filter it. If not, use selectedRelativePaths directly.
+                List<string> filesToDownload = selectedRelativePaths;
 
-                if (checksumData?.Files == null || checksumData.Files.Count == 0)
+                if (checksumFiles != null && checksumFiles.Count > 0)
                 {
-                    DebugConsole.WriteWarning("Checksum file is empty or invalid");
-                    return false;
+                    // Verify selected files exist in checksum
+                    // But we can also just download what we requested based on path
                 }
 
-                // Filter to only selected files
-                var selectedFiles = checksumData.Files
-                    .Where(f => selectedRelativePaths.Contains(f.Key))
-                    .ToList();
-
-                if (selectedFiles.Count == 0)
-                {
-                    DebugConsole.WriteWarning("None of the selected files were found in the checksum data");
-                    return false;
-                }
-
-                DebugConsole.WriteInfo($"Downloading {selectedFiles.Count} selected files...");
+                DebugConsole.WriteInfo($"Downloading {selectedRelativePaths.Count} selected files...");
 
                 int successCount = 0;
                 int failCount = 0;
 
                 // Download each selected file individually
-                foreach (var fileEntry in selectedFiles)
+                foreach (var relativePath in selectedRelativePaths)
                 {
                     try
                     {
-                        string relativePath = fileEntry.Key;
                         string fileName = Path.GetFileName(relativePath);
+
+                        string remoteFilePath = $"{remotePath}/{relativePath.Replace('\\', '/')}";
+                        string localFilePath = Path.Combine(stagingFolder, relativePath);
+
+                        // Ensure local subdirectory exists
+                        string? localDir = Path.GetDirectoryName(localFilePath);
+                        if (!string.IsNullOrEmpty(localDir) && !Directory.Exists(localDir))
+                        {
+                            Directory.CreateDirectory(localDir);
+                        }
 
                         // Download the specific file from remote
                         var downloadResult = await _transferService.DownloadFileWithRetry(
-                            remotePath,
-                            stagingFolder,
+                            remoteFilePath,
+                            localFilePath,
                             relativePath,
                             effectiveProvider);
 
@@ -529,12 +534,23 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                             sourceFile = Path.Combine(stagingFolder, fileName);
                         }
 
-                        string targetPath = fileEntry.Value.GetAbsolutePath(game.InstallDirectory);
                         if (!File.Exists(sourceFile))
                         {
                             DebugConsole.WriteWarning($"File not found in staging: {fileName}");
                             failCount++;
                             continue;
+                        }
+
+                        // Determine target path
+                        string targetPath;
+                        if (checksumFiles != null && checksumFiles.TryGetValue(relativePath, out var fileRecord))
+                        {
+                            targetPath = fileRecord.GetAbsolutePath(game.InstallDirectory);
+                        }
+                        else
+                        {
+                            // Fallback: Use InstallDirectory + RelativePath
+                            targetPath = Path.Combine(game.InstallDirectory, relativePath);
                         }
 
                         string? targetDir = Path.GetDirectoryName(targetPath);
@@ -549,7 +565,7 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                     }
                     catch (Exception ex)
                     {
-                        DebugConsole.WriteError($"✗ Failed to restore {fileEntry.Key}: {ex.Message}");
+                        DebugConsole.WriteError($"✗ Failed to restore {relativePath}: {ex.Message}");
                         failCount++;
                     }
                 }

@@ -74,6 +74,34 @@ namespace SaveTracker.ViewModels
         private bool _isLaunchEnabled;
 
         [ObservableProperty]
+        private bool _areAllTrackedFilesSelected;
+
+        [ObservableProperty]
+        private bool _areAllCloudFilesSelected;
+
+        partial void OnAreAllTrackedFilesSelectedChanged(bool value)
+        {
+            if (TrackedFiles != null)
+            {
+                foreach (var file in TrackedFiles)
+                {
+                    file.IsSelected = value;
+                }
+            }
+        }
+
+        partial void OnAreAllCloudFilesSelectedChanged(bool value)
+        {
+            if (CloudFiles != null)
+            {
+                foreach (var file in CloudFiles)
+                {
+                    file.IsSelected = value;
+                }
+            }
+        }
+
+        [ObservableProperty]
         private bool _isSyncEnabled;
 
         partial void OnIsLaunchEnabledChanged(bool value)
@@ -432,14 +460,59 @@ namespace SaveTracker.ViewModels
                 DebugConsole.WriteException(ex, "Failed to show Playnite import dialog");
             }
         }
+
         public async Task OnGameAddedAsync(Game newGame)
         {
             try
             {
-                Games.Add(new GameViewModel(newGame));
-                await ConfigManagement.SaveGameAsync(newGame);
-                DebugConsole.WriteSuccess($"Game added: {newGame.Name}");
-                UpdateGamesCount();
+                // Check if game already exists in the UI list by Name OR ExecutablePath
+                var existingVM = Games.FirstOrDefault(vm =>
+                    vm.Game.Name.Equals(newGame.Name, StringComparison.OrdinalIgnoreCase) ||
+                    (!string.IsNullOrEmpty(newGame.ExecutablePath) &&
+                     vm.Game.ExecutablePath.Equals(newGame.ExecutablePath, StringComparison.OrdinalIgnoreCase)));
+
+                if (existingVM != null)
+                {
+                    DebugConsole.WriteInfo($"Game found (Name: '{existingVM.Game.Name}', Path: '{existingVM.Game.ExecutablePath}'). Updating with new details from '{newGame.Name}'...");
+
+                    // 1. Update backing Game object
+                    // Preserve LocalConfig from existing game to keep user settings
+                    newGame.LocalConfig = existingVM.Game.LocalConfig;
+
+                    // Update ALL fields to match the new source
+                    existingVM.Game.Name = newGame.Name;
+                    existingVM.Game.InstallDirectory = newGame.InstallDirectory;
+                    existingVM.Game.ExecutablePath = newGame.ExecutablePath;
+                    existingVM.Game.LastTracked = newGame.LastTracked != DateTime.MinValue ? newGame.LastTracked : existingVM.Game.LastTracked;
+
+                    // 2. Update ViewModel properties to notify UI
+                    existingVM.Name = newGame.Name; // Update Name in UI
+                    existingVM.InstallDirectory = newGame.InstallDirectory;
+
+                    // Force refresh icon
+                    try
+                    {
+                        existingVM.Icon = Misc.ExtractIconFromExe(newGame.ExecutablePath);
+                    }
+                    catch
+                    {
+                        existingVM.Icon = null;
+                        DebugConsole.WriteWarning($"Could not extract icon for updated game {newGame.Name}");
+                    }
+
+                    // 3. Save updated game
+                    await ConfigManagement.SaveGameAsync(existingVM.Game);
+
+                    DebugConsole.WriteSuccess($"Game updated: {newGame.Name}");
+                }
+                else
+                {
+                    // Add new game
+                    Games.Add(new GameViewModel(newGame));
+                    await ConfigManagement.SaveGameAsync(newGame);
+                    DebugConsole.WriteSuccess($"Game added: {newGame.Name}");
+                    UpdateGamesCount();
+                }
 
                 // Update watcher with new games list
                 var updatedGamesList = await ConfigManagement.LoadAllGamesAsync();
@@ -993,7 +1066,7 @@ namespace SaveTracker.ViewModels
                 string remotePath = $"{remoteName}:{SaveFileUploadManager.RemoteBaseFolder}/{sanitizedGameName}";
 
                 // Extract just the relative paths (filenames) from selected files
-                var selectedRelativePaths = selectedFiles.Select(f => f.Name).ToList();
+                var selectedRelativePaths = selectedFiles.Select(f => f.Path).ToList();
 
                 DebugConsole.WriteInfo($"Downloading {selectedRelativePaths.Count} selected files for {SelectedGame.Game.Name}");
 

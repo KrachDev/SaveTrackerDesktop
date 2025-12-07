@@ -312,6 +312,11 @@
                                     BorderThickness="0,0,0,1"
                                     Padding="15,10">
                                 <Grid ColumnDefinitions="40,2*,3*,100,150,120">
+                                    <CheckBox Grid.Column="0" 
+                                              IsChecked="{Binding AreAllTrackedFilesSelected}"
+                                              VerticalAlignment="Center"
+                                              HorizontalAlignment="Center"
+                                              ToolTip.Tip="Select/Deselect All"/>
                                     <TextBlock Grid.Column="1" 
                                                Text="FILE NAME" 
                                                FontWeight="SemiBold" 
@@ -452,6 +457,11 @@
                                     BorderThickness="0,0,0,1"
                                     Padding="15,10">
                                 <Grid ColumnDefinitions="40,3*,150,150,120">
+                                    <CheckBox Grid.Column="0" 
+                                              IsChecked="{Binding AreAllCloudFilesSelected}"
+                                              VerticalAlignment="Center"
+                                              HorizontalAlignment="Center"
+                                              ToolTip.Tip="Select/Deselect All"/>
                                     <TextBlock Grid.Column="1" 
                                                Text="FILE NAME" 
                                                FontWeight="SemiBold" 
