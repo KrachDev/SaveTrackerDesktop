@@ -174,33 +174,43 @@ namespace SaveTracker.Resources.SAVE_SYSTEM
                     return new List<Game>();
                 }
 
-                // Check if each game's executable still exists
-                bool hasChanges = false;
-                foreach (var game in games)
+                // Check if each game's executable still exists and remove if missing
+                var gamesToRemove = new System.Collections.Concurrent.ConcurrentBag<Game>();
+                bool hasCheckChanges = false;
+
+                // Use Parallel.ForEach for faster file checks on large libraries
+                Parallel.ForEach(games, (game) =>
                 {
                     bool executableExists = !string.IsNullOrEmpty(game.ExecutablePath) && File.Exists(game.ExecutablePath);
 
-                    // Update IsDeleted flag if it changed
-                    if (game.IsDeleted != !executableExists)
+                    if (!executableExists)
                     {
-                        game.IsDeleted = !executableExists;
-                        hasChanges = true;
+                        gamesToRemove.Add(game);
+                        hasCheckChanges = true;
+                    }
+                });
 
-                        if (game.IsDeleted)
-                        {
-                            DebugConsole.WriteWarning($"Game '{game.Name}' executable not found at: {game.ExecutablePath}");
-                        }
-                        else
-                        {
-                            DebugConsole.WriteSuccess($"Game '{game.Name}' executable found again at: {game.ExecutablePath}");
-                        }
+                if (!gamesToRemove.IsEmpty)
+                {
+                    foreach (var game in gamesToRemove)
+                    {
+                        DebugConsole.WriteWarning($"Game '{game.Name}' not found (detected deleted) - Removing from library.");
+                        games.Remove(game);
                     }
                 }
 
-                // Save the updated list if any games were flagged
-                if (hasChanges)
+                // Save the updated list if any games were removed
+                if (hasCheckChanges)
                 {
-                    await SaveAllGamesAsync(games);
+                    try
+                    {
+                        await SaveAllGamesAsync(games);
+                        DebugConsole.WriteInfo("Updated gameslist.json to remove missing games.");
+                    }
+                    catch (Exception ex)
+                    {
+                        DebugConsole.WriteError($"Failed to save gameslist after cleanup: {ex.Message}");
+                    }
                 }
 
                 return games;
