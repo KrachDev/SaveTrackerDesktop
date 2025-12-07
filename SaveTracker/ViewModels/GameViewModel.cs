@@ -19,6 +19,9 @@ namespace SaveTracker.ViewModels
         private string _installDirectory;
 
         [ObservableProperty]
+        private string _executablePath;
+
+        [ObservableProperty]
         private Avalonia.Media.Imaging.Bitmap? _icon;
 
         [ObservableProperty]
@@ -29,6 +32,7 @@ namespace SaveTracker.ViewModels
             Game = game;
             _name = game.Name;
             _installDirectory = game.InstallDirectory;
+            _executablePath = game.ExecutablePath;
             _isDeleted = game.IsDeleted;
 
             try

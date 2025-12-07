@@ -364,7 +364,8 @@ namespace SaveTracker.ViewModels
                 // Load tracked files
                 await UpdateTrackedListAsync(game);
                 // Load game-specific settings
-                await LoadGameSettingsAsync(game);  // ← ADD THIS LINE
+                await LoadGameSettingsAsync(game);
+                InitializeGameProperties(game);
                 // Clear cloud files (load on demand when tab is selected)
                 CloudFiles.Clear();
                 CloudFilesCountText = "Click refresh to load";
@@ -376,6 +377,27 @@ namespace SaveTracker.ViewModels
             catch (Exception ex)
             {
                 DebugConsole.WriteException(ex, "Error loading game details");
+            }
+        }
+
+        [RelayCommand]
+        private void OpenCloudLibrary()
+        {
+            try
+            {
+                var mainWindow = Avalonia.Application.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop
+               ? desktop.MainWindow
+               : null;
+
+                if (mainWindow != null)
+                {
+                    var window = new SaveTracker.Views.CloudLibraryWindow();
+                    window.ShowDialog(mainWindow);
+                }
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteException(ex, "Failed to open cloud library");
             }
         }
 

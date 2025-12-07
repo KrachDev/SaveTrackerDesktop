@@ -138,6 +138,9 @@
                     <Button Command="{Binding OpenBlacklistCommand}" 
                             Content="⛔ Blacklist" 
                             Classes="MenuButton"/>
+                    <Button Command="{Binding OpenCloudLibraryCommand}" 
+                            Content="📚 Library" 
+                            Classes="MenuButton"/>
                     <Button Command="{Binding OpenSettingsCommand}" 
                             Content="⚙️ Settings" 
                             Classes="MenuButton"/>
@@ -693,6 +696,82 @@
                             </ScrollViewer>
                         </Grid>
                     </TabItem>
+                    <!-- Properties Tab -->
+                    <TabItem Header="ℹ️ Properties">
+                        <Grid RowDefinitions="Auto,*">
+                            <Border Grid.Row="0"
+                                    Background="#252526"
+                                    Padding="15"
+                                    BorderBrush="#3F3F46"
+                                    BorderThickness="0,0,0,1">
+                                <Grid ColumnDefinitions="*,Auto,Auto">
+                                    <TextBlock Text="Game Properties"
+                                               FontSize="16"
+                                               FontWeight="SemiBold"
+                                               Foreground="White"
+                                               VerticalAlignment="Center"/>
+                                    
+                                    
+                                    <Button Grid.Column="2"
+                                            Command="{Binding SaveGamePropertiesCommand}"
+                                            Content="💾 Save Properties"
+                                            Classes="Primary"/>
+                                </Grid>
+                            </Border>
+
+                            <ScrollViewer Grid.Row="1" Padding="20">
+                                <StackPanel Spacing="20" MaxWidth="600" HorizontalAlignment="Left">
+                                    
+                                    <Border Background="#2D2D30"
+                                            Padding="20"
+                                            CornerRadius="8">
+                                        <StackPanel Spacing="15">
+                                            <TextBlock Text="📝 General Information"
+                                                       FontSize="14"
+                                                       FontWeight="SemiBold"
+                                                       Foreground="#4EC9B0"/>
+
+                                            <StackPanel Spacing="8">
+                                                <TextBlock Text="Game Name" Foreground="#CCCCCC"/>
+                                                <AutoCompleteBox Text="{Binding EditableGameName}"
+                                                                 ItemsSource="{Binding AvailableCloudGames}"
+                                                                 Watermark="Enter game name..."
+                                                                 FilterMode="Contains"/>
+                                                <Grid ColumnDefinitions="*,Auto">
+                                                    <TextBlock Text="Changing the name will update the display name in the list."
+                                                           FontSize="11"
+                                                           Foreground="#858585"/>
+                                                     <TextBlock Text="{Binding CloudCheckStatus}"
+                                                                Foreground="{Binding CloudCheckColor}"
+                                                                FontSize="11"
+                                                                HorizontalAlignment="Right"
+                                                                FontWeight="Bold"/>
+                                                </Grid>
+                                            </StackPanel>
+
+                                            <StackPanel Spacing="8">
+                                                <TextBlock Text="Executable Path" Foreground="#CCCCCC"/>
+                                                <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto">
+                                                    <TextBox Grid.Column="0"
+                                                             Text="{Binding EditableExecutablePath}"
+                                                             Watermark="C:\Path\To\Game.exe"
+                                                             Margin="0,0,10,0"/>
+                                                    <Button Grid.Column="1"
+                                                            Command="{Binding BrowseForGameExecutableCommand}"
+                                                            Content="📂 Browse..."/>
+                                                </Grid>
+                                                <TextBlock Text="The main game executable. Changing this will update the install directory and game icon."
+                                                           FontSize="11"
+                                                           Foreground="#858585"
+                                                           TextWrapping="Wrap"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Border>
+                                </StackPanel>
+                            </ScrollViewer>
+                        </Grid>
+                    </TabItem>
+
                 </TabControl>
             </Grid>
         </Grid>

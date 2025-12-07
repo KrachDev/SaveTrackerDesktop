@@ -1,0 +1,117 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="using:SaveTracker.ViewModels"
+        mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
+        x:Class="SaveTracker.Views.CloudLibraryWindow"
+        x:DataType="vm:CloudLibraryViewModel"
+        Icon="/Assets/avalonia-logo.ico"
+        Title="Cloud Library - All Games"
+        WindowStartupLocation="CenterOwner"
+        Width="900" Height="600"
+        Background="#1E1E1E">
+
+    <Grid RowDefinitions="Auto,*">
+        <!-- Header -->
+        <Border Grid.Row="0"
+                Background="#252526"
+                Padding="15"
+                BorderBrush="#3F3F46"
+                BorderThickness="0,0,0,1">
+            <Grid ColumnDefinitions="*,Auto">
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                    <TextBlock Text="📚 Cloud Library"
+                               FontSize="18"
+                               FontWeight="SemiBold"
+                               Foreground="White"
+                               VerticalAlignment="Center"/>
+                    <TextBlock Text="{Binding StatusMessage}"
+                               FontSize="12"
+                               Foreground="#858585"
+                               VerticalAlignment="Center"
+                               Margin="10,0,0,0"/>
+                </StackPanel>
+                
+                <Button Grid.Column="1"
+                        Command="{Binding LoadGamesCommand}"
+                        Content="🔄 Refresh"
+                        IsEnabled="{Binding !IsLoading}"/>
+            </Grid>
+        </Border>
+
+        <!-- Game List -->
+        <DataGrid Grid.Row="1"
+                  ItemsSource="{Binding LibraryGames}"
+                  IsReadOnly="True"
+                  Background="Transparent"
+                  BorderThickness="0"
+                  GridLinesVisibility="Horizontal"
+                  HorizontalGridLinesBrush="#3F3F46"
+                  HeadersVisibility="Column"
+                  RowBackground="Transparent">
+            <!-- Styling for DataGrid Headers -->
+            <DataGrid.Styles>
+                 <Style Selector="DataGridColumnHeader">
+                    <Setter Property="Background" Value="#2D2D30"/>
+                    <Setter Property="Foreground" Value="#CCCCCC"/>
+                    <Setter Property="Padding" Value="10,8"/>
+                 </Style>
+                 <Style Selector="DataGridRow:pointerover">
+                    <Setter Property="Background" Value="#2A2A2A"/>
+                 </Style>
+            </DataGrid.Styles>
+
+            <DataGrid.Columns>
+                <!-- Icon -->
+                <DataGridTemplateColumn Header="" Width="50">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                             <Image Source="{Binding Icon}" 
+                                    Width="24" Height="24" 
+                                    Stretch="Uniform"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+
+                <!-- Name -->
+                <DataGridTextColumn Header="Game" 
+                                    Binding="{Binding Name}" 
+                                    Width="*"
+                                    Foreground="White"/>
+
+                <!-- Status Text -->
+                <DataGridTemplateColumn Header="Status" Width="150">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding StatusText}" 
+                                       Foreground="{Binding StatusColor}"
+                                       VerticalAlignment="Center"
+                                       Margin="5,0"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                
+                 <!-- Local Path -->
+                <DataGridTextColumn Header="Local Path" 
+                                    Binding="{Binding LocalPath}" 
+                                    Width="1.5*"
+                                    Foreground="#858585"/>
+                
+            </DataGrid.Columns>
+        </DataGrid>
+
+        <!-- Loading Overlay -->
+        <Border Grid.Row="1"
+                Background="#80000000"
+                IsVisible="{Binding IsLoading}">
+            <TextBlock Text="Loading..."
+                       FontSize="20"
+                       Foreground="White"
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Center"/>
+        </Border>
+    </Grid>
+</Window>
