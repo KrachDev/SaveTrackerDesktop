@@ -65,6 +65,89 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             return false;
         }
 
+        public async Task<bool> UploadBatchAsync(
+            string sourceRoot,
+            string remoteRoot,
+            List<string> relativeFilePaths,
+            CloudProvider provider)
+        {
+            // Create a temporary file list for rclone
+            string listFilePath = System.IO.Path.GetTempFileName();
+
+            try
+            {
+                // Write relative paths to the list file
+                // Rclone expects forward slashes for paths in the list file
+                var formattedPaths = new List<string>();
+                foreach (var path in relativeFilePaths)
+                {
+                    formattedPaths.Add(path.Replace('\\', '/'));
+                }
+
+                await System.IO.File.WriteAllLinesAsync(listFilePath, formattedPaths);
+
+                for (int attempt = 1; attempt <= _maxRetries; attempt++)
+                {
+                    try
+                    {
+                        DebugConsole.WriteDebug($"Batch upload attempt {attempt}/{_maxRetries} for {relativeFilePaths.Count} files");
+
+                        string configPath = RclonePathHelper.GetConfigPath(provider);
+
+                        // Use 'copy' instead of 'copyto' when using --files-from
+                        // The source is the root directory
+                        // The destination is the remote root directory
+                        var result = await _executor.ExecuteRcloneCommand(
+                            $"copy \"{sourceRoot}\" \"{remoteRoot}\" --files-from \"{listFilePath}\" --config \"{configPath}\" --progress",
+                            _processTimeout
+                        );
+
+                        if (result.Success)
+                        {
+                            DebugConsole.WriteSuccess($"Batch upload successful on attempt {attempt}");
+                            return true;
+                        }
+                        else
+                        {
+                            DebugConsole.WriteWarning($"Batch attempt {attempt} failed: {result.Error}");
+
+                            if (attempt < _maxRetries)
+                            {
+                                DebugConsole.WriteInfo($"Waiting {_retryDelay.TotalSeconds} seconds before retry...");
+                                await Task.Delay(_retryDelay);
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        DebugConsole.WriteException(ex, $"Batch upload attempt {attempt} exception");
+
+                        if (attempt < _maxRetries)
+                        {
+                            await Task.Delay(_retryDelay);
+                        }
+                    }
+                }
+            }
+            finally
+            {
+                // Clean up the temporary file
+                try
+                {
+                    if (System.IO.File.Exists(listFilePath))
+                    {
+                        System.IO.File.Delete(listFilePath);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    DebugConsole.WriteWarning($"Failed to delete temp file {listFilePath}: {ex.Message}");
+                }
+            }
+
+            return false;
+        }
+
         public async Task<bool> DownloadFileWithRetry(
             string remotePath,
             string localPath,

@@ -40,6 +40,7 @@ namespace SaveTracker.Resources.Logic
             public string ExecutableName { get; set; } = string.Empty;
             public DateTime LaunchedAt { get; set; }
             public int TrackedFilesCount { get; set; }
+            public int LaunchCount { get; set; } // Aggregated count
         }
 
         /// <summary>
@@ -63,7 +64,8 @@ namespace SaveTracker.Resources.Logic
                             gameName = new { stringValue = g.GameName },
                             executableName = new { stringValue = g.ExecutableName },
                             launchedAt = new { timestampValue = g.LaunchedAt.ToString("o") },
-                            trackedFilesCount = new { integerValue = g.TrackedFilesCount.ToString() }
+                            trackedFilesCount = new { integerValue = g.TrackedFilesCount.ToString() },
+                            launchCount = new { integerValue = g.LaunchCount.ToString() }
                         }
                     }
                 }).ToArray();

@@ -1636,6 +1636,9 @@ namespace SaveTracker.ViewModels
 
                 DebugConsole.WriteSuccess($"Auto-detected running game: {game.Name} (PID: {processId})");
 
+                // Record game launch in analytics (privacy-focused, opt-in)
+                _ = AnalyticsService.RecordGameLaunchAsync(game.Name, game.ExecutablePath);
+
                 // Find the corresponding GameViewModel
                 var gameViewModel = Games.FirstOrDefault(g => g.Game.Name == game.Name);
                 if (gameViewModel == null)

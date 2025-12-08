@@ -225,17 +225,21 @@ namespace SaveTracker.Resources.Logic
                 ProcessedFiles = 0
             });
 
-            int processed = 0;
-            foreach (var file in validFiles)
+            // Use the new batch process for faster uploads
+            try
             {
-                if (cancellationToken.IsCancellationRequested)
-                {
-                    DebugConsole.WriteInfo("Upload cancelled by user");
-                    return;
-                }
-
-                await UploadSingleFileAsync(file, session, processed, validFiles.Count);
-                processed++;
+                await _rcloneFileOperations.ProcessBatch(
+                    validFiles,
+                    session.RemoteBasePath,
+                    session.Stats,
+                    session.Context.Game,
+                    session.Context.Provider
+                );
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteException(ex, "Batch upload failed");
+                session.Stats.FailedCount += validFiles.Count;
             }
         }
 

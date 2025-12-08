@@ -178,15 +178,21 @@ namespace SaveTracker.Resources.Logic
                     LastSeen = data.LastSeen,
                     Timestamp = DateTime.UtcNow,
                     TotalLaunches = data.TotalLaunches,
-                    // Convert game launches to upload format (excludes play duration)
-                    GameLaunches = data.GameLaunches.Select(e => new FirebaseAnalyticsUploader.GameLaunchEventUpload
-                    {
-                        GameName = e.GameName,
-                        ExecutableName = e.ExecutableName,
-                        LaunchedAt = e.LaunchedAt,
-                        TrackedFilesCount = e.TrackedFilesCount
-                        // PlayDuration is intentionally excluded for privacy
-                    }).ToList()
+                    // Aggregate game launches by GameName and ExecutableName
+                    GameLaunches = data.GameLaunches
+                        .GroupBy(g => new { g.GameName, g.ExecutableName })
+                        .Select(g => new FirebaseAnalyticsUploader.GameLaunchEventUpload
+                        {
+                            GameName = g.Key.GameName,
+                            ExecutableName = g.Key.ExecutableName,
+                            // Use the most recent launch time
+                            LaunchedAt = g.Max(e => e.LaunchedAt),
+                            // Use the latest tracked files count (from the latest launch)
+                            TrackedFilesCount = g.OrderByDescending(e => e.LaunchedAt).First().TrackedFilesCount,
+                            // aggregated launch count
+                            LaunchCount = g.Count()
+                        })
+                        .ToList()
                 };
                 // Upload to Firebase
                 bool success = await FirebaseAnalyticsUploader.UploadAnalyticsAsync(summary);
