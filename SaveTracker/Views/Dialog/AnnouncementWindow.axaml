@@ -1,0 +1,104 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="using:SaveTracker.ViewModels"
+        mc:Ignorable="d" 
+        d:DesignWidth="700" 
+        d:DesignHeight="600"
+        x:Class="SaveTracker.Views.Dialog.AnnouncementWindow"
+        x:DataType="vm:AnnouncementViewModel"
+        Title="What's New in SaveTracker"
+        Width="700" 
+        Height="600"
+        WindowStartupLocation="CenterScreen"
+        CanResize="False"
+        SystemDecorations="Full"
+        Background="#1E1E1E"
+        Topmost="True">
+
+    <Grid Margin="0">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <Border Grid.Row="0" 
+                Background="#252526" 
+                Padding="30,20"
+                BorderBrush="#3F3F46"
+                BorderThickness="0,0,0,1">
+            <StackPanel>
+                <TextBlock Text="🎉 What's New" 
+                           FontSize="28" 
+                           FontWeight="Bold" 
+                           Foreground="White"/>
+                <TextBlock Text="Important updates and changes in SaveTracker" 
+                           FontSize="13" 
+                           Foreground="#858585"
+                           Margin="0,8,0,0"/>
+            </StackPanel>
+        </Border>
+
+        <!-- Content Area -->
+        <Border Grid.Row="1" 
+                Background="#1E1E1E" 
+                Padding="30,20">
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <Border Background="#2A2A2A" 
+                        Padding="25" 
+                        CornerRadius="8"
+                        BorderBrush="#3F3F46"
+                        BorderThickness="1">
+                    <TextBlock Text="{Binding AnnouncementContent}" 
+                               TextWrapping="Wrap"
+                               Foreground="#CCCCCC"
+                               FontSize="13"
+                               LineHeight="22"/>
+                </Border>
+            </ScrollViewer>
+        </Border>
+
+        <!-- Footer with Checkbox and Close Button -->
+        <Border Grid.Row="2" 
+                Background="#252526" 
+                Padding="30,20"
+                BorderBrush="#3F3F46"
+                BorderThickness="0,1,0,0">
+            <Grid ColumnDefinitions="*,Auto">
+                <!-- Never Show Again Checkbox -->
+                <CheckBox Grid.Column="0"
+                          IsChecked="{Binding NeverShowAgain}" 
+                          Content="Never show this again"
+                          Foreground="#CCCCCC"
+                          VerticalAlignment="Center">
+                    <CheckBox.Styles>
+                        <Style Selector="CheckBox">
+                            <Setter Property="FontSize" Value="13"/>
+                        </Style>
+                    </CheckBox.Styles>
+                </CheckBox>
+
+                <!-- Close Button -->
+                <Button Grid.Column="1"
+                        Content="Close" 
+                        Click="CloseButton_Click" 
+                        Background="#0EA5E9"
+                        Foreground="White"
+                        Padding="30,12"
+                        FontSize="14"
+                        FontWeight="SemiBold"
+                        CornerRadius="6"
+                        Cursor="Hand">
+                    <Button.Styles>
+                        <Style Selector="Button:pointerover">
+                            <Setter Property="Background" Value="#0284C7"/>
+                        </Style>
+                    </Button.Styles>
+                </Button>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

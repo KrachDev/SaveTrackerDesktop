@@ -35,8 +35,8 @@ namespace SaveTracker.Resources.HELPERS
             }
             catch
             {
-                // Fallback to machine name hash if WMI fails
-                _cachedId = HashString(Environment.MachineName + Environment.UserName);
+                // Fallback to machine name hash if WMI fails (no username for privacy)
+                _cachedId = HashString(Environment.MachineName);
                 return _cachedId;
             }
         }

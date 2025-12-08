@@ -79,6 +79,17 @@ namespace SaveTracker
 
                 // Initialize Tray Icon
                 InitializeTrayIcon();
+
+                // Show announcement window if user hasn't seen this version's announcement
+                var updateChecker = new Resources.Logic.AutoUpdater.UpdateChecker();
+                var currentVersion = updateChecker.GetCurrentVersion();
+
+                if (config.LastSeenAnnouncementVersion != currentVersion)
+                {
+                    var announcementWindow = new AnnouncementWindow();
+                    announcementWindow.Show();
+                    DebugConsole.WriteInfo($"Showing announcement window for version {currentVersion}");
+                }
             }
 
             base.OnFrameworkInitializationCompleted();

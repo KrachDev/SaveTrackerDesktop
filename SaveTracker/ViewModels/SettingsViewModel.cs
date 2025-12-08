@@ -28,6 +28,16 @@ namespace SaveTracker.ViewModels
         [ObservableProperty]
         private bool _enableNotifications;
 
+        // Analytics settings
+        [ObservableProperty]
+        private bool _enableAnalytics;
+
+        [ObservableProperty]
+        private string _analyticsDeviceId = "Not generated yet";
+
+        [ObservableProperty]
+        private string _analyticsSummary = "No data collected";
+
         // Auto-updater properties
         [ObservableProperty]
         private bool _checkForUpdatesOnStartup;
@@ -65,8 +75,12 @@ namespace SaveTracker.ViewModels
                 ShowDebugConsole = _currentConfig.ShowDebugConsole;
                 EnableNotifications = _currentConfig.EnableNotifications;
                 CheckForUpdatesOnStartup = _currentConfig.CheckForUpdatesOnStartup;
+                EnableAnalytics = _currentConfig.EnableAnalytics;
             }
             StartWithWindows = StartupManager.IsStartupEnabled();
+
+            // Load analytics summary
+            await LoadAnalyticsSummaryAsync();
         }
 
         [RelayCommand]
@@ -82,6 +96,7 @@ namespace SaveTracker.ViewModels
             _currentConfig.ShowDebugConsole = ShowDebugConsole;
             _currentConfig.EnableNotifications = EnableNotifications;
             _currentConfig.CheckForUpdatesOnStartup = CheckForUpdatesOnStartup;
+            _currentConfig.EnableAnalytics = EnableAnalytics;
 
             await ConfigManagement.SaveConfigAsync(_currentConfig);
             StartupManager.SetStartup(StartWithWindows);
@@ -166,6 +181,60 @@ namespace SaveTracker.ViewModels
             {
                 DebugConsole.WriteException(ex, "Failed to install update");
                 UpdateVersion = "Install failed";
+            }
+        }
+
+        private async Task LoadAnalyticsSummaryAsync()
+        {
+            try
+            {
+                var summary = await SaveTracker.Resources.Logic.AnalyticsService.GetSummaryAsync();
+                AnalyticsDeviceId = summary.DeviceId;
+                AnalyticsSummary = $"{summary.TotalLaunches} launches • {summary.UniqueGamesLaunched} games • {summary.TotalFilesTracked} files tracked";
+            }
+            catch
+            {
+                AnalyticsDeviceId = "Error loading";
+                AnalyticsSummary = "Error loading analytics";
+            }
+        }
+
+        [RelayCommand]
+        private async Task ViewAnalyticsDataAsync()
+        {
+            try
+            {
+                var summary = await SaveTracker.Resources.Logic.AnalyticsService.GetSummaryAsync();
+
+                DebugConsole.WriteSection("Analytics Summary");
+                DebugConsole.WriteInfo($"Device ID: {summary.DeviceId}");
+                DebugConsole.WriteInfo($"First Seen: {summary.FirstSeen:yyyy-MM-dd HH:mm:ss}");
+                DebugConsole.WriteInfo($"Last Seen: {summary.LastSeen:yyyy-MM-dd HH:mm:ss}");
+                DebugConsole.WriteInfo($"Total Launches: {summary.TotalLaunches}");
+                DebugConsole.WriteInfo($"Unique Games: {summary.UniqueGamesLaunched}");
+                DebugConsole.WriteInfo($"Total Files Tracked: {summary.TotalFilesTracked}");
+                DebugConsole.WriteInfo($"Total Play Time: {summary.TotalPlayTime:hh\\:mm\\:ss}");
+
+                await LoadAnalyticsSummaryAsync();
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteException(ex, "Failed to view analytics data");
+            }
+        }
+
+        [RelayCommand]
+        private async Task ClearAnalyticsDataAsync()
+        {
+            try
+            {
+                await SaveTracker.Resources.Logic.AnalyticsService.ClearAnalyticsDataAsync();
+                await LoadAnalyticsSummaryAsync();
+                DebugConsole.WriteSuccess("Analytics data cleared");
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteException(ex, "Failed to clear analytics data");
             }
         }
     }

@@ -462,6 +462,12 @@ public class Config
     public DateTime LastUpdateCheck { get; set; } = DateTime.MinValue;
     public string SkipVersion { get; set; } = string.Empty;
 
+    // Analytics settings (opt-out, privacy-focused)
+    public bool EnableAnalytics { get; set; } = true;
+
+    // Announcement settings - track last seen version instead of never show again
+    public string LastSeenAnnouncementVersion { get; set; } = string.Empty;
+
     public CloudConfig CloudConfig { get; set; } = new CloudConfig();
 }
 

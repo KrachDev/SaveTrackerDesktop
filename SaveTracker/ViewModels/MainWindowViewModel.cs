@@ -818,6 +818,9 @@ namespace SaveTracker.ViewModels
                     if (targetProcess != null)
                     {
                         DebugConsole.WriteSuccess($"{game.Name} started (PID: {targetProcess.Id})");
+
+                        // Record game launch in analytics (privacy-focused, opt-in)
+                        _ = AnalyticsService.RecordGameLaunchAsync(game.Name, game.ExecutablePath);
                     }
                 }
 
@@ -922,6 +925,11 @@ namespace SaveTracker.ViewModels
                 }
 
                 DebugConsole.WriteInfo($"Processing {trackedFiles.Count} tracked files (checksum will always be uploaded)...");
+
+                // Record analytics: tracked files count and play duration (privacy-focused, opt-in)
+                var gameData = await ConfigManagement.GetGameData(game);
+                var playDuration = gameData?.PlayTime ?? TimeSpan.Zero;
+                _ = AnalyticsService.RecordTrackedFilesAsync(game.Name, trackedFiles.Count, playDuration);
 
                 // Debug: Log upload eligibility
                 DebugConsole.WriteInfo($"Upload check: CanUpload={CanUpload}, AreUploadsEnabledForGame()={AreUploadsEnabledForGame()}, _currentGameUploadData is null: {_currentGameUploadData == null}");
