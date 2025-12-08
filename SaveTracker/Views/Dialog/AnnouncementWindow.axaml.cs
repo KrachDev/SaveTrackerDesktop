@@ -8,6 +8,7 @@ namespace SaveTracker.Views.Dialog
     public partial class AnnouncementWindow : Window
     {
         private AnnouncementViewModel? _viewModel;
+        private bool _hasBeenSaved = false;
 
         public AnnouncementWindow()
         {
@@ -18,9 +19,10 @@ namespace SaveTracker.Views.Dialog
 
         private async void CloseButton_Click(object? sender, RoutedEventArgs e)
         {
-            // Auto-enable "never show again" when closing
-            if (_viewModel != null)
+            // Save settings based on checkbox state
+            if (_viewModel != null && !_hasBeenSaved)
             {
+                _hasBeenSaved = true;
                 await _viewModel.OnWindowClosingAsync();
             }
             Close();
@@ -29,8 +31,9 @@ namespace SaveTracker.Views.Dialog
         protected override async void OnClosing(WindowClosingEventArgs e)
         {
             // Also handle when user closes via X button or Alt+F4
-            if (_viewModel != null)
+            if (_viewModel != null && !_hasBeenSaved)
             {
+                _hasBeenSaved = true;
                 await _viewModel.OnWindowClosingAsync();
             }
             base.OnClosing(e);

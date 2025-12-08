@@ -1,5 +1,4 @@
 using CommunityToolkit.Mvvm.ComponentModel;
-using CommunityToolkit.Mvvm.Input;
 using SaveTracker.Resources.HELPERS;
 using SaveTracker.Resources.SAVE_SYSTEM;
 using System;
@@ -16,27 +15,18 @@ namespace SaveTracker.ViewModels
         [ObservableProperty]
         private bool _neverShowAgain;
 
-        private Config? _currentConfig;
         private string _currentVersion = string.Empty;
 
         public AnnouncementViewModel()
         {
             LoadAnnouncementContent();
-            LoadSettings();
 
             // Get current version
             var updateChecker = new Resources.Logic.AutoUpdater.UpdateChecker();
             _currentVersion = updateChecker.GetCurrentVersion();
-        }
 
-        private async void LoadSettings()
-        {
-            _currentConfig = await ConfigManagement.LoadConfigAsync();
-            if (_currentConfig != null)
-            {
-                // Check if user has already seen this version's announcement
-                NeverShowAgain = _currentConfig.LastSeenAnnouncementVersion == _currentVersion;
-            }
+            // Default to unchecked
+            NeverShowAgain = false;
         }
 
         private void LoadAnnouncementContent()
@@ -70,26 +60,20 @@ namespace SaveTracker.ViewModels
             }
         }
 
-        public async Task SaveSettingsAsync()
-        {
-            if (_currentConfig == null)
-            {
-                _currentConfig = new Config();
-            }
-
-            // Save current version as last seen
-            _currentConfig.LastSeenAnnouncementVersion = _currentVersion;
-            await ConfigManagement.SaveConfigAsync(_currentConfig);
-            DebugConsole.WriteInfo($"Saved last seen announcement version: {_currentVersion}");
-        }
-
         /// <summary>
         /// Called when the window is closing to save the current version
         /// </summary>
         public async Task OnWindowClosingAsync()
         {
-            // Save current version as last seen (auto-enable behavior)
-            await SaveSettingsAsync();
+            // Only mark version as seen if user checked "don't show again"
+            if (NeverShowAgain)
+            {
+                await VersionManager.MarkVersionAsSeenAsync(_currentVersion);
+            }
+            else
+            {
+                DebugConsole.WriteInfo("User did not check 'don't show again' - announcement will show next time");
+            }
         }
     }
 }

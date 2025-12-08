@@ -80,18 +80,25 @@ namespace SaveTracker
                 // Initialize Tray Icon
                 InitializeTrayIcon();
 
-                // Show announcement window if user hasn't seen this version's announcement
+                // Show announcement window if new version
                 var updateChecker = new Resources.Logic.AutoUpdater.UpdateChecker();
                 var currentVersion = updateChecker.GetCurrentVersion();
 
-                if (config.LastSeenAnnouncementVersion != currentVersion)
+                _ = Task.Run(async () =>
                 {
-                    var announcementWindow = new AnnouncementWindow();
-                    announcementWindow.Show();
-                    DebugConsole.WriteInfo($"Showing announcement window for version {currentVersion}");
-                    // Upload analytics to Firebase if due
-                    _ = Task.Run(async () => await SaveTracker.Resources.Logic.AnalyticsService.UploadToFirebaseAsync());
-                }
+                    if (await SaveTracker.Resources.SAVE_SYSTEM.VersionManager.ShouldShowAnnouncementAsync(currentVersion))
+                    {
+                        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                        {
+                            var announcementWindow = new AnnouncementWindow();
+                            announcementWindow.Show();
+                            DebugConsole.WriteInfo($"Showing announcement window for version {currentVersion}");
+                        });
+                    }
+                });
+
+                // Upload analytics to Firebase if due
+                _ = Task.Run(async () => await SaveTracker.Resources.Logic.AnalyticsService.UploadToFirebaseAsync());
             }
 
             base.OnFrameworkInitializationCompleted();
