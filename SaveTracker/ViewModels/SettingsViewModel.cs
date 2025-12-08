@@ -24,6 +24,10 @@ namespace SaveTracker.ViewModels
         [ObservableProperty]
         private bool _showDebugConsole;
 
+        // Notification settings
+        [ObservableProperty]
+        private bool _enableNotifications;
+
         // Auto-updater properties
         [ObservableProperty]
         private bool _checkForUpdatesOnStartup;
@@ -59,6 +63,7 @@ namespace SaveTracker.ViewModels
                 EnableAutomaticTracking = _currentConfig.EnableAutomaticTracking;
                 StartMinimized = _currentConfig.StartMinimized;
                 ShowDebugConsole = _currentConfig.ShowDebugConsole;
+                EnableNotifications = _currentConfig.EnableNotifications;
                 CheckForUpdatesOnStartup = _currentConfig.CheckForUpdatesOnStartup;
             }
             StartWithWindows = StartupManager.IsStartupEnabled();
@@ -75,6 +80,7 @@ namespace SaveTracker.ViewModels
             _currentConfig.EnableAutomaticTracking = EnableAutomaticTracking;
             _currentConfig.StartMinimized = StartMinimized;
             _currentConfig.ShowDebugConsole = ShowDebugConsole;
+            _currentConfig.EnableNotifications = EnableNotifications;
             _currentConfig.CheckForUpdatesOnStartup = CheckForUpdatesOnStartup;
 
             await ConfigManagement.SaveConfigAsync(_currentConfig);

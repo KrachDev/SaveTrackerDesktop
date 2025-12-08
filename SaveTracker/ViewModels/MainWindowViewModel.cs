@@ -1,4 +1,5 @@
 ﻿using Avalonia.Controls;
+using Avalonia.Controls.Notifications;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using SaveTracker.Resources.HELPERS;
@@ -210,8 +211,11 @@ namespace SaveTracker.ViewModels
         public int GetBlacklistRequestedSubscriberCount() => OnBlacklistRequested?.GetInvocationList().Length ?? 0;
         public int GetRcloneSetupRequiredSubscriberCount() => OnRcloneSetupRequired?.GetInvocationList().Length ?? 0;
 
-        public MainWindowViewModel()
+        private readonly INotificationService? _notificationService;
+
+        public MainWindowViewModel(INotificationService? notificationService = null)
         {
+            _notificationService = notificationService;
             _configManagement = new ConfigManagement();
             _rcloneFileOperations = new RcloneFileOperations();
             _providerHelper = new CloudProviderHelper();
@@ -430,6 +434,16 @@ namespace SaveTracker.ViewModels
 
                 if (mainWindow != null)
                 {
+                    if (!mainWindow.IsVisible)
+                    {
+                        mainWindow.Show();
+                    }
+                    if (mainWindow.WindowState == WindowState.Minimized)
+                    {
+                        mainWindow.WindowState = WindowState.Normal;
+                    }
+                    mainWindow.Activate();
+
                     var window = new SaveTracker.Views.CloudLibraryWindow();
                     window.ShowDialog(mainWindow);
                 }
@@ -457,6 +471,16 @@ namespace SaveTracker.ViewModels
                     DebugConsole.WriteError("Could not get MainWindow reference");
                     return;
                 }
+
+                if (!mainWindow.IsVisible)
+                {
+                    mainWindow.Show();
+                }
+                if (mainWindow.WindowState == WindowState.Minimized)
+                {
+                    mainWindow.WindowState = WindowState.Normal;
+                }
+                mainWindow.Activate();
 
                 DebugConsole.WriteInfo("Creating UC_AddGame dialog...");
                 var dialog = new UC_AddGame();
@@ -552,6 +576,17 @@ namespace SaveTracker.ViewModels
                     DebugConsole.WriteError("Could not get MainWindow reference");
                     return;
                 }
+
+                if (!mainWindow.IsVisible)
+                {
+                    mainWindow.Show();
+                }
+                if (mainWindow.WindowState == WindowState.Minimized)
+                {
+                    mainWindow.WindowState = WindowState.Normal;
+                }
+                mainWindow.Activate();
+
                 var dialog = new UC_ImportFromPlaynite();
                 var result = await dialog.ShowDialog<List<Game>?>(mainWindow);
                 if (result != null && result.Count > 0)
@@ -564,6 +599,7 @@ namespace SaveTracker.ViewModels
                     }
 
                     DebugConsole.WriteSuccess($"Successfully imported {result.Count} games");
+                    _notificationService?.Show("Import Successful", $"Imported {result.Count} games from Playnite.", NotificationType.Success);
                 }
                 else
                 {
@@ -790,30 +826,6 @@ namespace SaveTracker.ViewModels
                     targetProcess.EnableRaisingEvents = true;
                     IsLaunchEnabled = false;
                     SyncStatusText = "Tracking...";
-
-                    // Mark game as tracked to prevent duplicate auto-detection
-                    _gameProcessWatcher?.MarkGameAsTracked(game.Name);
-
-                    _trackingTask = TrackGameProcessAsync(targetProcess, _trackingCancellation.Token);
-
-                    targetProcess.Exited += async (s, e) =>
-                    {
-                        try
-                        {
-                            await OnGameExitedAsync(targetProcess);
-                        }
-                        catch (Exception ex)
-                        {
-                            DebugConsole.WriteException(ex, "Error in process exit handler");
-                        }
-                        finally
-                        {
-                            IsLaunchEnabled = true;
-                            SyncStatusText = "Idle";
-                            // Unmark game when tracking stops
-                            _gameProcessWatcher?.UnmarkGame(game.Name);
-                        }
-                    };
 
                     if (targetProcess.HasExited)
                     {
@@ -1136,11 +1148,45 @@ namespace SaveTracker.ViewModels
                 {
                     DebugConsole.WriteSuccess($"Successfully uploaded {uploadResult.UploadedCount} files");
                     await UpdateTrackedListAsync(game);
+
+                    // Notify user of successful upload
+                    if (uploadResult.FailedCount == 0)
+                    {
+                        _notificationService?.Show(
+                            "Upload Complete",
+                            $"Successfully uploaded {uploadResult.UploadedCount} file(s) for {game.Name}",
+                            NotificationType.Success
+                        );
+                    }
+                    else
+                    {
+                        _notificationService?.Show(
+                            "Upload Completed with Errors",
+                            $"Uploaded {uploadResult.UploadedCount} file(s), but {uploadResult.FailedCount} file(s) failed for {game.Name}",
+                            NotificationType.Warning
+                        );
+                    }
+                }
+                else
+                {
+                    // Notify user of upload failure
+                    _notificationService?.Show(
+                        "Upload Failed",
+                        $"Failed to upload saves for {game.Name}",
+                        NotificationType.Error
+                    );
                 }
             }
             catch (Exception ex)
             {
                 DebugConsole.WriteException(ex, "Upload failed");
+
+                // Notify user of exception
+                _notificationService?.Show(
+                    "Upload Error",
+                    $"An error occurred while uploading saves for {game?.Name ?? "game"}",
+                    NotificationType.Error
+                );
             }
         }
 
@@ -1579,97 +1625,6 @@ namespace SaveTracker.ViewModels
 
                 DebugConsole.WriteSuccess($"Auto-detected running game: {game.Name} (PID: {processId})");
 
-                // Smart Sync: Check if cloud save is ahead
-                var config = await ConfigManagement.LoadConfigAsync();
-                if (config?.CloudConfig != null)
-                {
-                    // Check if Smart Sync is enabled for this game
-                    var gameSettings = await ConfigManagement.GetGameData(game);
-                    bool smartSyncEnabled = gameSettings?.EnableSmartSync ?? true;
-
-                    if (smartSyncEnabled)
-                    {
-                        try
-                        {
-                            var effectiveProvider = GetEffectiveProviderForGame();
-                            var smartSync = new SmartSyncService();
-                            var comparison = await smartSync.CompareProgressAsync(
-                                game,
-                                TimeSpan.FromMinutes(10),
-                                effectiveProvider
-                            );
-
-                            DebugConsole.WriteInfo($"Smart Sync (Auto-Hook) Result: {comparison.Status}");
-
-                            if (comparison.Status == SmartSyncService.ProgressStatus.CloudAhead)
-                            {
-                                DebugConsole.WriteWarning("Cloud save is ahead during auto-hook! Prompting user...");
-
-                                var result = await ShowSmartSyncPromptAsync(
-                                    "Smart Sync: Restart Game with Cloud Save?",
-                                    $"Your cloud save has more playtime ({FormatTimeSpan(comparison.CloudPlayTime)}) than local ({FormatTimeSpan(comparison.LocalPlayTime)}).\n\n" +
-                                    $"Difference: {FormatTimeSpan(comparison.Difference)}\n\n" +
-                                    "The game will close, sync cloud save, and relaunch automatically.\n\n" +
-                                    "Restart with cloud save?",
-                                    "Yes, Restart & Sync",
-                                    "No, Use Local"
-                                );
-
-                                if (result == true)
-                                {
-                                    DebugConsole.WriteInfo("User chose to restart with cloud save");
-
-                                    // Close the game
-                                    try
-                                    {
-                                        var process = Process.GetProcessById(processId);
-                                        if (process != null && !process.HasExited)
-                                        {
-                                            DebugConsole.WriteInfo($"Closing game process (PID: {processId})...");
-                                            process.Kill();
-                                            process.WaitForExit(5000); // Wait up to 5 seconds
-                                        }
-                                    }
-                                    catch (Exception ex)
-                                    {
-                                        DebugConsole.WriteException(ex, "Failed to close game process");
-                                    }
-
-                                    // Download cloud save
-                                    await DownloadCloudSaveAsync(game);
-
-                                    // Relaunch the game
-                                    if (File.Exists(game.ExecutablePath))
-                                    {
-                                        DebugConsole.WriteInfo("Relaunching game with cloud save...");
-                                        Process.Start(game.ExecutablePath);
-
-                                        // Don't continue with tracking the old process
-                                        return;
-                                    }
-                                    else
-                                    {
-                                        DebugConsole.WriteError("Cannot relaunch - executable not found");
-                                        return;
-                                    }
-                                }
-                                else
-                                {
-                                    DebugConsole.WriteInfo("User chose to continue with local save");
-                                }
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            DebugConsole.WriteException(ex, "Smart Sync check failed during auto-hook");
-                        }
-                    }
-                    else
-                    {
-                        DebugConsole.WriteInfo("Smart Sync disabled for this game - skipping auto-hook check");
-                    }
-                }
-
                 // Find the corresponding GameViewModel
                 var gameViewModel = Games.FirstOrDefault(g => g.Game.Name == game.Name);
                 if (gameViewModel == null)
@@ -1701,6 +1656,13 @@ namespace SaveTracker.ViewModels
                         _gameProcessWatcher?.MarkGameAsTracked(game.Name);
 
                         _ = TrackGameProcessAsync(process, _trackingCancellation.Token);
+
+                        // Notify user that tracking has started
+                        _notificationService?.Show(
+                            "Game Tracking Started",
+                            $"Now tracking save files for {game.Name}",
+                            NotificationType.Information
+                        );
 
                         process.Exited += async (s, e) =>
                         {

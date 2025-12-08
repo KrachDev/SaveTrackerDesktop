@@ -116,6 +116,13 @@
                         
                         <CheckBox IsChecked="{Binding ShowDebugConsole}" 
                                   Content="Show Debug Console"/>
+                        
+                        <StackPanel Spacing="8">
+                            <CheckBox IsChecked="{Binding EnableNotifications}" 
+                                      Content="Enable Notifications"/>
+                            <TextBlock Text="Show in-app and Windows toast notifications for tracking and upload events." 
+                                       Classes="Description"/>
+                        </StackPanel>
                     </StackPanel>
                 </Border>
 

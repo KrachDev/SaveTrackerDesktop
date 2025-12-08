@@ -1,8 +1,10 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Controls.Notifications;
 using Avalonia.Data.Core.Plugins;
 using Avalonia.Markup.Xaml;
+using Avalonia.Platform;
 using CommunityToolkit.Mvvm.Input;
 using SaveTracker.Resources.HELPERS;
 using SaveTracker.Resources.SAVE_SYSTEM;
@@ -12,7 +14,7 @@ using SaveTracker.Views.Dialog;
 using System;
 using System.Diagnostics;
 using System.Linq;
-using Avalonia.Platform;
+using System.Threading.Tasks;
 
 namespace SaveTracker
 {
@@ -21,6 +23,7 @@ namespace SaveTracker
         public IRelayCommand OpenCommand { get; }
         public IRelayCommand ExitCommand { get; }
 
+        public TrayIcon? TrayIcon => _trayIcon;
         private TrayIcon? _trayIcon;
 
         public App()
@@ -53,9 +56,18 @@ namespace SaveTracker
 
                 // Initialize Main Window
                 var mainWindow = new MainWindow();
-                var viewModel = new MainWindowViewModel();
-                mainWindow.DataContext = viewModel;
                 desktop.MainWindow = mainWindow;
+
+                // Create notification service
+                var notificationService = new NotificationService(
+                    mainWindow.NotificationManager,
+                    null,
+                    mainWindow
+                );
+
+                // Initialize ViewModel with notification service
+                var viewModel = new MainWindowViewModel(notificationService);
+                mainWindow.DataContext = viewModel;
 
                 // Apply Start Minimized Setting
                 if (config.StartMinimized)

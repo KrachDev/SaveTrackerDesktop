@@ -19,12 +19,21 @@ namespace SaveTracker.Views
     public partial class MainWindow : Window
     {
         private MainWindowViewModel? _viewModel;
+        public Avalonia.Controls.Notifications.WindowNotificationManager? NotificationManager { get; private set; }
 
         public MainWindow()
         {
             DebugConsole.WriteInfo("=== MainWindow Constructor START ===");
             InitializeComponent();
             DebugConsole.WriteInfo("InitializeComponent completed");
+
+            // Initialize notification manager
+            NotificationManager = new Avalonia.Controls.Notifications.WindowNotificationManager(this)
+            {
+                Position = Avalonia.Controls.Notifications.NotificationPosition.TopRight,
+                MaxItems = 3
+            };
+
             DataContextChanged += OnDataContextChanged;
             DebugConsole.WriteSuccess("=== MainWindow Constructor COMPLETE ===");
         }
@@ -54,15 +63,8 @@ namespace SaveTracker.Views
                     });
 
                     ButtonResult result;
-                    if (this.IsVisible)
-                    {
-                        result = await box.ShowWindowDialogAsync(this);
-                    }
-                    else
-                    {
-                        DebugConsole.WriteInfo("Window is not visible (minimized?), showing non-modal dialog.");
-                        result = await box.ShowAsync();
-                    }
+                    EnsureWindowVisible();
+                    result = await box.ShowWindowDialogAsync(this);
 
                     DebugConsole.WriteInfo($"Admin Dialog Result: {result}");
 
@@ -132,12 +134,8 @@ namespace SaveTracker.Views
             {
                 await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(async () =>
                 {
+                    EnsureWindowVisible();
                     var window = new UC_AddGame();
-                    if (!this.IsActive)
-                    {
-                        this.Activate();
-                        await Task.Delay(100);
-                    }
                     var result = await window.ShowDialog<Game?>(this);
                     if (result != null)
                     {
@@ -177,6 +175,19 @@ namespace SaveTracker.Views
             {
                 DebugConsole.WriteException(ex, "Failed to show add files dialog");
             }
+        }
+
+        private void EnsureWindowVisible()
+        {
+            if (!this.IsVisible)
+            {
+                this.Show();
+            }
+            if (this.WindowState == WindowState.Minimized)
+            {
+                this.WindowState = WindowState.Normal;
+            }
+            this.Activate();
         }
 
         private async void ShowCloudSettings()
@@ -235,6 +246,7 @@ namespace SaveTracker.Views
                         WindowStartupLocation = WindowStartupLocation.CenterOwner
                     });
 
+                    EnsureWindowVisible();
                     var result = await box.ShowWindowDialogAsync(this);
                     return result == ButtonResult.Yes;
                 });
@@ -267,6 +279,7 @@ namespace SaveTracker.Views
                         WindowStartupLocation = WindowStartupLocation.CenterOwner
                     });
 
+                    EnsureWindowVisible();
                     var result = await confirmBox.ShowWindowDialogAsync(this);
 
                     if (result == ButtonResult.Yes)
@@ -276,50 +289,50 @@ namespace SaveTracker.Views
 
                         // Start download in background
                         _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        progressWindow.UpdateStatus("Downloading update...");
+
+                        var downloader = new SaveTracker.Resources.Logic.AutoUpdater.UpdateDownloader();
+                        downloader.DownloadProgressChanged += (sender, progress) =>
                         {
-                            try
+                            progressWindow.UpdateProgress(progress);
+                        };
+
+                        string downloadedFilePath = await downloader.DownloadUpdateAsync(info.DownloadUrl);
+
+                        progressWindow.UpdateStatus("Installing update...");
+                        progressWindow.UpdateProgress(100);
+
+                        await Task.Delay(500); // Brief pause to show 100%
+
+                        // Install and restart
+                        var installer = new SaveTracker.Resources.Logic.AutoUpdater.UpdateInstaller();
+                        await installer.InstallUpdateAsync(downloadedFilePath);
+
+                        // App will exit in InstallUpdateAsync
+                    }
+                    catch (Exception ex)
+                    {
+                        await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(async () =>
+                        {
+                            progressWindow.Close();
+
+                            var errorBox = MessageBoxManager.GetMessageBoxStandard(new MsBox.Avalonia.Dto.MessageBoxStandardParams
                             {
-                                progressWindow.UpdateStatus("Downloading update...");
+                                ButtonDefinitions = ButtonEnum.Ok,
+                                ContentTitle = "Update Failed",
+                                ContentHeader = "Failed to install update",
+                                ContentMessage = $"Error: {ex.Message}",
+                                Icon = MsBox.Avalonia.Enums.Icon.Error,
+                                WindowStartupLocation = WindowStartupLocation.CenterOwner
+                            });
 
-                                var downloader = new SaveTracker.Resources.Logic.AutoUpdater.UpdateDownloader();
-                                downloader.DownloadProgressChanged += (sender, progress) =>
-                                {
-                                    progressWindow.UpdateProgress(progress);
-                                };
-
-                                string downloadedFilePath = await downloader.DownloadUpdateAsync(info.DownloadUrl);
-
-                                progressWindow.UpdateStatus("Installing update...");
-                                progressWindow.UpdateProgress(100);
-
-                                await Task.Delay(500); // Brief pause to show 100%
-
-                                // Install and restart
-                                var installer = new SaveTracker.Resources.Logic.AutoUpdater.UpdateInstaller();
-                                await installer.InstallUpdateAsync(downloadedFilePath);
-
-                                // App will exit in InstallUpdateAsync
-                            }
-                            catch (Exception ex)
-                            {
-                                await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(async () =>
-                                {
-                                    progressWindow.Close();
-
-                                    var errorBox = MessageBoxManager.GetMessageBoxStandard(new MsBox.Avalonia.Dto.MessageBoxStandardParams
-                                    {
-                                        ButtonDefinitions = ButtonEnum.Ok,
-                                        ContentTitle = "Update Failed",
-                                        ContentHeader = "Failed to install update",
-                                        ContentMessage = $"Error: {ex.Message}",
-                                        Icon = MsBox.Avalonia.Enums.Icon.Error,
-                                        WindowStartupLocation = WindowStartupLocation.CenterOwner
-                                    });
-
-                                    await errorBox.ShowWindowDialogAsync(this);
-                                });
-                            }
+                            await errorBox.ShowWindowDialogAsync(this);
                         });
+                    }
+                });
 
                         // Show modal progress window (blocks interaction)
                         await progressWindow.ShowDialog(this);
@@ -369,6 +382,7 @@ namespace SaveTracker.Views
                 {
                     WindowStartupLocation = WindowStartupLocation.CenterOwner
                 };
+                EnsureWindowVisible();
                 await settingsWindow.ShowDialog(this);
                 if (_viewModel != null)
                 {

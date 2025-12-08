@@ -454,6 +454,9 @@ public class Config
     public bool StartMinimized { get; set; } = false;
     public bool ShowDebugConsole { get; set; } = false;
 
+    // Notification settings
+    public bool EnableNotifications { get; set; } = true;
+
     // Auto-updater settings
     public bool CheckForUpdatesOnStartup { get; set; } = true;
     public DateTime LastUpdateCheck { get; set; } = DateTime.MinValue;
