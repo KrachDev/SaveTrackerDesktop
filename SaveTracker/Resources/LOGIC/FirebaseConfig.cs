@@ -18,7 +18,8 @@ namespace SaveTracker.Resources.Logic
         // Collection name for analytics data
         public const string ANALYTICS_COLLECTION = "analytics";
 
-        // Upload interval (24 hours)
+        // Upload interval for app startup throttling (24 hours)
+        // Note: Uploads also happen after save uploads without throttling
         public static readonly TimeSpan UPLOAD_INTERVAL = TimeSpan.FromHours(24);
     }
 }

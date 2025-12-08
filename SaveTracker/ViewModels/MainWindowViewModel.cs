@@ -1157,6 +1157,9 @@ namespace SaveTracker.ViewModels
                     DebugConsole.WriteSuccess($"Successfully uploaded {uploadResult.UploadedCount} files");
                     await UpdateTrackedListAsync(game);
 
+                    // Upload analytics to Firebase after successful save upload
+                    _ = Task.Run(async () => await AnalyticsService.UploadToFirebaseAsync());
+
                     // Notify user of successful upload
                     if (uploadResult.FailedCount == 0)
                     {

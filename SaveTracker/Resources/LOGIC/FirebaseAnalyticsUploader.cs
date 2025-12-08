@@ -1,5 +1,7 @@
 using SaveTracker.Resources.HELPERS;
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
@@ -15,16 +17,29 @@ namespace SaveTracker.Resources.Logic
         private static readonly HttpClient _httpClient = new HttpClient();
 
         /// <summary>
-        /// Analytics summary data structure for upload
+        /// Analytics summary data structure for upload to Firebase
+        /// Includes game launch events WITHOUT play duration (privacy)
         /// </summary>
         public class AnalyticsSummary
         {
             public string DeviceId { get; set; } = string.Empty;
             public string AppVersion { get; set; } = string.Empty;
+            public DateTime FirstSeen { get; set; }
+            public DateTime LastSeen { get; set; }
             public DateTime Timestamp { get; set; }
             public int TotalLaunches { get; set; }
-            public int UniqueGames { get; set; }
-            public int TotalFilesTracked { get; set; }
+            public List<GameLaunchEventUpload> GameLaunches { get; set; } = new List<GameLaunchEventUpload>();
+        }
+
+        /// <summary>
+        /// Game launch event for Firebase upload (excludes play duration)
+        /// </summary>
+        public class GameLaunchEventUpload
+        {
+            public string GameName { get; set; } = string.Empty;
+            public string ExecutableName { get; set; } = string.Empty;
+            public DateTime LaunchedAt { get; set; }
+            public int TrackedFilesCount { get; set; }
         }
 
         /// <summary>
@@ -39,16 +54,31 @@ namespace SaveTracker.Resources.Logic
                 var url = $"{FirebaseConfig.FirestoreEndpoint}/{documentPath}?key={FirebaseConfig.API_KEY}";
 
                 // Convert summary to Firestore format
+                var gameLaunchesArray = summary.GameLaunches.Select(g => new
+                {
+                    mapValue = new
+                    {
+                        fields = new
+                        {
+                            gameName = new { stringValue = g.GameName },
+                            executableName = new { stringValue = g.ExecutableName },
+                            launchedAt = new { timestampValue = g.LaunchedAt.ToString("o") },
+                            trackedFilesCount = new { integerValue = g.TrackedFilesCount.ToString() }
+                        }
+                    }
+                }).ToArray();
+
                 var firestoreDoc = new
                 {
                     fields = new
                     {
                         deviceId = new { stringValue = summary.DeviceId },
                         appVersion = new { stringValue = summary.AppVersion },
+                        firstSeen = new { timestampValue = summary.FirstSeen.ToString("o") },
+                        lastSeen = new { timestampValue = summary.LastSeen.ToString("o") },
                         timestamp = new { timestampValue = summary.Timestamp.ToString("o") },
                         totalLaunches = new { integerValue = summary.TotalLaunches.ToString() },
-                        uniqueGames = new { integerValue = summary.UniqueGames.ToString() },
-                        totalFilesTracked = new { integerValue = summary.TotalFilesTracked.ToString() }
+                        gameLaunches = new { arrayValue = new { values = gameLaunchesArray } }
                     }
                 };
 

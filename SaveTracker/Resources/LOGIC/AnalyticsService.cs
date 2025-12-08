@@ -154,7 +154,8 @@ namespace SaveTracker.Resources.Logic
             };
         }
         /// <summary>
-        /// Uploads analytics summary to Firebase Firestore if enabled and due
+        /// Uploads analytics summary to Firebase Firestore if enabled
+        /// Note: Throttling is handled by caller (e.g., App.axaml.cs for startup uploads)
         /// </summary>
         public static async Task UploadToFirebaseAsync()
         {
@@ -165,13 +166,6 @@ namespace SaveTracker.Resources.Logic
             }
             try
             {
-                // Check if upload is due
-                var config = await ConfigManagement.LoadConfigAsync();
-                if (!FirebaseAnalyticsUploader.ShouldUpload(config?.LastAnalyticsUpload))
-                {
-                    DebugConsole.WriteInfo("[Analytics] Upload skipped - not due yet");
-                    return;
-                }
                 // Get analytics summary
                 var data = await LoadAnalyticsDataAsync();
                 var updateChecker = new AutoUpdater.UpdateChecker();
@@ -180,21 +174,31 @@ namespace SaveTracker.Resources.Logic
                 {
                     DeviceId = data.DeviceId,
                     AppVersion = updateChecker.GetCurrentVersion(),
+                    FirstSeen = data.FirstSeen,
+                    LastSeen = data.LastSeen,
                     Timestamp = DateTime.UtcNow,
                     TotalLaunches = data.TotalLaunches,
-                    UniqueGames = data.GameLaunches
-                        .Select(e => e.GameName)
-                        .Distinct(StringComparer.OrdinalIgnoreCase)
-                        .Count(),
-                    TotalFilesTracked = data.GameLaunches.Sum(e => e.TrackedFilesCount)
+                    // Convert game launches to upload format (excludes play duration)
+                    GameLaunches = data.GameLaunches.Select(e => new FirebaseAnalyticsUploader.GameLaunchEventUpload
+                    {
+                        GameName = e.GameName,
+                        ExecutableName = e.ExecutableName,
+                        LaunchedAt = e.LaunchedAt,
+                        TrackedFilesCount = e.TrackedFilesCount
+                        // PlayDuration is intentionally excluded for privacy
+                    }).ToList()
                 };
                 // Upload to Firebase
                 bool success = await FirebaseAnalyticsUploader.UploadAnalyticsAsync(summary);
-                if (success && config != null)
+                if (success)
                 {
-                    // Update last upload time
-                    config.LastAnalyticsUpload = DateTime.UtcNow;
-                    await ConfigManagement.SaveConfigAsync(config);
+                    // Update last upload time in config
+                    var config = await ConfigManagement.LoadConfigAsync();
+                    if (config != null)
+                    {
+                        config.LastAnalyticsUpload = DateTime.UtcNow;
+                        await ConfigManagement.SaveConfigAsync(config);
+                    }
                     DebugConsole.WriteSuccess("[Analytics] Upload completed successfully");
                 }
             }
