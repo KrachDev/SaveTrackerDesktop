@@ -1,6 +1,6 @@
 # 🎮 SaveTracker Desktop
 
-> **Version 0.4.2 Beta** - Automatic Game Save File Tracking & Cloud Sync
+> **Version 0.4.5 Beta** - Automatic Game Save File Tracking & Cloud Sync
 
 [![.NET](https://img.shields.io/badge/.NET-8.0-512BD4?logo=dotnet)](https://dotnet.microsoft.com/)
 [![Avalonia](https://img.shields.io/badge/Avalonia-11.3.9-8B44AC)](https://avaloniaui.net/)
@@ -19,7 +19,8 @@
 - 🚀 **Auto-Updater** - Automatically checks for and installs updates
 - 🎮 **Multi-Launcher Support** - Works with Steam, Epic, GOG, and any game launcher
 - 📁 **Manual File Management** - Add/remove tracked files with an intuitive interface
-- ⚡ **Smart Sync** - Only uploads modified files to save bandwidth
+- ⚡ **Lightning Fast Uploads** - Optimized batch processing for games with thousands of files
+- 📊 **Privacy-Focused Analytics** - Transparent, aggregated usage insights (opt-out available)
 - 🔍 **Auto-Detection** - Detects running games and offers to track them
 - 🎨 **Modern UI** - Dark theme with clean, professional design
 
@@ -114,11 +115,13 @@ This is **beta software**. Known limitations:
 
 ## 📋 Roadmap
 
-### Current (v0.3.0 Beta)
+### Current (v0.4.5 Beta)
 - ✅ Core save tracking
 - ✅ Cloud sync
 - ✅ Auto-updater
 - ✅ Multi-cloud support
+- ✅ Batch upload optimization
+- ✅ Privacy-focused analytics
 
 ### Planned for v1.0
 - [ ] Extended user testing
