@@ -3,6 +3,7 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:vm="using:SaveTracker.ViewModels"
+        xmlns:md="https://github.com/whistyun/Markdown.Avalonia"
         mc:Ignorable="d" 
         d:DesignWidth="700" 
         d:DesignHeight="600"
@@ -46,19 +47,47 @@
         <Border Grid.Row="1" 
                 Background="#1E1E1E" 
                 Padding="30,20">
-            <ScrollViewer VerticalScrollBarVisibility="Auto">
-                <Border Background="#2A2A2A" 
-                        Padding="25" 
-                        CornerRadius="8"
-                        BorderBrush="#3F3F46"
-                        BorderThickness="1">
-                    <TextBlock Text="{Binding AnnouncementContent}" 
-                               TextWrapping="Wrap"
-                               Foreground="#CCCCCC"
-                               FontSize="13"
-                               LineHeight="22"/>
-                </Border>
-            </ScrollViewer>
+            <Border Background="#2A2A2A" 
+                    Padding="25" 
+                    CornerRadius="8"
+                    BorderBrush="#3F3F46"
+                    BorderThickness="1">
+                <md:MarkdownScrollViewer 
+                    Markdown="{Binding AnnouncementContent}">
+                    <md:MarkdownScrollViewer.Styles>
+                        <Style Selector="TextBlock">
+                            <Setter Property="Foreground" Value="#CCCCCC"/>
+                            <Setter Property="FontSize" Value="13"/>
+                        </Style>
+                        <Style Selector="TextBlock.Heading1">
+                            <Setter Property="Foreground" Value="White"/>
+                            <Setter Property="FontSize" Value="24"/>
+                            <Setter Property="FontWeight" Value="Bold"/>
+                            <Setter Property="Margin" Value="0,0,0,12"/>
+                        </Style>
+                        <Style Selector="TextBlock.Heading2">
+                            <Setter Property="Foreground" Value="White"/>
+                            <Setter Property="FontSize" Value="20"/>
+                            <Setter Property="FontWeight" Value="SemiBold"/>
+                            <Setter Property="Margin" Value="0,16,0,8"/>
+                        </Style>
+                        <Style Selector="TextBlock.Heading3">
+                            <Setter Property="Foreground" Value="#E0E0E0"/>
+                            <Setter Property="FontSize" Value="16"/>
+                            <Setter Property="FontWeight" Value="SemiBold"/>
+                            <Setter Property="Margin" Value="0,12,0,6"/>
+                        </Style>
+                        <Style Selector="Border.CodeBlock">
+                            <Setter Property="Background" Value="#1E1E1E"/>
+                            <Setter Property="BorderBrush" Value="#3F3F46"/>
+                            <Setter Property="BorderThickness" Value="1"/>
+                            <Setter Property="CornerRadius" Value="4"/>
+                            <Setter Property="Padding" Value="12"/>
+                            <Setter Property="Margin" Value="0,8,0,8"/>
+                        </Style>
+                    </md:MarkdownScrollViewer.Styles>
+                </md:MarkdownScrollViewer>
+            </Border>
         </Border>
 
         <!-- Footer with Checkbox and Close Button -->

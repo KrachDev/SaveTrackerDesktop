@@ -22,7 +22,7 @@ namespace SaveTracker.Resources.Logic.AutoUpdater
             _currentVersion = Assembly.GetExecutingAssembly()
                 .GetName()
                 .Version?
-                .ToString(3) ?? "0.0.0"; // Major.Minor.Patch
+                .ToString(4) ?? "0.0.0"; // Major.Minor.Patch
         }
 
         /// <summary>
