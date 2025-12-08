@@ -89,6 +89,8 @@ namespace SaveTracker
                     var announcementWindow = new AnnouncementWindow();
                     announcementWindow.Show();
                     DebugConsole.WriteInfo($"Showing announcement window for version {currentVersion}");
+                    // Upload analytics to Firebase if due
+                    _ = Task.Run(async () => await SaveTracker.Resources.Logic.AnalyticsService.UploadToFirebaseAsync());
                 }
             }
 

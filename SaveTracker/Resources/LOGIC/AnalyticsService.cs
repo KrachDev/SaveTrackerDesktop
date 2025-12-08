@@ -153,7 +153,57 @@ namespace SaveTracker.Resources.Logic
                 TotalPlayTime = TimeSpan.FromTicks(data.GameLaunches.Sum(e => e.PlayDuration.Ticks))
             };
         }
+        /// <summary>
+        /// Uploads analytics summary to Firebase Firestore if enabled and due
+        /// </summary>
+        public static async Task UploadToFirebaseAsync()
+        {
+            if (!await IsEnabledAsync())
+            {
+                DebugConsole.WriteInfo("[Analytics] Upload skipped - analytics disabled");
+                return;
+            }
+            try
+            {
+                // Check if upload is due
+                var config = await ConfigManagement.LoadConfigAsync();
+                if (!FirebaseAnalyticsUploader.ShouldUpload(config?.LastAnalyticsUpload))
+                {
+                    DebugConsole.WriteInfo("[Analytics] Upload skipped - not due yet");
+                    return;
+                }
+                // Get analytics summary
+                var data = await LoadAnalyticsDataAsync();
+                var updateChecker = new AutoUpdater.UpdateChecker();
 
+                var summary = new FirebaseAnalyticsUploader.AnalyticsSummary
+                {
+                    DeviceId = data.DeviceId,
+                    AppVersion = updateChecker.GetCurrentVersion(),
+                    Timestamp = DateTime.UtcNow,
+                    TotalLaunches = data.TotalLaunches,
+                    UniqueGames = data.GameLaunches
+                        .Select(e => e.GameName)
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .Count(),
+                    TotalFilesTracked = data.GameLaunches.Sum(e => e.TrackedFilesCount)
+                };
+                // Upload to Firebase
+                bool success = await FirebaseAnalyticsUploader.UploadAnalyticsAsync(summary);
+                if (success && config != null)
+                {
+                    // Update last upload time
+                    config.LastAnalyticsUpload = DateTime.UtcNow;
+                    await ConfigManagement.SaveConfigAsync(config);
+                    DebugConsole.WriteSuccess("[Analytics] Upload completed successfully");
+                }
+            }
+            catch (Exception ex)
+            {
+                // Fail silently - analytics should never crash the app
+                DebugConsole.WriteWarning($"[Analytics] Upload failed: {ex.Message}");
+            }
+        }
         /// <summary>
         /// Clears all analytics data
         /// </summary>

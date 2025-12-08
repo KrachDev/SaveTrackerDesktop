@@ -71,7 +71,7 @@
                 <!-- Never Show Again Checkbox -->
                 <CheckBox Grid.Column="0"
                           IsChecked="{Binding NeverShowAgain}" 
-                          Content="Never show this again"
+                          Content="Don't show again for this version"
                           Foreground="#CCCCCC"
                           VerticalAlignment="Center">
                     <CheckBox.Styles>

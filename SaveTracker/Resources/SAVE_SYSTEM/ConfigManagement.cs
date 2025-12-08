@@ -468,6 +468,9 @@ public class Config
     // Announcement settings - track last seen version instead of never show again
     public string LastSeenAnnouncementVersion { get; set; } = string.Empty;
 
+    // Last time analytics were uploaded to Firebase
+    public DateTime? LastAnalyticsUpload { get; set; } = null;
+
     public CloudConfig CloudConfig { get; set; } = new CloudConfig();
 }
 
