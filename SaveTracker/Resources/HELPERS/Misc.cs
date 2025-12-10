@@ -26,13 +26,37 @@ namespace SaveTracker.Resources.HELPERS
             if (string.IsNullOrEmpty(path) || !File.Exists(path))
                 return string.Empty;
 
-            var info = System.Diagnostics.FileVersionInfo.GetVersionInfo(path);
+            try
+            {
+                var info = System.Diagnostics.FileVersionInfo.GetVersionInfo(path);
 
-            // First, try embedded metadata
-            if (!string.IsNullOrWhiteSpace(info.FileDescription))
-                return info.FileDescription;
-            if (!string.IsNullOrWhiteSpace(info.ProductName))
-                return info.ProductName;
+                // First, try embedded metadata
+                if (!string.IsNullOrWhiteSpace(info.FileDescription))
+                    return info.FileDescription;
+                if (!string.IsNullOrWhiteSpace(info.ProductName))
+                    return info.ProductName;
+            }
+            catch
+            {
+                // Ignore errors (e.g. native Linux ELF files, permissions)
+            }
+
+            // Fallback for Linux/Non-Windows where FileVersionInfo might return nulls or fail for PE files
+            try
+            {
+                if (PeNet.PeFile.TryParse(path, out var peFile))
+                {
+                    if (peFile?.Resources?.VsVersionInfo?.StringFileInfo?.StringTable != null)
+                    {
+                        foreach (var table in peFile.Resources.VsVersionInfo.StringFileInfo.StringTable)
+                        {
+                            if (!string.IsNullOrWhiteSpace(table.ProductName)) return table.ProductName;
+                            if (!string.IsNullOrWhiteSpace(table.FileDescription)) return table.FileDescription;
+                        }
+                    }
+                }
+            }
+            catch { }
 
             // Fallback: filename
             string name = Path.GetFileNameWithoutExtension(path);

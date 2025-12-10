@@ -12,9 +12,7 @@ namespace SaveTracker.Views
         public ImportSelectionWindow()
         {
             InitializeComponent();
-#if DEBUG
-            this.AttachDevTools();
-#endif
+
             var vm = new ImportSelectionWindowViewModel();
             DataContext = vm;
 

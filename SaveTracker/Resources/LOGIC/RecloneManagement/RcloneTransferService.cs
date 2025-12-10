@@ -237,7 +237,9 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                 string configPath = RclonePathHelper.GetConfigPath(provider);
                 var result = await _executor.ExecuteRcloneCommand(
                     $"lsl \"{remotePath}\" --config \"{configPath}\"",
-                    TimeSpan.FromSeconds(15)
+                    TimeSpan.FromSeconds(15),
+                    hideWindow: true,
+                    allowedExitCodes: new[] { 3 }
                 );
                 return result.Success && !string.IsNullOrWhiteSpace(result.Output);
             }
@@ -255,7 +257,9 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                 string configPath = RclonePathHelper.GetConfigPath(provider);
                 var result = await _executor.ExecuteRcloneCommand(
                     $"lsf \"{remoteBasePath}\" --config \"{configPath}\" --max-depth 1",
-                    TimeSpan.FromSeconds(15)
+                    TimeSpan.FromSeconds(15),
+                    hideWindow: true,
+                    allowedExitCodes: new[] { 3 }
                 );
 
                 return result.Success && !string.IsNullOrWhiteSpace(result.Output);

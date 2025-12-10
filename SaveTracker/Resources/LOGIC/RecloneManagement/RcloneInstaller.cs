@@ -124,8 +124,7 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                 else
                 {
                     DebugConsole.WriteSuccess("Rclone configuration is valid");
-                    await _rcloneConfigManager.TestConnection(provider);
-                    return true;
+                    return await _rcloneConfigManager.TestConnection(provider);
                 }
             }
             catch (Exception ex)

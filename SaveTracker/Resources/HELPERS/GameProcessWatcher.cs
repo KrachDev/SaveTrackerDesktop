@@ -155,12 +155,46 @@ namespace SaveTracker.Resources.HELPERS
                     }
 
                     // Check if this game's executable is running
+                    bool found = false;
+                    int pid = 0;
+
+                    // 1. Direct match (Windows and Native Linux)
                     var matchingProcess = runningProcesses.FirstOrDefault(p =>
                         p.ExecutablePath.Equals(game.ExecutablePath, StringComparison.OrdinalIgnoreCase));
 
                     if (matchingProcess.ProcessId != 0)
                     {
-                        DebugConsole.WriteSuccess($"GameProcessWatcher detected: {game.Name} (PID: {matchingProcess.ProcessId})");
+                        found = true;
+                        pid = matchingProcess.ProcessId;
+                    }
+#if !WINDOWS
+                    // 2. Wine/Proton match (Linux only) - check command line arguments
+                    if (!found && System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Linux))
+                    {
+                        string gameExeName = System.IO.Path.GetFileName(game.ExecutablePath);
+                        foreach (var p in runningProcesses)
+                        {
+                            try
+                            {
+                                // We need to read the cmdline for this process since GetRunningProcessesWithPaths only returns the exe path
+                                string cmdline = SaveTracker.Resources.HELPERS.LinuxUtils.ReadProcCmdLine(p.ProcessId);
+                                if (!string.IsNullOrEmpty(cmdline) &&
+                                    (cmdline.Contains(game.ExecutablePath, StringComparison.OrdinalIgnoreCase) ||
+                                     cmdline.Contains(gameExeName, StringComparison.OrdinalIgnoreCase)))
+                                {
+                                    found = true;
+                                    pid = p.ProcessId;
+                                    break; // Found it
+                                }
+                            }
+                            catch { }
+                        }
+                    }
+#endif
+
+                    if (found)
+                    {
+                        DebugConsole.WriteSuccess($"GameProcessWatcher detected: {game.Name} (PID: {pid})");
 
                         // Mark as tracked immediately to prevent duplicate events
                         lock (_currentlyTrackedGames)
@@ -169,7 +203,7 @@ namespace SaveTracker.Resources.HELPERS
                         }
 
                         // Raise the event
-                        GameProcessDetected?.Invoke(game, matchingProcess.ProcessId);
+                        GameProcessDetected?.Invoke(game, pid);
                     }
                 }
             }
@@ -219,25 +253,34 @@ namespace SaveTracker.Resources.HELPERS
 #else
             try
             {
-                // Cross-platform implementation using System.Diagnostics.Process
-                var allProcesses = System.Diagnostics.Process.GetProcesses();
-                foreach (var proc in allProcesses)
+                if (System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Linux))
                 {
-                    try
+                    // Linux specific implementation using /proc
+                    var pids = LinuxUtils.GetAllProcesses();
+                    foreach (var pid in pids)
                     {
-                        if (proc.MainModule != null && !string.IsNullOrEmpty(proc.MainModule.FileName))
+                        string path = LinuxUtils.ResolveProcPath(pid);
+                        if (!string.IsNullOrEmpty(path))
                         {
-                            processes.Add((proc.Id, proc.MainModule.FileName));
+                            processes.Add((pid, path));
                         }
                     }
-                    catch
+                }
+                else
+                {
+                    // Fallback / MacOS
+                    var allProcesses = System.Diagnostics.Process.GetProcesses();
+                    foreach (var proc in allProcesses)
                     {
-                        // Some processes (like system/root processes) won't allow access to MainModule
-                        continue;
-                    }
-                    finally
-                    {
-                        proc.Dispose();
+                        try
+                        {
+                            if (proc.MainModule != null && !string.IsNullOrEmpty(proc.MainModule.FileName))
+                            {
+                                processes.Add((proc.Id, proc.MainModule.FileName));
+                            }
+                        }
+                        catch { }
+                        finally { proc.Dispose(); }
                     }
                 }
             }

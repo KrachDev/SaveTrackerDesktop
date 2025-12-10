@@ -39,7 +39,7 @@ namespace SaveTracker.Resources.LOGIC
         /// <summary>
         /// Main tracking method - same signature as original for compatibility
         /// </summary>
-        public async Task Track(Game gameArg)
+        public async Task Track(Game gameArg, bool probeForPrefix = false)
         {
             DebugConsole.WriteLine("== SaveTracker DebugConsole Started ==");
             var gamedata = ConfigManagement.GetGameData(gameArg);
@@ -55,7 +55,7 @@ namespace SaveTracker.Resources.LOGIC
             CleanupExistingEtwSessions();
 
             // Initialize new tracking session
-            _currentSession = new TrackingSession(gameArg);
+            _currentSession = new TrackingSession(gameArg, probeForPrefix);
 
             try
             {
@@ -96,6 +96,11 @@ namespace SaveTracker.Resources.LOGIC
         /// </summary>
         private void CleanupExistingEtwSessions()
         {
+            if (!System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))
+            {
+                return;
+            }
+
             try
             {
                 var existingSession = TraceEventSession.GetActiveSession(ETW_SESSION_NAME);
@@ -160,6 +165,7 @@ namespace SaveTracker.Resources.LOGIC
     public class TrackingSession : IDisposable
     {
         private readonly Game _game;
+        private readonly bool _probeForPrefix;
         // ETW session
         private TraceEventSession _etwSession;
         private bool _isTracking;
@@ -184,16 +190,22 @@ namespace SaveTracker.Resources.LOGIC
         // Temp file resolution - NON-STATIC to avoid cross-session contamination
         private readonly HashSet<string> _trackedFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private readonly HashSet<string> _uploadCandidates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        private readonly object _listLock = new();
-        
+        private readonly object _listLock = new object();
+
+        // Linux Tracking
+        private string? _detectedPrefix;
+        private FileSystemWatcher? _linuxInstallWatcher;
+        private FileSystemWatcher? _linuxPrefixWatcher;
+
 
         bool trackWrites = true;
         bool trackReads = false;
         public bool IsTracking => _isTracking;
 
-        public TrackingSession(Game game)
+        public TrackingSession(Game game, bool probeForPrefix = false)
         {
             _game = game ?? throw new ArgumentNullException(nameof(game));
+            _probeForPrefix = probeForPrefix;
             _fileCollector = new FileCollector(_game);
             _cancellationTokenSource = new CancellationTokenSource();
         }
@@ -207,30 +219,109 @@ namespace SaveTracker.Resources.LOGIC
                 _uploadCandidates.Clear();
             }
 
-            // Detect game process
-            string detectedExe;
+            // Use the new Tracking Engine
+            var tracker = SaveTracker.Resources.LOGIC.Tracking.GameProcessTrackerFactory.Create();
+
+            // Try to find the process via the new engine first (more robust on Linux)
+            // But we need to know what we are looking for.
+            // The existing logic used `ProcessMonitor.GetProcessFromDir`.
+
+            // Enhanced Detection via new Engine - Try this FIRST without relying on ProcessMonitor scan
+            SaveTracker.Resources.LOGIC.Tracking.ProcessInfo? processInfo = null;
             try
             {
-                detectedExe = await ProcessMonitor.GetProcessFromDir(_game.InstallDirectory);
+                DebugConsole.WriteInfo($"Scanning for process matching game: {_game.Name} / {_game.ExecutablePath}");
+                // We use the full executable path if available, or just the game name logic internal to tracker
+                string searchTarget = _game.ExecutablePath;
+                if (string.IsNullOrEmpty(searchTarget)) searchTarget = _game.InstallDirectory; // Fallback
+
+                processInfo = await tracker.FindGameProcess(searchTarget);
             }
             catch (Exception ex)
             {
-                DebugConsole.WriteWarning($"Couldn't detect a running game process in install directory: {ex.Message}");
-                return false;
+                DebugConsole.WriteWarning($"Tracking engine scan error: {ex.Message}");
             }
 
-            string processName = Path.GetFileName(detectedExe);
-            var cleanName = processName.ToLower().Replace(".exe", "");
-            var procs = Process.GetProcessesByName(cleanName);
-
-            if (procs.Length == 0)
+            if (processInfo != null)
             {
-                DebugConsole.WriteLine($"No process with name {cleanName} found.");
-                return false;
+                DebugConsole.WriteSuccess($"Tracking Engine identified process: {processInfo.Name} ({processInfo.Id})");
+                _initialProcessId = processInfo.Id;
+
+                // Detect Launcher
+                string launcher = await tracker.DetectLauncher(processInfo);
+                DebugConsole.WriteInfo($"Launcher detected: {launcher}");
+
+                // Detect Prefix
+                _detectedPrefix = await tracker.DetectGamePrefix(processInfo);
+                if (!string.IsNullOrEmpty(_detectedPrefix))
+                {
+                    DebugConsole.WriteSuccess($"Game Prefix detected: {_detectedPrefix}");
+
+                    // PERSIST PREFIX
+                    try
+                    {
+                        var data = await ConfigManagement.GetGameData(_game) ?? new SaveTracker.Resources.Logic.RecloneManagement.GameUploadData();
+                        if (data.DetectedPrefix != _detectedPrefix)
+                        {
+                            data.DetectedPrefix = _detectedPrefix;
+                            await ConfigManagement.SaveGameData(_game, data);
+                            DebugConsole.WriteInfo("Persisted detected prefix to game data.");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        DebugConsole.WriteWarning($"Failed to persist prefix: {ex.Message}");
+                    }
+
+                    // PROBE MODE LOGIC
+                    if (_probeForPrefix)
+                    {
+                        DebugConsole.WriteInfo("Probe Mode: Prefix found. Terminating game process...");
+                        try
+                        {
+                            var proc = Process.GetProcessById(_initialProcessId);
+                            proc.Kill();
+                            DebugConsole.WriteSuccess("Game process terminated successfully.");
+                        }
+                        catch (Exception ex)
+                        {
+                            DebugConsole.WriteWarning($"Failed to kill process during probe: {ex.Message}");
+                        }
+                        return false; // Stop tracking session here
+                    }
+                }
+            }
+            else
+            {
+                // Fallback to old directory scan logic ONLY if direct detection failed
+                try
+                {
+                    DebugConsole.WriteInfo("Direct detection returned nothing, trying directory scan...");
+                    string detectedExe = await ProcessMonitor.GetProcessFromDir(_game.InstallDirectory);
+
+                    // If we found something in the dir, try to resolve its ID logic again (or just take it if we implemented that)
+                    // But ProcessMonitor.GetProcessFromDir returns a path.
+                    // We can try to feed that back to the tracker.
+                    processInfo = await tracker.FindGameProcess(detectedExe);
+                    if (processInfo != null)
+                    {
+                        _initialProcessId = processInfo.Id;
+                        DebugConsole.WriteSuccess($"Directory scan found process: {processInfo.Name} ({processInfo.Id})");
+                    }
+                    else
+                    {
+                        DebugConsole.WriteWarning("Could not identify process ID even after directory scan.");
+                        return false;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    DebugConsole.WriteWarning($"Process detection failed: {ex.Message}");
+                    return false;
+                }
             }
 
-            _initialProcessId = procs[0].Id;
-            DebugConsole.WriteLine($"Initial Process: {procs[0].ProcessName} (PID: {_initialProcessId})");
+            DebugConsole.WriteLine($"Initial Process: {_initialProcessId}");
 
             // Initialize process monitor
             _processMonitor = new ProcessMonitor(_game.InstallDirectory);
@@ -246,26 +337,38 @@ namespace SaveTracker.Resources.LOGIC
 
             try
             {
-                _etwSession = new TraceEventSession(ETW_SESSION_NAME);
+                if (System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))
+                {
+                    DebugConsole.WriteLine("Starting ETW session...");
+                    _etwSession = new TraceEventSession(ETW_SESSION_NAME);
+
+                    // Enable ETW providers
+                    _etwSession.EnableKernelProvider(
+                        KernelTraceEventParser.Keywords.FileIO
+                            | KernelTraceEventParser.Keywords.FileIOInit
+                            | KernelTraceEventParser.Keywords.Process
+                    );
+
+                    // Setup event handlers
+                    SetupEventHandlers();
+                }
+                else
+                {
+                    DebugConsole.WriteLine("Non-Windows OS detected: ETW disabled. Using periodic directory scan only.");
+                }
+
                 _isTracking = true;
                 _trackingStartUtc = DateTime.UtcNow;
-
-                DebugConsole.WriteLine("Starting ETW session...");
-
-                // Enable ETW providers
-                _etwSession.EnableKernelProvider(
-                    KernelTraceEventParser.Keywords.FileIO
-                        | KernelTraceEventParser.Keywords.FileIOInit
-                        | KernelTraceEventParser.Keywords.Process
-                );
-
-                // Setup event handlers
-                SetupEventHandlers();
 
                 // Start background tasks
                 StartBackgroundProcessing();
 
-                DebugConsole.WriteSuccess("ETW tracking started successfully");
+                SetupLinuxFileTracking();
+
+                if (System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))
+                {
+                    DebugConsole.WriteSuccess("ETW tracking started successfully");
+                }
             }
             catch (Exception ex)
             {
@@ -363,79 +466,146 @@ namespace SaveTracker.Resources.LOGIC
             DebugConsole.WriteInfo($"Track reads: {trackReads}");
         }
 
-private void HandleFileAccess(string filePath)
-{
-    if (string.IsNullOrEmpty(filePath) || _isDisposed)
-        return;
-
-    try
-    {
-        // Normalize path
-        string normalizedPath = filePath.Replace('/', '\\');
-
-        // FIRST: Check for double extensions and track both versions
-        string extension = Path.GetExtension(normalizedPath);
-        string companionFile = null;
-        
-        if (!string.IsNullOrEmpty(extension))
+        private void HandleFileAccess(string filePath)
         {
-            string fileWithoutExt = Path.Combine(
-                Path.GetDirectoryName(normalizedPath) ?? "",
-                Path.GetFileNameWithoutExtension(normalizedPath)
-            );
+            if (string.IsNullOrEmpty(filePath) || _isDisposed)
+                return;
 
-            // If removing extension still leaves an extension, it's a double extension
-            if (!string.IsNullOrEmpty(Path.GetExtension(fileWithoutExt)))
+            try
             {
-                companionFile = fileWithoutExt;
-            }
-        }
+                // Normalize path
+                string normalizedPath = filePath.Replace('/', '\\');
 
-        // NOW check if should be ignored
-        if (_fileCollector.ShouldIgnore(normalizedPath))
-        {
-            // Even if THIS file is ignored, track the companion if it exists
-            if (companionFile != null && !_fileCollector.ShouldIgnore(companionFile))
-            {
+                // FIRST: Check for double extensions and track both versions
+                string extension = Path.GetExtension(normalizedPath);
+                string companionFile = null;
+
+                if (!string.IsNullOrEmpty(extension))
+                {
+                    string fileWithoutExt = Path.Combine(
+                        Path.GetDirectoryName(normalizedPath) ?? "",
+                        Path.GetFileNameWithoutExtension(normalizedPath)
+                    );
+
+                    // If removing extension still leaves an extension, it's a double extension
+                    if (!string.IsNullOrEmpty(Path.GetExtension(fileWithoutExt)))
+                    {
+                        companionFile = fileWithoutExt;
+                    }
+                }
+
+                // NOW check if should be ignored
+                if (_fileCollector.ShouldIgnore(normalizedPath))
+                {
+                    // Even if THIS file is ignored, track the companion if it exists
+                    if (companionFile != null && !_fileCollector.ShouldIgnore(companionFile))
+                    {
+                        lock (_listLock)
+                        {
+                            if (!_uploadCandidates.Contains(companionFile))
+                            {
+                                _uploadCandidates.Add(companionFile);
+                                DebugConsole.WriteLine($"Tracked companion: {companionFile}");
+                            }
+                        }
+                    }
+                    return;
+                }
+
+                // Add to file collector
+                if (!_fileCollector.AddFile(normalizedPath))
+                    return;
+
+                // Track the main file
                 lock (_listLock)
                 {
-                    if (!_uploadCandidates.Contains(companionFile))
+                    if (!_trackedFiles.Contains(normalizedPath))
+                    {
+                        _trackedFiles.Add(normalizedPath);
+                        _uploadCandidates.Add(normalizedPath);
+                        DebugConsole.WriteLine($"Tracked: {normalizedPath}");
+                    }
+
+                    // Also track companion file if it's a double extension
+                    if (companionFile != null && !_uploadCandidates.Contains(companionFile))
                     {
                         _uploadCandidates.Add(companionFile);
-                        DebugConsole.WriteLine($"Tracked companion: {companionFile}");
+                        DebugConsole.WriteLine($"  -> Also tracking: {companionFile}");
                     }
                 }
             }
-            return;
+            catch (Exception ex)
+            {
+                DebugConsole.WriteWarning($"Error handling file access for {filePath}: {ex.Message}");
+            }
         }
 
-        // Add to file collector
-        if (!_fileCollector.AddFile(normalizedPath))
-            return;
-
-        // Track the main file
-        lock (_listLock)
+        // FileSystemWatcher for Linux
+        private void SetupLinuxFileTracking()
         {
-            if (!_trackedFiles.Contains(normalizedPath))
-            {
-                _trackedFiles.Add(normalizedPath);
-                _uploadCandidates.Add(normalizedPath);
-                DebugConsole.WriteLine($"Tracked: {normalizedPath}");
-            }
+            if (System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows)) return;
 
-            // Also track companion file if it's a double extension
-            if (companionFile != null && !_uploadCandidates.Contains(companionFile))
+            try
             {
-                _uploadCandidates.Add(companionFile);
-                DebugConsole.WriteLine($"  -> Also tracking: {companionFile}");
+                // Watch Install Directoy
+                if (Directory.Exists(_game.InstallDirectory))
+                {
+                    DebugConsole.WriteInfo($"Starting Install Dir Watcher: {_game.InstallDirectory}");
+                    _linuxInstallWatcher = new FileSystemWatcher(_game.InstallDirectory);
+                    _linuxInstallWatcher.IncludeSubdirectories = true;
+                    _linuxInstallWatcher.NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.DirectoryName;
+                    _linuxInstallWatcher.Changed += OnLinuxFileEvent;
+                    _linuxInstallWatcher.Created += OnLinuxFileEvent;
+                    _linuxInstallWatcher.Renamed += OnLinuxFileEvent;
+                    _linuxInstallWatcher.EnableRaisingEvents = true;
+                }
+
+                // If we detected a prefix, watch the users folder where saves usually live
+                if (!string.IsNullOrEmpty(_detectedPrefix) && Directory.Exists(_detectedPrefix))
+                {
+                    string driveC = Path.Combine(_detectedPrefix, "drive_c");
+                    // We can narrow it down to users to avoid noise from windows system files if possible, 
+                    // but some games save in ProgramData or elsewhere. drive_c recursively is safely broad.
+
+                    if (Directory.Exists(driveC))
+                    {
+                        DebugConsole.WriteInfo($"Starting Prefix Watcher: {driveC}");
+                        _linuxPrefixWatcher = new FileSystemWatcher(driveC);
+                        _linuxPrefixWatcher.IncludeSubdirectories = true;
+                        _linuxPrefixWatcher.NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.DirectoryName;
+                        _linuxPrefixWatcher.Changed += OnLinuxFileEvent;
+                        _linuxPrefixWatcher.Created += OnLinuxFileEvent;
+                        _linuxPrefixWatcher.Renamed += OnLinuxFileEvent;
+                        _linuxPrefixWatcher.EnableRaisingEvents = true;
+                    }
+                }
+
+                if (_linuxInstallWatcher != null || _linuxPrefixWatcher != null)
+                {
+                    DebugConsole.WriteSuccess("Linux file tracking active via FileSystemWatcher");
+                }
+                else
+                {
+                    DebugConsole.WriteWarning("No valid directories found to watch for Linux tracking.");
+                }
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteError($"Failed to setup Linux file tracking: {ex.Message}");
             }
         }
-    }
-    catch (Exception ex)
-    {
-        DebugConsole.WriteWarning($"Error handling file access for {filePath}: {ex.Message}");
-    }
-}
+
+        private void OnLinuxFileEvent(object sender, FileSystemEventArgs e)
+        {
+            try
+            {
+                if (_isTracking && !_isDisposed)
+                {
+                    HandleFileAccess(e.FullPath);
+                }
+            }
+            catch { }
+        }
         private void StartBackgroundProcessing()
         {
             // ETW processing task
@@ -443,9 +613,12 @@ private void HandleFileAccess(string filePath)
             {
                 try
                 {
-                    DebugConsole.WriteLine("ETW session processing started.");
-                    _etwSession.Source.Process();
-                    DebugConsole.WriteLine("ETW session processing ended.");
+                    if (_etwSession != null)
+                    {
+                        DebugConsole.WriteLine("ETW session processing started.");
+                        _etwSession.Source.Process();
+                        DebugConsole.WriteLine("ETW session processing ended.");
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -595,8 +768,11 @@ private void HandleFileAccess(string filePath)
             // Stop ETW session
             try
             {
-                _etwSession?.Stop();
-                DebugConsole.WriteLine("ETW session stopped.");
+                if (_etwSession != null)
+                {
+                    _etwSession.Stop();
+                    DebugConsole.WriteLine("ETW session stopped.");
+                }
             }
             catch (Exception ex)
             {

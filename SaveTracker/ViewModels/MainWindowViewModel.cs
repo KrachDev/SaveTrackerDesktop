@@ -7,6 +7,7 @@ using SaveTracker.Resources.Logic;
 using SaveTracker.Resources.Logic.RecloneManagement;
 using SaveTracker.Resources.Logic.AutoUpdater;
 using SaveTracker.Resources.LOGIC;
+using SaveTracker.Resources.LOGIC.Launching;
 
 using SaveTracker.Resources.SAVE_SYSTEM;
 using SaveTracker.Views;
@@ -711,24 +712,46 @@ namespace SaveTracker.ViewModels
                         config = await ConfigManagement.LoadConfigAsync();
                         provider = config?.CloudConfig;
                         effectiveProvider = GetEffectiveProviderForGame();
-
                         rcloneReady = await rcloneInstaller.RcloneCheckAsync(effectiveProvider);
                     }
+                }
 
-                    if (!rcloneReady)
-                    {
-                        DebugConsole.WriteWarning("Rclone still not configured - proceeding without cloud check");
-                    }
+                // SMART SYNC - FIRST LAUNCH PROBE (Linux Only)
+                // If on Linux, Smart Sync is enabled, and we don't have a prefix yet -> Probe first.
+                bool checkSmartSync = true;
+                bool isLinux = System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Linux);
+                var gameData = await ConfigManagement.GetGameData(game);
+                bool smartSyncEnabled = gameData?.EnableSmartSync ?? true;
+
+                if (isLinux && rcloneReady && smartSyncEnabled && string.IsNullOrEmpty(gameData?.DetectedPrefix))
+                {
+                    DebugConsole.WriteInfo("First Launch on Linux with Smart Sync enabled. Initiating Probe...");
+                    _notificationService?.Show("First Launch Setup", "SaveTracker needs to detect the game save location first.\nThe game will launch and close automatically, then sync.", NotificationType.Information);
+
+                    // 1. Launch Game for Probe
+                    string probeExeName = Path.GetFileNameWithoutExtension(game.ExecutablePath);
+                    GameLauncher.Launch(game);
+
+                    // 2. Track in Probe Mode (waits for detection, then kills game)
+                    _trackLogic = new SaveFileTrackerManager();
+                    _trackingCancellation = new CancellationTokenSource();
+                    await _trackLogic.Track(game, probeForPrefix: true);
+
+                    // 3. Probe Complete
+                    DebugConsole.WriteSuccess("Probe complete. Prefix should be saved.");
+                    _notificationService?.Show("Setup Complete", "Save location detected. Checking cloud saves...", NotificationType.Success);
+
+                    // Refresh data to get the new prefix
+                    gameData = await ConfigManagement.GetGameData(game);
                 }
 
                 // Smart Sync: Check cloud vs local PlayTime before launching
                 DebugConsole.WriteInfo($"Smart Sync check: rcloneReady={rcloneReady}");
 
-                if (rcloneReady)
+                if (rcloneReady && checkSmartSync)
                 {
-                    // Check if Smart Sync is enabled for this game
-                    var gameData = await ConfigManagement.GetGameData(game);
-                    bool smartSyncEnabled = gameData?.EnableSmartSync ?? true;
+                    // Check if Smart Sync is enabled for this game (re-read data as it might have changed)
+                    smartSyncEnabled = gameData?.EnableSmartSync ?? true;
 
                     if (smartSyncEnabled)
                     {
@@ -784,61 +807,43 @@ namespace SaveTracker.ViewModels
                 {
                     DebugConsole.WriteWarning("Rclone not ready - skipping Smart Sync check");
                 }
-
                 if (!File.Exists(game.ExecutablePath))
                 {
                     DebugConsole.WriteError($"Executable not found: {game.ExecutablePath}");
                     return;
                 }
 
+                // Normal Launch
+                DebugConsole.WriteInfo("Launching game normally...");
+                SaveTracker.Resources.LOGIC.Launching.GameLauncher.Launch(game);
+
+                // Record game launch in analytics (privacy-focused, opt-in)
+                _ = AnalyticsService.RecordGameLaunchAsync(game.Name, game.ExecutablePath);
+
+                // NOTE: Game is already launched via GameLauncher above.
+                // We just need to start the tracker now.
+
                 _trackLogic = new SaveFileTrackerManager();
                 _trackingCancellation = new CancellationTokenSource();
 
-                string exeName = Path.GetFileNameWithoutExtension(game.ExecutablePath);
-                var existingProcesses = Process.GetProcessesByName(exeName);
-                Process? targetProcess = null;
+                IsLaunchEnabled = false;
+                SyncStatusText = "Tracking...";
 
-                if (existingProcesses.Length > 0)
+                // Start tracking (standard mode)
+                // We don't await this so UI remains responsive
+                _trackingTask = Task.Run(async () =>
                 {
-                    targetProcess = existingProcesses[0];
-                    DebugConsole.WriteInfo($"Found existing process: {game.Name} (PID: {targetProcess.Id})");
-                }
-                else
+                    await _trackLogic.Track(game);
+                }, _trackingCancellation.Token).ContinueWith(async t =>
                 {
-                    DebugConsole.WriteInfo($"Launching {game.Name}...");
-
-                    var startInfo = new ProcessStartInfo
+                    // Cleanup when tracking finishes (game exited)
+                    await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
                     {
-                        FileName = game.ExecutablePath,
-                        WorkingDirectory = game.InstallDirectory,
-                        UseShellExecute = true
-                    };
-
-                    targetProcess = Process.Start(startInfo);
-
-                    if (targetProcess != null)
-                    {
-                        DebugConsole.WriteSuccess($"{game.Name} started (PID: {targetProcess.Id})");
-
-                        // Record game launch in analytics (privacy-focused, opt-in)
-                        _ = AnalyticsService.RecordGameLaunchAsync(game.Name, game.ExecutablePath);
-                    }
-                }
-
-                if (targetProcess != null)
-                {
-                    targetProcess.EnableRaisingEvents = true;
-                    IsLaunchEnabled = false;
-                    SyncStatusText = "Tracking...";
-
-                    if (targetProcess.HasExited)
-                    {
-                        await OnGameExitedAsync(targetProcess);
                         IsLaunchEnabled = true;
                         SyncStatusText = "Idle";
                         _gameProcessWatcher?.UnmarkGame(game.Name);
-                    }
-                }
+                    });
+                });
             }
             catch (Exception ex)
             {
@@ -896,7 +901,9 @@ namespace SaveTracker.ViewModels
             {
                 if (game == null) return;
 
-                DebugConsole.WriteInfo($"{game.Name} closed. Exit code: {process.ExitCode}");
+                int exitCode = -1;
+                try { exitCode = process.ExitCode; } catch { }
+                DebugConsole.WriteInfo($"{game.Name} closed. Exit code: {exitCode}");
 
                 _trackingCancellation?.Cancel();
 
@@ -1570,24 +1577,160 @@ namespace SaveTracker.ViewModels
 
                 var result = await executor.ExecuteRcloneCommand(
                     $"lsjson \"{remotePath}\" --recursive --config \"{configPath}\"",
-                    TimeSpan.FromSeconds(30)
+                    TimeSpan.FromSeconds(30),
+                    hideWindow: true,
+                    allowedExitCodes: new[] { 3 }
                 );
 
                 if (result.Success && !string.IsNullOrWhiteSpace(result.Output))
                 {
-                    var files = System.Text.Json.JsonSerializer.Deserialize<List<RcloneFileInfo>>(result.Output);
-                    if (files != null)
+                    try
                     {
-                        var validFiles = files.Where(f => !f.IsDir && !f.Name.StartsWith(".")).ToList();
-                        long totalSize = 0;
-
-                        foreach (var file in validFiles)
+                        var files = System.Text.Json.JsonSerializer.Deserialize<List<RcloneFileInfo>>(result.Output);
+                        if (files != null)
                         {
-                            CloudFiles.Add(new CloudFileViewModel(file));
-                            totalSize += file.Size;
-                        }
+                            var validFiles = files.Where(f => !f.IsDir && !f.Name.StartsWith(".")).ToList();
+                            long totalSize = 0;
 
-                        CloudFilesCountText = $"{validFiles.Count} files in cloud • {Misc.FormatFileSize(totalSize)}";
+                            CloudFiles.Clear();
+                            foreach (var file in validFiles)
+                            {
+                                CloudFiles.Add(new CloudFileViewModel(file));
+                                totalSize += file.Size;
+                            }
+
+                            CloudFilesCountText = $"{validFiles.Count} files in cloud • {Misc.FormatFileSize(totalSize)}";
+                        }
+                        else
+                        {
+                            CloudFilesCountText = "0 files in cloud";
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        DebugConsole.WriteError($"Failed to parse cloud files JSON: {ex.Message}");
+                        DebugConsole.WriteDebug($"Raw Output (Exit: {result.ExitCode}): {result.Output}");
+                        if (!string.IsNullOrEmpty(result.Error))
+                        {
+                            DebugConsole.WriteError($"Rclone Error Output: {result.Error}");
+                        }
+                        CloudFilesCountText = "Error loading files";
+
+                        // DIAGNOSTIC CHECKS
+                        if (!string.IsNullOrEmpty(result.Error) && result.Error.Contains("directory not found"))
+                        {
+                            DebugConsole.WriteWarning("Running diagnostics on cloud path...");
+                            try
+                            {
+                                // Check if base folder exists
+                                var diagnosticPath = $"{remoteName}:{SaveFileUploadManager.RemoteBaseFolder}";
+                                DebugConsole.WriteInfo($"Checking parent folder: {diagnosticPath}");
+                                var diagResult = await executor.ExecuteRcloneCommand(
+                                    $"lsd \"{diagnosticPath}\" --config \"{configPath}\"",
+                                    TimeSpan.FromSeconds(10),
+                                    hideWindow: true
+                                );
+                                if (diagResult.Success)
+                                {
+                                    DebugConsole.WriteSuccess($"Parent folder exists. Output:\n{diagResult.Output}");
+
+                                    // SMART RESOLUTION
+                                    try
+                                    {
+                                        var lines = diagResult.Output.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+                                        string bestMatch = null;
+                                        double bestScore = 0.0;
+
+                                        foreach (var line in lines)
+                                        {
+                                            // Format: "          -1 2025-12-09 23:22:48        -1 Marvel's Spider-Man 2"
+                                            // We need to extract the name. Rclone lsd output usually has fixed width columns or tab separated?
+                                            // Actually it seems to be: size (10 chars), date (10), time (8), count (9), name (rest)
+                                            // Or simplified: it ends with the name.
+
+                                            // A robust way is to split by spaces and take likely the last part, but names have spaces.
+                                            // Rclone lsd output typically:
+                                            // <size> <date> <time> <count> <name>
+                                            //      0 2025-12-10 12:00:00        -1 Folder Name
+
+                                            var parts = line.Trim().Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                                            if (parts.Length >= 5)
+                                            {
+                                                // Reconstruct name from index 4 onwards
+                                                string folderName = string.Join(" ", parts.Skip(4));
+                                                // Check similarity
+                                                double score = SaveTracker.Resources.HELPERS.StringUtils.CalculateSimilarity(game.Name, folderName);
+
+                                                if (score > bestScore)
+                                                {
+                                                    bestScore = score;
+                                                    bestMatch = folderName;
+                                                }
+                                            }
+                                        }
+
+                                        if (bestMatch != null && bestScore > 0.4) // Threshold
+                                        {
+                                            DebugConsole.WriteSuccess($"Smart Resolution: Found potential match '{bestMatch}' (Score: {bestScore:F2})");
+
+                                            // Retry with new path
+                                            var newRemotePath = $"{remoteName}:{SaveFileUploadManager.RemoteBaseFolder}/{bestMatch}";
+                                            DebugConsole.WriteInfo($"Retrying with corrected path: {newRemotePath}");
+
+                                            var retryResult = await executor.ExecuteRcloneCommand(
+                                                $"lsjson \"{newRemotePath}\" --recursive --config \"{configPath}\"",
+                                                TimeSpan.FromSeconds(30),
+                                                hideWindow: true
+                                            );
+
+                                            if (retryResult.Success && !string.IsNullOrWhiteSpace(retryResult.Output))
+                                            {
+                                                // SUCCESS! Process this instead
+                                                result = retryResult;
+                                                // Clear global error flag if we recovered? 
+                                                // Actually we just proceed to parse `result` which is now the good one.
+                                                // We need to re-enter the success block.
+                                                // Since we are inside the 'directory not found' block which is inside the catch/error block of the MAIN logic...
+                                                // We can't easily "jump" back. We must copy the parsing logic here or extract it.
+
+                                                // For now, let's just parse it here to fix the UI
+                                                var files = System.Text.Json.JsonSerializer.Deserialize<List<RcloneFileInfo>>(result.Output);
+                                                if (files != null)
+                                                {
+                                                    var validFiles = files.Where(f => !f.IsDir && !f.Name.StartsWith(".")).ToList();
+                                                    long totalSize = 0;
+
+                                                    CloudFiles.Clear();
+                                                    foreach (var file in validFiles)
+                                                    {
+                                                        CloudFiles.Add(new CloudFileViewModel(file));
+                                                        totalSize += file.Size;
+                                                    }
+                                                    CloudFilesCountText = $"{validFiles.Count} files in cloud • {Misc.FormatFileSize(totalSize)}";
+                                                    DebugConsole.WriteSuccess("Smart Resolution: Successfully loaded files from corrected path.");
+                                                }
+                                            }
+                                        }
+                                    }
+                                    catch (Exception resolutionEx)
+                                    {
+                                        DebugConsole.WriteWarning($"Smart resolution failed: {resolutionEx.Message}");
+                                    }
+                                }
+                                else
+                                {
+                                    DebugConsole.WriteWarning($"Parent folder check failed. Checking root {remoteName}: ...");
+                                    var rootResult = await executor.ExecuteRcloneCommand(
+                                        $"lsd \"{remoteName}:\" --config \"{configPath}\"",
+                                        TimeSpan.FromSeconds(10),
+                                        hideWindow: true
+                                    );
+                                    if (rootResult.Success) DebugConsole.WriteSuccess($"Root check passed. Output:\n{rootResult.Output}");
+                                    else DebugConsole.WriteError($"Root check failed: {rootResult.Error}");
+                                }
+                            }
+                            catch { }
+                        }
                     }
                 }
                 else

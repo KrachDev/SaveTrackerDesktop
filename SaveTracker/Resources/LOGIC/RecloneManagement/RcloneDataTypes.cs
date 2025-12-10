@@ -18,7 +18,8 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
         public string LastSyncStatus { get; set; } = "Unknown";
         public bool AllowGameWatcher { get; set; } = true;
         public bool EnableSmartSync { get; set; } = true;
-        public TimeSpan  PlayTime { get; set; } = TimeSpan.Zero;
+        public TimeSpan PlayTime { get; set; } = TimeSpan.Zero;
+        public string? DetectedPrefix { get; set; }
     }
 
     public class FileChecksumRecord

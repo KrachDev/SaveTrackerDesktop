@@ -19,7 +19,8 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
         public async Task<RcloneResult> ExecuteRcloneCommand(
             string arguments,
             TimeSpan timeout,
-            bool hideWindow = true
+            bool hideWindow = true,
+            int[]? allowedExitCodes = null
         )
         {
             DebugConsole.WriteDebug($"Executing: rclone {arguments}");
@@ -64,7 +65,7 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                     result.Output = await outputTask;
                     result.Error = await errorTask;
                     result.ExitCode = process.ExitCode;
-                    result.Success = process.ExitCode == 0;
+                    result.Success = process.ExitCode == 0 || (allowedExitCodes != null && Array.Exists(allowedExitCodes, code => code == process.ExitCode));
                 }
                 catch (OperationCanceledException)
                 {
@@ -90,10 +91,17 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                     result.ExitCode = -1;
                 }
 
+                // Log error only if it's a "real" failure (not in allowed list)
+                // Log error only if it's a "real" failure (not in allowed list)
                 if (!result.Success && !string.IsNullOrEmpty(result.Error))
                 {
                     DebugConsole.WriteWarning($"Process failed with exit code {result.ExitCode}");
                     DebugConsole.WriteError($"Error output: {result.Error}");
+                }
+                else if (!string.IsNullOrEmpty(result.Error))
+                {
+                    // Even if success, log stderr as it might contain important warnings or partial errors
+                    DebugConsole.WriteDebug($"Process stderr (Exit: {result.ExitCode}): {result.Error}");
                 }
 
                 return result;
