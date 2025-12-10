@@ -48,6 +48,7 @@ namespace SaveTracker
                 var config = ConfigManagement.LoadConfigAsync().GetAwaiter().GetResult();
 
                 // Apply Debug Console Setting
+                Console.WriteLine($"[DEBUG] Loaded Config ShowDebugConsole: {config.ShowDebugConsole}");
                 DebugConsole.Enable(config.ShowDebugConsole);
                 if (config.ShowDebugConsole)
                 {

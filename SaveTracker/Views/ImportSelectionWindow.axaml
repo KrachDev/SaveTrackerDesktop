@@ -1,0 +1,103 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="using:SaveTracker.ViewModels"
+        mc:Ignorable="d" d:DesignWidth="600" d:DesignHeight="450"
+        x:Class="SaveTracker.Views.ImportSelectionWindow"
+        x:DataType="vm:ImportSelectionWindowViewModel"
+        Title="Import Games"
+        Width="600" Height="450"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        Background="#1E1E1E">
+
+    <Window.Styles>
+        <Style Selector="ListBoxItem">
+            <Setter Property="Padding" Value="4"/>
+            <Setter Property="Margin" Value="0,4"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="CornerRadius" Value="4"/>
+        </Style>
+        <Style Selector="ListBoxItem:selected /template/ ContentPresenter">
+            <Setter Property="Background" Value="#3F3F46"/>
+        </Style>
+        <Style Selector="ListBoxItem:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#2D2D30"/>
+        </Style>
+    </Window.Styles>
+
+    <Grid RowDefinitions="Auto,*,Auto,Auto">
+        
+        <!-- Header -->
+        <Border Grid.Row="0" Padding="20" BorderBrush="#3F3F46" BorderThickness="0,0,0,1">
+            <StackPanel>
+                <TextBlock Text="Import Games" FontSize="20" FontWeight="Bold" Foreground="White"/>
+                <TextBlock Text="Select a launcher to import your library from." Foreground="#AAAAAA" Margin="0,5,0,0"/>
+            </StackPanel>
+        </Border>
+
+        <!-- Launcher List -->
+        <ListBox Grid.Row="1" 
+                 ItemsSource="{Binding Launchers}" 
+                 SelectedItem="{Binding SelectedLauncher}"
+                 Background="Transparent"
+                 Margin="15">
+            <ListBox.ItemTemplate>
+                <DataTemplate>
+                    <Grid ColumnDefinitions="50,*" Margin="5">
+                        <!-- Icon Placeholder -->
+                        <Border Width="40" Height="40" Background="#333" CornerRadius="4" VerticalAlignment="Center">
+                             <TextBlock Text="🎮" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="20"/>
+                        </Border>
+                        
+                        <StackPanel Grid.Column="1" Margin="15,0,0,0" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding Name}" FontWeight="Bold" Foreground="White" FontSize="14"/>
+                            <TextBlock Text="{Binding Description}" Foreground="#888" FontSize="12"/>
+                        </StackPanel>
+
+                        <!-- Available/Unavailable Badge -->
+                        <Border Grid.Column="1" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                Background="#2E7D32"
+                                CornerRadius="4" Padding="8,4"
+                                IsVisible="{Binding IsAvailable}">
+                            <TextBlock Text="Available" FontSize="10" Foreground="White"/>
+                        </Border>
+                         <Border Grid.Column="1" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                Background="#444"
+                                CornerRadius="4" Padding="8,4"
+                                IsVisible="{Binding !IsAvailable}">
+                            <TextBlock Text="Coming Soon" FontSize="10" Foreground="#AAA"/>
+                        </Border>
+                    </Grid>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+
+        <!-- Status -->
+        <TextBlock Grid.Row="2" Text="{Binding StatusText}" 
+                   Foreground="#4EC9B0" HorizontalAlignment="Center" Margin="0,0,0,15"
+                   TextWrapping="Wrap"/>
+
+        <!-- Progress Bar -->
+        <ProgressBar Grid.Row="2" IsIndeterminate="True" 
+                     Height="2" VerticalAlignment="Bottom"
+                     IsVisible="{Binding IsImporting}"/>
+
+        <!-- Buttons -->
+        <Border Grid.Row="3" Background="#252526" Padding="15" BorderBrush="#3F3F46" BorderThickness="0,1,0,0">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10">
+                <Button Command="{Binding CancelCommand}" Content="Cancel" 
+                        Background="Transparent" BorderBrush="#555" BorderThickness="1"/>
+                <Button Command="{Binding ImportCommand}" Content="Import Selected" 
+                        IsEnabled="{Binding !IsImporting}"
+                        Classes="Primary" Background="#0E639C" Foreground="White"/>
+            </StackPanel>
+        </Border>
+    </Grid>
+
+    <Window.Resources>
+         <!-- Simple bool converter if needed, or use default provided by Avalonia usually -->
+         <!-- x:Static BoolConverters can be tricky in some versions, but usually works -->
+    </Window.Resources>
+</Window>

@@ -1,12 +1,13 @@
 using System;
 using System.IO;
+using System.Runtime.InteropServices;
 
 namespace SaveTracker.Resources.Logic.RecloneManagement
 {
     public static class RclonePathHelper
     {
         public static string RcloneExePath =>
-            Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ExtraTools", "rclone.exe");
+            Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ExtraTools", RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "rclone.exe" : "rclone");
 
         public static string ToolsPath => Path.Combine(
             AppDomain.CurrentDomain.BaseDirectory,
@@ -20,6 +21,11 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
         {
             string providerName = provider.ToString().ToLowerInvariant();
             return Path.Combine(ToolsPath, $"rclone_{providerName}.conf");
+        }
+
+        internal static string GetRclonePath()
+        {
+            return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ExtraTools", RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "rclone.exe" : "rclone");
         }
 
         /// <summary>

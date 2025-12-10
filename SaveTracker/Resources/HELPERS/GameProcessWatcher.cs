@@ -2,7 +2,9 @@ using SaveTracker.Resources.SAVE_SYSTEM;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+#if WINDOWS
 using System.Management;
+#endif
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -178,12 +180,13 @@ namespace SaveTracker.Resources.HELPERS
         }
 
         /// <summary>
-        /// Gets all running processes with their executable paths using WMI
+        /// Gets all running processes with their executable paths
         /// </summary>
         private List<(int ProcessId, string ExecutablePath)> GetRunningProcessesWithPaths()
         {
             var processes = new List<(int ProcessId, string ExecutablePath)>();
 
+#if WINDOWS
             try
             {
                 string query = "SELECT ProcessId, ExecutablePath FROM Win32_Process";
@@ -213,6 +216,36 @@ namespace SaveTracker.Resources.HELPERS
             {
                 DebugConsole.WriteWarning($"Error querying Win32_Process: {ex.Message}");
             }
+#else
+            try
+            {
+                // Cross-platform implementation using System.Diagnostics.Process
+                var allProcesses = System.Diagnostics.Process.GetProcesses();
+                foreach (var proc in allProcesses)
+                {
+                    try
+                    {
+                        if (proc.MainModule != null && !string.IsNullOrEmpty(proc.MainModule.FileName))
+                        {
+                            processes.Add((proc.Id, proc.MainModule.FileName));
+                        }
+                    }
+                    catch
+                    {
+                        // Some processes (like system/root processes) won't allow access to MainModule
+                        continue;
+                    }
+                    finally
+                    {
+                        proc.Dispose();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteWarning($"Error scanning processes: {ex.Message}");
+            }
+#endif
 
             return processes;
         }

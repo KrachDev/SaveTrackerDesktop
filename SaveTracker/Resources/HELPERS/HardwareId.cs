@@ -1,5 +1,7 @@
 using System;
+#if WINDOWS
 using System.Management;
+#endif
 using System.Security.Cryptography;
 using System.Text;
 
@@ -23,6 +25,7 @@ namespace SaveTracker.Resources.HELPERS
 
             try
             {
+#if WINDOWS
                 string cpuId = GetCpuId();
                 string motherboardId = GetMotherboardId();
                 string diskId = GetDiskId();
@@ -30,6 +33,9 @@ namespace SaveTracker.Resources.HELPERS
                 // Combine and hash to create anonymous ID
                 string combined = $"{cpuId}-{motherboardId}-{diskId}";
                 _cachedId = HashString(combined);
+#else
+                _cachedId = HashString(Environment.MachineName + Environment.UserName);
+#endif
 
                 return _cachedId;
             }
@@ -41,6 +47,9 @@ namespace SaveTracker.Resources.HELPERS
             }
         }
 
+
+
+#if WINDOWS
         private static string GetCpuId()
         {
             try
@@ -82,6 +91,7 @@ namespace SaveTracker.Resources.HELPERS
             catch { }
             return "";
         }
+#endif
 
         private static string HashString(string input)
         {

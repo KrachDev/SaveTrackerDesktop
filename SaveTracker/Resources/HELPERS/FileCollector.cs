@@ -32,7 +32,8 @@ namespace SaveTracker.Resources.HELPERS
                 return true;
 
             // Normalize the path for consistent tracking
-            string normalizedPath = filePath.Replace('/', '\\');
+            // Use Path.DirectorySeparatorChar to ensure we match the OS
+            string normalizedPath = filePath.Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar);
             bool shouldLog = _loggedFiles.Add(normalizedPath); // Returns false if already exists
 
 
@@ -52,7 +53,7 @@ namespace SaveTracker.Resources.HELPERS
                                 continue;
 
                             // Normalize blacklist path once per iteration
-                            string normalizedBlacklist = blacklistPath.Replace('/', '\\');
+                            string normalizedBlacklist = blacklistPath.Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar);
 
                             // Combined exact path match
                             if (string.Equals(normalizedPath, normalizedBlacklist, StringComparison.OrdinalIgnoreCase))
@@ -63,7 +64,7 @@ namespace SaveTracker.Resources.HELPERS
                             }
 
                             // Check if file is within blacklisted directory
-                            if (normalizedPath.StartsWith(normalizedBlacklist + "\\", StringComparison.OrdinalIgnoreCase))
+                            if (normalizedPath.StartsWith(normalizedBlacklist + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
                             {
                                 if (shouldLog)
                                     DebugConsole.WriteWarning($"Skipped (Game Blacklist - Directory): {filePath}");
@@ -84,7 +85,7 @@ namespace SaveTracker.Resources.HELPERS
                 // 2. Quick directory check - most performant filter
                 foreach (var ignoredDir in Ignorlist.IgnoredDirectoriesSet)
                 {
-                    if (normalizedPath.StartsWith(ignoredDir + "\\", StringComparison.OrdinalIgnoreCase) ||
+                    if (normalizedPath.StartsWith(ignoredDir + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) ||
                         normalizedPath.Equals(ignoredDir, StringComparison.OrdinalIgnoreCase))
                     {
                         if (shouldLog)
@@ -124,7 +125,7 @@ namespace SaveTracker.Resources.HELPERS
                         return true;
                     }
 
-                    if (lowerPath.Contains($"\\{keyword}\\"))
+                    if (lowerPath.Contains($"{Path.DirectorySeparatorChar}{keyword}{Path.DirectorySeparatorChar}"))
                     {
                         if (shouldLog)
                             DebugConsole.WriteWarning($"Skipped (Keyword in Path '{keyword}'): {filePath}");

@@ -12,9 +12,12 @@ namespace SaveTracker.Resources.HELPERS
     {
         private static bool _isEnabled;
         private static bool _isConsoleAllocated;
+        private static SaveTracker.Views.DebugConsoleWindow? _consoleWindow;
 
         private static readonly bool _isWindows = System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows);
 
+        // Windows‑only P/Invoke declarations – only compiled when running on Windows
+#if WINDOWS
         // Windows‑only P/Invoke declarations – only compiled when running on Windows
         [System.Runtime.InteropServices.DllImport("kernel32.dll")]
         private static extern bool AllocConsole();
@@ -30,6 +33,7 @@ namespace SaveTracker.Resources.HELPERS
 
         [System.Runtime.InteropServices.DllImport("kernel32.dll")]
         private static extern bool SetConsoleTitle(string lpConsoleTitle);
+#endif
 
         private const int SwHide = 0;
         private const int SwRestore = 9;
@@ -65,15 +69,28 @@ namespace SaveTracker.Resources.HELPERS
             {
                 if (_isWindows)
                 {
+#if WINDOWS
                     AllocConsole();
-                    // Set console title (Windows only)
                     SetConsoleTitle("SaveTracker Debug Console");
+#endif
+                }
+                else
+                {
+                    // Linux/Mac: Use Avalonia Window
+                    Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                    {
+                        if (_consoleWindow == null)
+                        {
+                            _consoleWindow = new SaveTracker.Views.DebugConsoleWindow();
+                        }
+                        _consoleWindow.Show();
+                    });
                 }
                 _isConsoleAllocated = true;
 
                 // Redirect console output (works on all platforms)
-                Console.SetOut(new StreamWriter(Console.OpenStandardOutput()) { AutoFlush = true });
-                Console.SetError(new StreamWriter(Console.OpenStandardError()) { AutoFlush = true });
+                System.Console.SetOut(new StreamWriter(System.Console.OpenStandardOutput()) { AutoFlush = true });
+                System.Console.SetError(new StreamWriter(System.Console.OpenStandardError()) { AutoFlush = true });
 
                 WriteHeader();
             }
@@ -81,11 +98,25 @@ namespace SaveTracker.Resources.HELPERS
             {
                 if (_isWindows)
                 {
+#if WINDOWS
                     IntPtr consoleWindow = GetConsoleWindow();
                     if (consoleWindow != IntPtr.Zero)
                     {
                         ShowWindow(consoleWindow, SwRestore);
                     }
+#endif
+                }
+                else
+                {
+                    Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                   {
+                       if (_consoleWindow == null)
+                       {
+                           _consoleWindow = new SaveTracker.Views.DebugConsoleWindow();
+                       }
+                       _consoleWindow.Show();
+                       _consoleWindow.Activate();
+                   });
                 }
             }
         }
@@ -97,11 +128,20 @@ namespace SaveTracker.Resources.HELPERS
         {
             if (_isWindows)
             {
+#if WINDOWS
                 IntPtr consoleWindow = GetConsoleWindow();
                 if (consoleWindow != IntPtr.Zero)
                 {
                     ShowWindow(consoleWindow, SwHide);
                 }
+#endif
+            }
+            else
+            {
+                Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    _consoleWindow?.Hide();
+                });
             }
             // No‑op on non‑Windows platforms
         }
@@ -115,7 +155,9 @@ namespace SaveTracker.Resources.HELPERS
             {
                 if (_isWindows)
                 {
+#if WINDOWS
                     FreeConsole();
+#endif
                 }
                 _isConsoleAllocated = false;
             }
@@ -131,7 +173,13 @@ namespace SaveTracker.Resources.HELPERS
             try
             {
                 string timestamp = DateTime.Now.ToString("HH:mm:ss.fff");
-                Console.WriteLine($"[{timestamp} | {title}] {message}");
+                string logMsg = $"[{timestamp} | {title}] {message}";
+                Console.WriteLine(logMsg);
+
+                if (!_isWindows && _isConsoleAllocated)
+                {
+                    _consoleWindow?.AppendLog(logMsg);
+                }
             }
             catch
             {

@@ -218,8 +218,8 @@
                                 Content="+ Add Game Manually" 
                                 HorizontalAlignment="Stretch" 
                                 Padding="12,10"/>
-                        <Button Command="{Binding ImportFromPlayniteCommand}"
-                                Content="📦 Import from Playnite" 
+                        <Button Command="{Binding ImportGamesCommand}"
+                                Content="📦 Import Games" 
                                 HorizontalAlignment="Stretch" 
                                 Padding="12,10"
                                 Background="#16825D"/>

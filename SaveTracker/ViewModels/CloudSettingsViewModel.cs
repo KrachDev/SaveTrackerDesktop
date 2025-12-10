@@ -78,7 +78,7 @@ namespace SaveTracker.ViewModels
 
             try
             {
-                string rclonePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ExtraTools", "rclone.exe");
+                string rclonePath = RclonePathHelper.RcloneExePath;
                 IsRcloneInstalled = File.Exists(rclonePath);
 
                 if (IsRcloneInstalled)

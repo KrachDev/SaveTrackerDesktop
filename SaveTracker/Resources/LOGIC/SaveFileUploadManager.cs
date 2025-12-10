@@ -29,11 +29,7 @@ namespace SaveTracker.Resources.Logic
         private readonly RcloneConfigManager _configManager = new RcloneConfigManager();
 
         // Properties
-        private static string RcloneExePath => Path.Combine(
-            AppDomain.CurrentDomain.BaseDirectory,
-            "ExtraTools",
-            "rclone.exe"
-        );
+        private static string RcloneExePath => RclonePathHelper.GetRclonePath();
 
         // Event for progress updates
         public event Action<UploadProgressInfo>? OnProgressChanged;

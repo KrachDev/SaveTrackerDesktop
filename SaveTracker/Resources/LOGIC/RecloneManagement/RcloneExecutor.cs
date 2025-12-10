@@ -9,8 +9,7 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
 {
     public class RcloneExecutor
     {
-        private static string RcloneExePath =>
-            Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ExtraTools", "rclone.exe");
+        private static string RcloneExePath => RclonePathHelper.RcloneExePath;
         public static readonly string ToolsPath = Path.Combine(
             AppDomain.CurrentDomain.BaseDirectory,
             "ExtraTools"

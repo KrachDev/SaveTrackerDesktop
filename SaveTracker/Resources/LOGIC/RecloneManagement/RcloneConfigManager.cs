@@ -14,13 +14,7 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
         private readonly CloudProviderHelper _cloudProviderHelper = new CloudProviderHelper();
         private readonly RcloneExecutor _rcloneExecutor = new RcloneExecutor();
 
-        public static string RcloneExePath =>
-            Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ExtraTools", "rclone.exe");
-
-        private static readonly string ToolsPath = Path.Combine(
-            AppDomain.CurrentDomain.BaseDirectory,
-            "ExtraTools"
-        );
+        public static string RcloneExePath => RclonePathHelper.RcloneExePath;
 
         // Config paths are now provider-specific via RclonePathHelper.GetConfigPath(provider)
 

@@ -3,7 +3,9 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+#if WINDOWS
 using System.Management;
+#endif
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -154,10 +156,14 @@ namespace SaveTracker.Resources.HELPERS
         /// <summary>
         /// Gets all currently running processes from the specified directory using WMI
         /// </summary>
+        /// <summary>
+        /// Gets all currently running processes from the specified directory
+        /// </summary>
         private List<int> GetProcessesFromDirectory(string directory)
         {
             var processIds = new List<int>();
 
+#if WINDOWS
             try
             {
                 string query = "SELECT ProcessId, ExecutablePath FROM Win32_Process";
@@ -185,8 +191,38 @@ namespace SaveTracker.Resources.HELPERS
             }
             catch (Exception ex)
             {
-                DebugConsole.WriteLine($"[ERROR] Getting directory processes: {ex.Message}");
+                DebugConsole.WriteLine($"[ERROR] Getting directory processes (WMI): {ex.Message}");
             }
+#else
+            try
+            {
+                var processes = System.Diagnostics.Process.GetProcesses();
+                foreach (var proc in processes)
+                {
+                    try
+                    {
+                        if (proc.MainModule != null &&
+                            !string.IsNullOrEmpty(proc.MainModule.FileName) &&
+                            proc.MainModule.FileName.StartsWith(directory, StringComparison.OrdinalIgnoreCase))
+                        {
+                            processIds.Add(proc.Id);
+                        }
+                    }
+                    catch
+                    {
+                        // Ignore access denied
+                    }
+                    finally
+                    {
+                        proc.Dispose();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteLine($"[ERROR] Getting directory processes (native): {ex.Message}");
+            }
+#endif
 
             return processIds;
         }
@@ -194,8 +230,12 @@ namespace SaveTracker.Resources.HELPERS
         /// <summary>
         /// Gets executable path for a specific process ID using WMI
         /// </summary>
+        /// <summary>
+        /// Gets executable path for a specific process ID
+        /// </summary>
         private string GetProcessExecutablePath(int processId)
         {
+#if WINDOWS
             try
             {
                 string query = $"SELECT ExecutablePath FROM Win32_Process WHERE ProcessId = {processId}";
@@ -211,8 +251,20 @@ namespace SaveTracker.Resources.HELPERS
             {
                 DebugConsole.WriteWarning($"Error getting executable path for PID {processId}: {ex.Message}");
             }
-
             return "";
+#else
+            try
+            {
+                using (var proc = System.Diagnostics.Process.GetProcessById(processId))
+                {
+                    return proc.MainModule?.FileName ?? "";
+                }
+            }
+            catch
+            {
+                return "";
+            }
+#endif
         }
 
         /// <summary>
@@ -237,6 +289,7 @@ namespace SaveTracker.Resources.HELPERS
 
             while (DateTime.UtcNow - start < timeout)
             {
+#if WINDOWS
                 try
                 {
                     string query = "SELECT ProcessId, ExecutablePath FROM Win32_Process";
@@ -269,6 +322,28 @@ namespace SaveTracker.Resources.HELPERS
                 {
                     DebugConsole.WriteWarning($"Error while scanning for running process in directory '{normalizedDir}': {ex.Message}");
                 }
+#else
+                try
+                {
+                    var processes = System.Diagnostics.Process.GetProcesses();
+                    foreach (var proc in processes)
+                    {
+                        try
+                        {
+                            if (proc.MainModule != null && !string.IsNullOrEmpty(proc.MainModule.FileName))
+                            {
+                                if (proc.MainModule.FileName.StartsWith(normalizedDir, StringComparison.OrdinalIgnoreCase))
+                                {
+                                    return proc.MainModule.FileName;
+                                }
+                            }
+                        }
+                        catch { continue; }
+                        finally { proc.Dispose(); }
+                    }
+                }
+                catch { }
+#endif
 
                 // If not found yet, wait a bit and retry
                 await Task.Delay(pollInterval);

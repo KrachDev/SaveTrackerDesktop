@@ -1,6 +1,7 @@
 using Newtonsoft.Json.Linq;
 using SaveTracker.Resources.HELPERS;
 using System;
+using System.Runtime.InteropServices;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
@@ -8,6 +9,7 @@ using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Threading.Tasks;
+using System.Diagnostics;
 using static CloudConfig;
 
 namespace SaveTracker.Resources.Logic.RecloneManagement
@@ -17,8 +19,7 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
         private readonly RcloneExecutor _executor = new RcloneExecutor();
         private readonly RcloneConfigManager _rcloneConfigManager = new RcloneConfigManager();
 
-        private static string RcloneExePath =>
-            Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ExtraTools", "rclone.exe");
+        private static string RcloneExePath => RclonePathHelper.RcloneExePath;
 
         private static readonly string ToolsPath = Path.Combine(
             AppDomain.CurrentDomain.BaseDirectory,
@@ -54,7 +55,11 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                     foreach (var asset in assets)
                     {
                         var name = asset["name"]?.ToString();
-                        if (name != null && name.Contains("windows-amd64.zip"))
+                        string searchPattern = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+                            ? "windows-amd64.zip"
+                            : "linux-amd64.zip";
+
+                        if (name != null && name.Contains(searchPattern))
                         {
                             var url = asset["browser_download_url"]?.ToString();
                             DebugConsole.WriteSuccess($"Found download URL: {url}");
@@ -211,8 +216,12 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                     extractedFolders.Select(Path.GetFileName)
                 );
 
+                string searchPattern = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+                    ? "windows-amd64"
+                    : "linux-amd64";
+
                 var rcloneFolder = extractedFolders.FirstOrDefault(
-                    d => d.Contains("windows-amd64")
+                    d => d.Contains(searchPattern)
                 );
                 if (rcloneFolder == null)
                 {
@@ -221,14 +230,28 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                     );
                 }
 
-                string rcloneExeSource = Path.Combine(rcloneFolder, "rclone.exe");
+                string rcloneExeName = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "rclone.exe" : "rclone";
+                string rcloneExeSource = Path.Combine(rcloneFolder, rcloneExeName);
                 if (!File.Exists(rcloneExeSource))
                 {
-                    throw new Exception($"rclone.exe not found in {rcloneFolder}");
+                    throw new Exception($"{rcloneExeName} not found in {rcloneFolder}");
                 }
 
                 File.Copy(rcloneExeSource, RcloneExePath, true);
                 DebugConsole.WriteSuccess($"Rclone executable copied to: {RcloneExePath}");
+
+                if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+                {
+                    try
+                    {
+                        Process.Start("chmod", $"+x \"{RcloneExePath}\"").WaitForExit();
+                        DebugConsole.WriteSuccess("Set executable permissions for rclone");
+                    }
+                    catch (Exception ex)
+                    {
+                        DebugConsole.WriteError($"Failed to set permissions: {ex.Message}");
+                    }
+                }
 
                 Directory.Delete(tempExtractPath, true);
                 DebugConsole.WriteDebug("Cleanup: Deleted temporary extraction directory");

@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.InteropServices;
 
 namespace SaveTracker.Resources.HELPERS
 {
@@ -12,13 +13,27 @@ namespace SaveTracker.Resources.HELPERS
         {
             try
             {
-                if (enable)
+                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
                 {
-                    CreateStartupTask();
+                    if (enable)
+                    {
+                        CreateStartupTaskWindows();
+                    }
+                    else
+                    {
+                        DeleteStartupTaskWindows();
+                    }
                 }
-                else
+                else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
                 {
-                    DeleteStartupTask();
+                    if (enable)
+                    {
+                        CreateStartupTaskLinux();
+                    }
+                    else
+                    {
+                        DeleteStartupTaskLinux();
+                    }
                 }
             }
             catch (Exception ex)
@@ -27,7 +42,7 @@ namespace SaveTracker.Resources.HELPERS
             }
         }
 
-        private static void CreateStartupTask()
+        private static void CreateStartupTaskWindows()
         {
             try
             {
@@ -39,7 +54,7 @@ namespace SaveTracker.Resources.HELPERS
                 }
 
                 // First, delete any existing task
-                DeleteStartupTask();
+                DeleteStartupTaskWindows();
 
                 // Create XML task definition with highest privileges
                 string taskXml = $@"<?xml version=""1.0"" encoding=""UTF-16""?>
@@ -135,7 +150,49 @@ namespace SaveTracker.Resources.HELPERS
             }
         }
 
-        private static void DeleteStartupTask()
+
+
+        private static void CreateStartupTaskLinux()
+        {
+            try
+            {
+                string? exePath = Process.GetCurrentProcess().MainModule?.FileName;
+                if (string.IsNullOrEmpty(exePath))
+                {
+                    DebugConsole.WriteError("Failed to get executable path");
+                    return;
+                }
+
+                string autostartDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "autostart");
+                // On Linux, Environment.SpecialFolder.ApplicationData keeps returning ~/.config which is correct for XDG
+
+                if (!Directory.Exists(autostartDir))
+                {
+                    Directory.CreateDirectory(autostartDir);
+                }
+
+                string desktopFilePath = Path.Combine(autostartDir, "savetracker.desktop");
+
+                string desktopFileContent = $"""
+[Desktop Entry]
+Type=Application
+Name=SaveTracker Desktop
+Comment=Automatic game save backup
+Exec="{exePath}"
+Terminal=false
+Categories=Utility;Game;
+""";
+
+                File.WriteAllText(desktopFilePath, desktopFileContent);
+                DebugConsole.WriteSuccess($"Created Linux autostart entry: {desktopFilePath}");
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteException(ex, "Failed to create Linux startup entry");
+            }
+        }
+
+        private static void DeleteStartupTaskWindows()
         {
             try
             {
@@ -168,28 +225,58 @@ namespace SaveTracker.Resources.HELPERS
             }
         }
 
+        private static void DeleteStartupTaskLinux()
+        {
+            try
+            {
+                string autostartDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "autostart");
+                string desktopFilePath = Path.Combine(autostartDir, "savetracker.desktop");
+
+                if (File.Exists(desktopFilePath))
+                {
+                    File.Delete(desktopFilePath);
+                    DebugConsole.WriteSuccess("Removed Linux autostart entry");
+                }
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteException(ex, "Failed to remove Linux startup entry");
+            }
+        }
+
         public static bool IsStartupEnabled()
         {
             try
             {
-                var startInfo = new ProcessStartInfo
+                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
                 {
-                    FileName = "schtasks.exe",
-                    Arguments = $"/Query /TN \"{TaskName}\"",
-                    UseShellExecute = false,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    CreateNoWindow = true
-                };
-
-                using (var process = Process.Start(startInfo))
-                {
-                    if (process != null)
+                    var startInfo = new ProcessStartInfo
                     {
-                        process.WaitForExit();
-                        return process.ExitCode == 0;
+                        FileName = "schtasks.exe",
+                        Arguments = $"/Query /TN \"{TaskName}\"",
+                        UseShellExecute = false,
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true,
+                        CreateNoWindow = true
+                    };
+
+                    using (var process = Process.Start(startInfo))
+                    {
+                        if (process != null)
+                        {
+                            process.WaitForExit();
+                            return process.ExitCode == 0;
+                        }
                     }
+                    return false;
                 }
+                else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+                {
+                    string autostartDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "autostart");
+                    string desktopFilePath = Path.Combine(autostartDir, "savetracker.desktop");
+                    return File.Exists(desktopFilePath);
+                }
+
                 return false;
             }
             catch

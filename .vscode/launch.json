@@ -2,24 +2,19 @@
     "version": "0.2.0",
     "configurations": [
         {
-            // Use IntelliSense to find out which attributes exist for C# debugging
-            // Use hover for the description of the existing attributes
-            // For further information visit https://github.com/dotnet/vscode-csharp/blob/main/debugger-launchjson.md
-            "name": ".NET Core Launch (console)",
+            "name": "Avalonia Launch",
             "type": "coreclr",
             "request": "launch",
             "preLaunchTask": "build",
-            // If you have changed target frameworks, make sure to update the program path.
             "program": "${workspaceFolder}/SaveTracker/bin/Debug/net8.0/SaveTracker.dll",
             "args": [],
             "cwd": "${workspaceFolder}/SaveTracker",
-            // For more information about the 'console' field, see https://aka.ms/VSCode-CS-LaunchJson-Console
             "console": "integratedTerminal",
             "stopAtEntry": false,
-            "noDebug": true
+            "noDebug": false
         },
         {
-            "name": ".NET Core Attach",
+            "name": "Avalonia Attach",
             "type": "coreclr",
             "request": "attach"
         }

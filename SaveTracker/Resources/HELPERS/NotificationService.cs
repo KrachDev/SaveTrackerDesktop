@@ -3,7 +3,9 @@ using Avalonia.Controls;
 using System;
 using System.Threading.Tasks;
 using Avalonia.Threading;
+#if WINDOWS
 using Microsoft.Toolkit.Uwp.Notifications;
+#endif
 using SaveTracker.Resources.SAVE_SYSTEM;
 
 namespace SaveTracker.Resources.HELPERS
@@ -30,6 +32,7 @@ namespace SaveTracker.Resources.HELPERS
             // Register the app for Windows notifications
             if (OperatingSystem.IsWindowsVersionAtLeast(10, 0, 17763))
             {
+#if WINDOWS
                 try
                 {
                     ToastNotificationManagerCompat.OnActivated += toastArgs =>
@@ -44,6 +47,7 @@ namespace SaveTracker.Resources.HELPERS
                 {
                     DebugConsole.WriteException(ex, "Failed to register Windows toast notifications");
                 }
+#endif
             }
         }
 
@@ -104,6 +108,7 @@ namespace SaveTracker.Resources.HELPERS
 
         private void ShowWindowsToast(string title, string message, NotificationType type)
         {
+#if WINDOWS
             try
             {
                 DebugConsole.WriteInfo($"Building Windows toast: {title}");
@@ -129,6 +134,10 @@ namespace SaveTracker.Resources.HELPERS
                 // Final fallback to debug console
                 DebugConsole.WriteInfo($"[Notification] {title}: {message}");
             }
+#else
+            // Fallback for non-Windows platforms
+            DebugConsole.WriteInfo($"[Notification - Non-Windows] {title}: {message}");
+#endif
         }
     }
 }

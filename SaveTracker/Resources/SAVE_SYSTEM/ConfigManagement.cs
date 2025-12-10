@@ -452,7 +452,7 @@ public class Config
     public bool TrackReads { get; set; } = false;
     public bool Auto_Upload { get; set; } = true;
     public bool StartMinimized { get; set; } = false;
-    public bool ShowDebugConsole { get; set; } = false;
+    public bool ShowDebugConsole { get; set; } = true;
 
     // Notification settings
     public bool EnableNotifications { get; set; } = true;

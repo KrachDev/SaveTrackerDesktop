@@ -562,11 +562,11 @@ namespace SaveTracker.ViewModels
         }
 
         [RelayCommand]
-        private async Task ImportFromPlayniteAsync()
+        private async Task ImportGamesAsync()
         {
             try
             {
-                DebugConsole.WriteInfo("=== ImportFromPlayniteCommand executed ===");
+                DebugConsole.WriteInfo("=== ImportGamesCommand executed ===");
                 // Get the main window
                 var mainWindow = Avalonia.Application.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop
                     ? desktop.MainWindow as MainWindow
@@ -587,11 +587,12 @@ namespace SaveTracker.ViewModels
                 }
                 mainWindow.Activate();
 
-                var dialog = new UC_ImportFromPlaynite();
-                var result = await dialog.ShowDialog<List<Game>?>(mainWindow);
+                var window = new ImportSelectionWindow();
+                var result = await window.ShowDialog<List<Game>?>(mainWindow);
+
                 if (result != null && result.Count > 0)
                 {
-                    DebugConsole.WriteSuccess($"Importing {result.Count} games from Playnite");
+                    DebugConsole.WriteSuccess($"Importing {result.Count} games");
 
                     foreach (var game in result)
                     {
@@ -599,7 +600,7 @@ namespace SaveTracker.ViewModels
                     }
 
                     DebugConsole.WriteSuccess($"Successfully imported {result.Count} games");
-                    _notificationService?.Show("Import Successful", $"Imported {result.Count} games from Playnite.", NotificationType.Success);
+                    _notificationService?.Show("Import Successful", $"Imported {result.Count} games.", NotificationType.Success);
                 }
                 else
                 {
@@ -608,7 +609,7 @@ namespace SaveTracker.ViewModels
             }
             catch (Exception ex)
             {
-                DebugConsole.WriteException(ex, "Failed to show Playnite import dialog");
+                DebugConsole.WriteException(ex, "Failed to show Import Selection dialog");
             }
         }
 
