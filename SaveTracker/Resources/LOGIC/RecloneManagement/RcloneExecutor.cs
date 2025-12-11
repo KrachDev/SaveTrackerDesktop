@@ -156,9 +156,10 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
         }
 
         // Method to get common performance flags for rclone commands
+        // Note: --disable-http2 removed for maximum compatibility with all providers (especially Box on Linux)
         public static string GetPerformanceFlags()
         {
-            return "--no-check-certificate --disable-http2 --timeout 10s --contimeout 5s --retries 1 --low-level-retries 1";
+            return "--no-check-certificate --timeout 10s --contimeout 5s --retries 1 --low-level-retries 1";
         }
     }
 }

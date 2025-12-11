@@ -6,37 +6,23 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
 
+// Define default LogMessage class here if not accessible, but it is in Views namespace.
+// Using string hex codes for colors to pass to View.
+
 namespace SaveTracker.Resources.HELPERS
 {
     public static class DebugConsole
     {
         private static bool _isEnabled;
-        private static bool _isConsoleAllocated;
         private static SaveTracker.Views.DebugConsoleWindow? _consoleWindow;
 
-        private static readonly bool _isWindows = System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows);
-
-        // Windows‑only P/Invoke declarations – only compiled when running on Windows
-#if WINDOWS
-        // Windows‑only P/Invoke declarations – only compiled when running on Windows
-        [System.Runtime.InteropServices.DllImport("kernel32.dll")]
-        private static extern bool AllocConsole();
-
-        [System.Runtime.InteropServices.DllImport("kernel32.dll")]
-        private static extern bool FreeConsole();
-
-        [System.Runtime.InteropServices.DllImport("kernel32.dll")]
-        private static extern System.IntPtr GetConsoleWindow();
-
-        [System.Runtime.InteropServices.DllImport("user32.dll")]
-        private static extern bool ShowWindow(System.IntPtr hWnd, int nCmdShow);
-
-        [System.Runtime.InteropServices.DllImport("kernel32.dll")]
-        private static extern bool SetConsoleTitle(string lpConsoleTitle);
-#endif
-
-        private const int SwHide = 0;
-        private const int SwRestore = 9;
+        // Constants for colors
+        private const string COLOR_DEFAULT = "#D4D4D4";
+        private const string COLOR_INFO = "#4EC9B0"; // VS Cyan
+        private const string COLOR_WARNING = "#DCDCAA"; // VS Yellow
+        private const string COLOR_ERROR = "#F44747"; // VS Red
+        private const string COLOR_SUCCESS = "#6A9955"; // VS Green
+        private const string COLOR_DEBUG = "#808080"; // Gray
 
         /// <summary>
         /// Enable or disable console debugging
@@ -65,60 +51,31 @@ namespace SaveTracker.Resources.HELPERS
         /// </summary>
         public static void ShowConsole()
         {
-            if (!_isConsoleAllocated)
+            Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
             {
-                if (_isWindows)
+                if (_consoleWindow == null)
                 {
-#if WINDOWS
-                    AllocConsole();
-                    SetConsoleTitle("SaveTracker Debug Console");
-#endif
+                    _consoleWindow = new SaveTracker.Views.DebugConsoleWindow();
                 }
-                else
+                try
                 {
-                    // Linux/Mac: Use Avalonia Window
-                    Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
-                    {
-                        if (_consoleWindow == null)
-                        {
-                            _consoleWindow = new SaveTracker.Views.DebugConsoleWindow();
-                        }
-                        _consoleWindow.Show();
-                    });
+                    _consoleWindow.Show();
+                    _consoleWindow.Activate();
                 }
-                _isConsoleAllocated = true;
+                catch
+                {
+                    // If window was closed externally, recreate it
+                    _consoleWindow = new SaveTracker.Views.DebugConsoleWindow();
+                    _consoleWindow.Show();
+                }
+            });
 
-                // Redirect console output (works on all platforms)
-                System.Console.SetOut(new StreamWriter(System.Console.OpenStandardOutput()) { AutoFlush = true });
-                System.Console.SetError(new StreamWriter(System.Console.OpenStandardError()) { AutoFlush = true });
+            if (!_isEnabled) _isEnabled = true;
 
-                WriteHeader();
-            }
-            else
-            {
-                if (_isWindows)
-                {
-#if WINDOWS
-                    IntPtr consoleWindow = GetConsoleWindow();
-                    if (consoleWindow != IntPtr.Zero)
-                    {
-                        ShowWindow(consoleWindow, SwRestore);
-                    }
-#endif
-                }
-                else
-                {
-                    Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
-                   {
-                       if (_consoleWindow == null)
-                       {
-                           _consoleWindow = new SaveTracker.Views.DebugConsoleWindow();
-                       }
-                       _consoleWindow.Show();
-                       _consoleWindow.Activate();
-                   });
-                }
-            }
+            // Only write header if we haven't already
+            // Actually, WriteHeader is safe to call multiple times if we cleared, but maybe just on init
+            // Let's write it if window is fresh? No easy way to know. 
+            // Stick to simplistic logic.
         }
 
         /// <summary>
@@ -126,24 +83,10 @@ namespace SaveTracker.Resources.HELPERS
         /// </summary>
         public static void HideConsole()
         {
-            if (_isWindows)
+            Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
             {
-#if WINDOWS
-                IntPtr consoleWindow = GetConsoleWindow();
-                if (consoleWindow != IntPtr.Zero)
-                {
-                    ShowWindow(consoleWindow, SwHide);
-                }
-#endif
-            }
-            else
-            {
-                Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
-                {
-                    _consoleWindow?.Hide();
-                });
-            }
-            // No‑op on non‑Windows platforms
+                _consoleWindow?.Hide();
+            });
         }
 
         /// <summary>
@@ -151,16 +94,11 @@ namespace SaveTracker.Resources.HELPERS
         /// </summary>
         public static void CloseConsole()
         {
-            if (_isConsoleAllocated)
+            Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
             {
-                if (_isWindows)
-                {
-#if WINDOWS
-                    FreeConsole();
-#endif
-                }
-                _isConsoleAllocated = false;
-            }
+                _consoleWindow?.Close();
+                _consoleWindow = null;
+            });
         }
 
         /// <summary>
@@ -169,22 +107,39 @@ namespace SaveTracker.Resources.HELPERS
         public static void WriteLine(string message = "", string title = "DATA")
         {
             if (!_isEnabled) return;
+            Log(message, title, COLOR_DEFAULT);
+        }
 
+        /// <summary>
+        /// Internal log method to handle timestamp and dispatch
+        /// </summary>
+        private static void Log(string message, string title, string colorHex)
+        {
+            if (!_isEnabled) return;
             try
             {
                 string timestamp = DateTime.Now.ToString("HH:mm:ss.fff");
                 string logMsg = $"[{timestamp} | {title}] {message}";
+
+                // Print to stdout for debugging the debugger (or if run from terminal)
                 Console.WriteLine(logMsg);
 
-                if (!_isWindows && _isConsoleAllocated)
+                Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
                 {
-                    _consoleWindow?.AppendLog(logMsg);
-                }
+                    if (_consoleWindow != null)
+                    {
+                        try
+                        {
+                            _consoleWindow.AppendLog(logMsg, colorHex);
+                        }
+                        catch
+                        {
+                            // If window is closed/disposed, we might fail.
+                        }
+                    }
+                });
             }
-            catch
-            {
-                // Ignore console errors
-            }
+            catch { }
         }
 
         /// <summary>
@@ -192,45 +147,23 @@ namespace SaveTracker.Resources.HELPERS
         /// </summary>
         public static void WriteInfo(string message, string title = "INFO")
         {
-            WriteLine($"[{title}] {message}");
+            Log(message, title, COLOR_INFO);
         }
 
         /// <summary>
-        /// Write a warning message with WARNING prefix (in yellow if supported)
+        /// Write a warning message with WARNING prefix
         /// </summary>
         public static void WriteWarning(string message, string title = "WARNING")
         {
-            if (!_isEnabled) return;
-
-            try
-            {
-                Console.ForegroundColor = ConsoleColor.Yellow;
-                WriteLine($"[{title}] {message}");
-                Console.ResetColor();
-            }
-            catch
-            {
-                WriteLine($"[WARNING] {message}");
-            }
+            Log(message, title, COLOR_WARNING);
         }
 
         /// <summary>
-        /// Write an error message with ERROR prefix (in red if supported)
+        /// Write an error message with ERROR prefix
         /// </summary>
         public static void WriteError(string message, string title = "ERROR")
         {
-            if (!_isEnabled) return;
-
-            try
-            {
-                Console.ForegroundColor = ConsoleColor.Red;
-                WriteLine($"[{title}] {message}");
-                Console.ResetColor();
-            }
-            catch
-            {
-                WriteLine($"[{title}] {message}");
-            }
+            Log(message, title, COLOR_ERROR);
         }
 
         /// <summary>
@@ -239,57 +172,24 @@ namespace SaveTracker.Resources.HELPERS
         public static void WriteException(Exception ex, string context = "")
         {
             if (!_isEnabled) return;
-
-            try
-            {
-                Console.ForegroundColor = ConsoleColor.Red;
-                WriteLine($"[EXCEPTION] {(!string.IsNullOrEmpty(context) ? $"{context}: " : "")}{ex.Message}");
-                WriteLine($"[STACK TRACE] {ex.StackTrace}");
-                Console.ResetColor();
-            }
-            catch
-            {
-                WriteLine($"[EXCEPTION] {(!string.IsNullOrEmpty(context) ? $"{context}: " : "")}{ex.Message}");
-                WriteLine($"[STACK TRACE] {ex.StackTrace}");
-            }
+            string msg = $"{(!string.IsNullOrEmpty(context) ? $"{context}: " : "")}{ex.Message}\n[STACK TRACE] {ex.StackTrace}";
+            Log(msg, "EXCEPTION", COLOR_ERROR);
         }
 
         /// <summary>
-        /// Write a success message with SUCCESS prefix (in green if supported)
+        /// Write a success message with SUCCESS prefix
         /// </summary>
         public static void WriteSuccess(string message, string title = "SUCCESS")
         {
-            if (!_isEnabled) return;
-
-            try
-            {
-                Console.ForegroundColor = ConsoleColor.Green;
-                WriteLine($"[{title}] {message}");
-                Console.ResetColor();
-            }
-            catch
-            {
-                WriteLine($"[SUCCESS] {message}");
-            }
+            Log(message, title, COLOR_SUCCESS);
         }
 
         /// <summary>
-        /// Write a debug message with DEBUG prefix (in gray if supported)
+        /// Write a debug message with DEBUG prefix
         /// </summary>
         public static void WriteDebug(string message, string title = "DEBUG")
         {
-            if (!_isEnabled) return;
-
-            try
-            {
-                Console.ForegroundColor = ConsoleColor.Gray;
-                WriteLine($"[{title}] {message}");
-                Console.ResetColor();
-            }
-            catch
-            {
-                WriteLine($"[{title}] {message}");
-            }
+            Log(message, title, COLOR_DEBUG);
         }
 
         /// <summary>
@@ -297,7 +197,8 @@ namespace SaveTracker.Resources.HELPERS
         /// </summary>
         public static void WriteSeparator(char character = '=', int length = 50)
         {
-            WriteLine(new string(character, length));
+            string line = new string(character, length);
+            Log(line, "---", COLOR_DEFAULT);
         }
 
         /// <summary>
@@ -306,23 +207,10 @@ namespace SaveTracker.Resources.HELPERS
         public static void WriteSection(string title)
         {
             if (!_isEnabled) return;
-
-            try
-            {
-                Console.ForegroundColor = ConsoleColor.Cyan;
-                WriteLine();
-                WriteSeparator('=', 60);
-                WriteLine($"  {title.ToUpper()}");
-                WriteSeparator('=', 60);
-                Console.ResetColor();
-            }
-            catch
-            {
-                WriteLine();
-                WriteSeparator('=', 60);
-                WriteLine($"  {title.ToUpper()}");
-                WriteSeparator('=', 60);
-            }
+            // WriteLine(); // Blank line
+            WriteSeparator('=', 60);
+            Log($"  {title.ToUpper()}", "SECTION", COLOR_INFO);
+            WriteSeparator('=', 60);
         }
 
         /// <summary>
@@ -332,15 +220,11 @@ namespace SaveTracker.Resources.HELPERS
         {
             if (!_isEnabled) return;
 
-            try
+            Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
             {
-                Console.Clear();
-                WriteHeader();
-            }
-            catch
-            {
-                // Ignore clear errors
-            }
+                _consoleWindow?.ClearLog();
+            });
+            WriteHeader();
         }
 
         /// <summary>
@@ -348,32 +232,16 @@ namespace SaveTracker.Resources.HELPERS
         /// </summary>
         private static void WriteHeader()
         {
-            if (!_isEnabled) return;
-
-            try
-            {
-                Console.ForegroundColor = ConsoleColor.Cyan;
-                WriteSeparator('=', 60);
-                WriteLine("  SAVETRACKER DEBUG CONSOLE");
-                WriteLine($"  Started: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
-                WriteSeparator('=', 60);
-                Console.ResetColor();
-                WriteLine();
-            }
-            catch
-            {
-                WriteSeparator('=', 60);
-                WriteLine("  SAVETRACKER DEBUG CONSOLE");
-                WriteLine($"  Started: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
-                WriteSeparator('=', 60);
-                WriteLine();
-            }
+            WriteSeparator('=', 60);
+            Log("  SAVETRACKER DEBUG CONSOLE", "INIT", COLOR_INFO);
+            Log($"  Started: {DateTime.Now:yyyy-MM-dd HH:mm:ss}", "INIT", COLOR_INFO);
+            WriteSeparator('=', 60);
         }
 
         /// <summary>
-        /// Write key-value pairs in a formatted way
+        /// Write key-value pairs
         /// </summary>
-        public static void WriteKeyValue(string key, object value)
+        public static void WriteKeyValue(string key, object? value)
         {
             WriteLine($"{key}: {value ?? "null"}");
         }
@@ -391,9 +259,5 @@ namespace SaveTracker.Resources.HELPERS
                 WriteLine(description != "" ? $"  - {item} | {description}" : $"  - {item}");
             }
         }
-
-
-
     }
-
 }

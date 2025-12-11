@@ -133,7 +133,7 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             }
         }
 
-        public async Task UpdateFileChecksumRecord(string filePath, string gameDirectory)
+        public async Task UpdateFileChecksumRecord(string filePath, string gameDirectory, string? detectedPrefix = null)
         {
             await _checksumFileLock.WaitAsync();
             try
@@ -151,8 +151,8 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
 
                 var checksumData = await LoadChecksumDataInternal(gameDirectory);
 
-                // Contract the path to portable format before storing
-                string portablePath = PathContractor.ContractPath(filePath, gameDirectory);
+                // Contract the path to portable format before storing (with Wine prefix support)
+                string portablePath = PathContractor.ContractPath(filePath, gameDirectory, detectedPrefix);
 
                 checksumData.Files[portablePath] = new FileChecksumRecord
                 {
@@ -171,6 +171,75 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             catch (Exception ex)
             {
                 DebugConsole.WriteException(ex, "Failed to update checksum record");
+            }
+            finally
+            {
+                _checksumFileLock.Release();
+            }
+        }
+
+        /// <summary>
+        /// Migrates absolute Linux Wine paths to Windows-style environment variables
+        /// Called automatically when loading checksum data on Linux
+        /// </summary>
+        public async Task<bool> MigratePathsIfNeeded(string gameDirectory, string? detectedPrefix)
+        {
+            if (string.IsNullOrEmpty(detectedPrefix))
+                return false; // Can't migrate without a prefix
+
+            await _checksumFileLock.WaitAsync();
+            try
+            {
+                var checksumData = await LoadChecksumDataInternal(gameDirectory);
+                if (checksumData.Files.Count == 0)
+                    return false; // Nothing to migrate
+
+                bool needsMigration = false;
+                var migratedFiles = new Dictionary<string, FileChecksumRecord>();
+
+                foreach (var kvp in checksumData.Files)
+                {
+                    string currentPath = kvp.Value.Path;
+
+                    // Check if this path needs migration (absolute Linux path)
+                    if (currentPath.StartsWith("/") && currentPath.Contains("/drive_c/"))
+                    {
+                        needsMigration = true;
+
+                        // Convert to Windows-style env var path
+                        string migratedPath = PathContractor.ContractWinePath(currentPath, detectedPrefix, gameDirectory);
+
+                        DebugConsole.WriteInfo($"Migrating path: {currentPath} → {migratedPath}");
+
+                        // Update the record with new path
+                        var record = kvp.Value;
+                        record.Path = migratedPath;
+                        migratedFiles[migratedPath] = record;
+                    }
+                    else
+                    {
+                        // Keep as-is
+                        migratedFiles[kvp.Key] = kvp.Value;
+                    }
+                }
+
+                if (needsMigration)
+                {
+                    checksumData.Files = migratedFiles;
+                    await SaveChecksumDataInternal(checksumData, gameDirectory);
+
+                    DebugConsole.WriteSuccess(
+                        $"Successfully migrated {migratedFiles.Count} file paths to cross-platform format"
+                    );
+                    return true;
+                }
+
+                return false;
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteException(ex, "Failed to migrate checksum paths");
+                return false;
             }
             finally
             {

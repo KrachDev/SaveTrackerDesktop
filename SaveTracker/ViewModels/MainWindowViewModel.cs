@@ -758,7 +758,7 @@ namespace SaveTracker.ViewModels
                         var smartSync = new SmartSyncService();
                         var comparison = await smartSync.CompareProgressAsync(
                             game,
-                            TimeSpan.FromMinutes(10),
+                            TimeSpan.FromMinutes(1), // 1 minute threshold
                             effectiveProvider
                         );
 

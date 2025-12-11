@@ -473,8 +473,16 @@ namespace SaveTracker.Resources.LOGIC
 
             try
             {
-                // Normalize path
-                string normalizedPath = filePath.Replace('/', '\\');
+                // Normalize path - use forward slashes on Linux, backslashes on Windows
+                string normalizedPath;
+                if (System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))
+                {
+                    normalizedPath = filePath.Replace('/', '\\');
+                }
+                else
+                {
+                    normalizedPath = filePath.Replace('\\', '/');
+                }
 
                 // FIRST: Check for double extensions and track both versions
                 string extension = Path.GetExtension(normalizedPath);

@@ -257,7 +257,15 @@
                                        Foreground="White"/>
                             <TextBlock Text="{Binding GamePathText}" 
                                        FontSize="12" 
-                                       Foreground="#858585"/>
+                                       Foreground="#007ACC"
+                                       Cursor="Hand"
+                                       Tapped="GamePath_Tapped">
+                                <TextBlock.Styles>
+                                    <Style Selector="TextBlock:pointerover">
+                                        <Setter Property="TextDecorations" Value="Underline"/>
+                                    </Style>
+                                </TextBlock.Styles>
+                            </TextBlock>
                             <TextBlock Text="{Binding GamePlayTimeText}" 
                                        FontSize="12" 
                                        Foreground="#858585"/>
@@ -766,6 +774,16 @@
                                                            Foreground="#858585"
                                                            TextWrapping="Wrap"/>
                                             </StackPanel>
+
+                                            <StackPanel Spacing="8" IsVisible="{Binding IsLinux}">
+                                                <TextBlock Text="Wine Prefix (Linux)" Foreground="#CCCCCC"/>
+                                                <TextBox Text="{Binding EditablePrefix}"
+                                                         Watermark="Auto-detected or custom path..."/>
+                                                <TextBlock Text="The Wine prefix used for this game. Leave empty to auto-detect."
+                                                           FontSize="11"
+                                                           Foreground="#858585"
+                                                           TextWrapping="Wrap"/>
+                                            </StackPanel>
                                         </StackPanel>
                                     </Border>
                                 </StackPanel>
@@ -791,7 +809,7 @@
                                Background="White" 
                                Opacity="0.3"
                                VerticalAlignment="Center"/>
-                    <TextBlock Text="Platform: Windows" 
+                    <TextBlock Text="{Binding OsVersionText, StringFormat='Platform: {0}'}" 
                                Foreground="White"/>
                 </StackPanel>
                 

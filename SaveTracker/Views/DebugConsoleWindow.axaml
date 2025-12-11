@@ -2,26 +2,51 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="using:SaveTracker.Views"
         mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
         x:Class="SaveTracker.Views.DebugConsoleWindow"
+        x:DataType="local:DebugConsoleWindow"
         Title="SaveTracker Debug Console"
         Width="800" Height="600"
         Icon="/Assets/avalonia-logo.ico"
         Background="#1E1E1E">
 
     <Grid RowDefinitions="*,Auto">
-        <TextBox Name="LogOutput"
-                 Grid.Row="0"
-                 IsReadOnly="True"
-                 TextWrapping="Wrap"
-                 AcceptsReturn="True"
-                 FontFamily="Consolas, Monospace, Courier New"
-                 Background="#1E1E1E"
-                 Foreground="#D4D4D4"
-                 BorderThickness="0"
-                 Padding="10"/>
+        <Border Grid.Row="0" Background="#1E1E1E" BorderThickness="0" Padding="10">
+            <ScrollViewer Name="LogScrollViewer">
+                <Grid>
+                    <!-- Presentation Mode: Colored, per-line selection -->
+                    <ItemsControl ItemsSource="{Binding LogMessages}" IsVisible="{Binding IsPresentationMode}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="local:LogMessage">
+                                <SelectableTextBlock Text="{Binding Text}" 
+                                           Foreground="{Binding Color}" 
+                                           FontFamily="Consolas, Monospace, Courier New"
+                                           TextWrapping="Wrap"
+                                           Margin="0,0,0,2"/>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <!-- Copy Mode: Plain text, continuous selection -->
+                    <TextBox Name="LogTextBox"
+                             Text="{Binding LogText}"
+                             IsReadOnly="True"
+                             IsVisible="{Binding !IsPresentationMode}"
+                             Background="Transparent"
+                             BorderThickness="0"
+                             FontFamily="Consolas, Monospace, Courier New"
+                             Foreground="#D4D4D4"
+                             TextWrapping="Wrap"
+                             AcceptsReturn="True"
+                             VerticalAlignment="Top"/>
+                </Grid>
+            </ScrollViewer>
+        </Border>
 
         <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="10" Margin="10" HorizontalAlignment="Right">
+            <CheckBox Content="🎨 Presentation Mode" IsChecked="{Binding IsPresentationMode}"/>
+            <CheckBox Content="📜 Auto-scroll" IsChecked="{Binding IsAutoScrollEnabled}"/>
             <Button Name="ClearButton" Content="Clear" Click="ClearButton_Click"/>
             <Button Name="CloseButton" Content="Hide" Click="CloseButton_Click"/>
         </StackPanel>

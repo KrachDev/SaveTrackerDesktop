@@ -110,9 +110,14 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             }
 
             // Get relative path from game directory to preserve folder structure in cloud
-            string relativePath = PathContractor.ContractPath(filePath, gameDirectory);
+            // Load game data to get detected prefix for Wine path translation
+            var gameData = await ConfigManagement.GetGameData(game);
+            string? detectedPrefix = gameData?.DetectedPrefix;
+
+            string relativePath = PathContractor.ContractPath(filePath, gameDirectory, detectedPrefix);
             string fileName = Path.GetFileName(filePath);
-            string remotePath = $"{remoteBasePath}/{relativePath}";
+            // Rclone needs forward slashes in remote paths, even though we store backslashes in JSON
+            string remotePath = $"{remoteBasePath}/{relativePath.Replace('\\', '/')}";
 
             DebugConsole.WriteSeparator('-', 40);
             DebugConsole.WriteInfo($"Processing: {relativePath}");
@@ -149,8 +154,9 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
 
                 if (uploadSuccess)
                 {
-                    // Update checksum tracking after successful upload
-                    await _checksumService.UpdateFileChecksumRecord(filePath, gameDirectory);
+                    // Reuse gameData and detectedPrefix from outer scope
+                    // Update checksum tracking after successful upload (with Wine prefix support)
+                    await _checksumService.UpdateFileChecksumRecord(filePath, gameDirectory, detectedPrefix);
 
                     DebugConsole.WriteSuccess($"Upload completed: {fileName}");
                     stats.UploadedCount++;
@@ -211,6 +217,10 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
 
             DebugConsole.WriteInfo($"Checking {filePaths.Count} files for changes...");
 
+            // Load game data once for all files (not per-file)
+            var gameData = await ConfigManagement.GetGameData(game);
+            string? detectedPrefix = gameData?.DetectedPrefix;
+
             foreach (var filePath in filePaths)
             {
                 if (!File.Exists(filePath))
@@ -221,7 +231,7 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                 }
 
                 // Get relative path from game directory for checking purposes
-                string contractedPath = PathContractor.ContractPath(filePath, gameDirectory);
+                string contractedPath = PathContractor.ContractPath(filePath, gameDirectory, detectedPrefix);
                 string fileName = Path.GetFileName(filePath);
 
                 // Determine if file is internal (inside game directory)
@@ -281,10 +291,11 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                 DebugConsole.WriteInfo($"Batch uploading {internalFilesToBatch.Count} internal files ({batchUploadSize / 1024.0:F2} KB)...");
 
                 // Execute batch upload
-                // Source is gameDirectory, remote is remoteBasePath
+                // Internal files go to remoteBasePath/%GAMEPATH%/
+                string batchRemotePath = $"{remoteBasePath}/%GAMEPATH%";
                 bool success = await _transferService.UploadBatchAsync(
                     gameDirectory,
-                    remoteBasePath,
+                    batchRemotePath,
                     relativeInternalPaths,
                     effectiveProvider);
 
@@ -293,7 +304,7 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                     // Update stats and checksums for all uploaded files
                     foreach (var filePath in internalFilesToBatch)
                     {
-                        await HandleSuccessfulUpload(filePath, gameDirectory, stats);
+                        await HandleSuccessfulUpload(filePath, gameDirectory, stats, detectedPrefix);
                     }
                     DebugConsole.WriteSuccess($"Batch upload of internal files completed successfully.");
                 }
@@ -312,9 +323,11 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
 
                 foreach (var filePath in externalFilesToSingle)
                 {
-                    string contractedPath = PathContractor.ContractPath(filePath, gameDirectory);
+                    // Reuse detectedPrefix from outer scope
+                    string contractedPath = PathContractor.ContractPath(filePath, gameDirectory, detectedPrefix);
+                    // Rclone needs forward slashes in remote paths, even though we store backslashes in JSON
                     // Remote path must include the folder structure defined by the contracted path
-                    string remotePath = $"{remoteBasePath}/{contractedPath}";
+                    string remotePath = $"{remoteBasePath}/{contractedPath.Replace('\\', '/')}";
                     string fileName = Path.GetFileName(filePath);
 
                     DebugConsole.WriteInfo($"Relayed upload for external file: {fileName}");
@@ -327,7 +340,7 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
 
                     if (success)
                     {
-                        await HandleSuccessfulUpload(filePath, gameDirectory, stats);
+                        await HandleSuccessfulUpload(filePath, gameDirectory, stats, detectedPrefix);
                     }
                     else
                     {
@@ -338,14 +351,15 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             }
         }
 
-        private async Task HandleSuccessfulUpload(string filePath, string gameDirectory, UploadStats stats)
+        private async Task HandleSuccessfulUpload(string filePath, string gameDirectory, UploadStats stats, string? detectedPrefix = null)
         {
             try
             {
                 string fileName = Path.GetFileName(filePath);
                 var info = new FileInfo(filePath);
 
-                await _checksumService.UpdateFileChecksumRecord(filePath, gameDirectory);
+                // Update checksum tracking after successful upload (with Wine prefix support)
+                await _checksumService.UpdateFileChecksumRecord(filePath, gameDirectory, detectedPrefix);
 
                 DebugConsole.WriteSuccess($"Uploaded: {fileName}");
                 stats.UploadedCount++;
@@ -414,8 +428,11 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             try
             {
                 var checksumData = await _checksumService.LoadChecksumData(gameDirectory);
+                // Load game data for Wine prefix support
+                var gameData = await ConfigManagement.GetGameData(_currentGame);
+                string? detectedPrefix = gameData?.DetectedPrefix;
                 // Use contracted path as dictionary key (new format)
-                string contractedPath = PathContractor.ContractPath(filePath, gameDirectory);
+                string contractedPath = PathContractor.ContractPath(filePath, gameDirectory, detectedPrefix);
 
                 if (checksumData.Files.TryGetValue(contractedPath, out var fileRecord))
                 {
@@ -656,7 +673,8 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                 // First, download the checksum file to know what files are available
                 string checksumLocalSpec = Path.Combine(game.InstallDirectory, SaveFileUploadManager.ChecksumFilename);
                 string checksumRelative = PathContractor.ContractPath(checksumLocalSpec, game.InstallDirectory);
-                string checksumRemotePath = $"{remotePath}/{checksumRelative}";
+                // Rclone needs forward slashes in remote paths
+                string checksumRemotePath = $"{remotePath}/{checksumRelative.Replace('\\', '/')}";
                 string checksumLocalPath = Path.Combine(stagingFolder, SaveFileUploadManager.ChecksumFilename);
 
                 var checksumResult = await _transferService.DownloadFileWithRetry(
@@ -749,8 +767,10 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                         }
                         else
                         {
-                            // Fallback: Use InstallDirectory + RelativePath
-                            targetPath = Path.Combine(game.InstallDirectory, relativePath);
+                            // Fallback: Expand contracted path using PathContractor with Wine prefix support
+                            var gameData = await ConfigManagement.GetGameData(game);
+                            string? detectedPrefix = gameData?.DetectedPrefix;
+                            targetPath = PathContractor.ExpandPath(relativePath, game.InstallDirectory, detectedPrefix);
                         }
 
                         string? targetDir = Path.GetDirectoryName(targetPath);

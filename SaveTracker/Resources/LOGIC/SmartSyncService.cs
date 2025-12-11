@@ -80,6 +80,19 @@ namespace SaveTracker.Resources.Logic
                 var diff = cloudPlayTime.Value - localPlayTime;
                 var absDiff = Math.Abs(diff.TotalMinutes);
 
+                // Special case: If local has no playtime but cloud does, always prefer cloud
+                if (localPlayTime == TimeSpan.Zero && cloudPlayTime.Value > TimeSpan.Zero)
+                {
+                    return new ProgressComparison
+                    {
+                        Status = ProgressStatus.CloudAhead,
+                        LocalPlayTime = localPlayTime,
+                        CloudPlayTime = cloudPlayTime.Value,
+                        Difference = diff,
+                        Message = $"Cloud save exists, local is new (cloud: {FormatTimeSpan(cloudPlayTime.Value)})"
+                    };
+                }
+
                 // Within threshold - similar progress
                 if (absDiff < threshold.TotalMinutes)
                 {
@@ -180,13 +193,14 @@ namespace SaveTracker.Resources.Logic
                     // The checksum file is uploaded with path contraction, so it's in a subdirectory
                     // We need to figure out where - it's at the same relative path as in the game install directory
                     // For a game at C:\Game\Folder\, the checksum uploads to RemoteBase/Folder/.savetracker_checksums.json
-                    
+
                     string gameDirectory = game.InstallDirectory;
                     string checksumLocalFullPath = Path.Combine(gameDirectory, SaveFileUploadManager.ChecksumFilename);
-                    
+
                     // Get the relative path that would be used for upload (contracted path)
                     string checksumRelativePath = PathContractor.ContractPath(checksumLocalFullPath, gameDirectory);
-                    
+                    checksumRelativePath = checksumRelativePath.Replace('\\', '/');
+
                     string checksumRemotePath = $"{remoteBasePath}/{checksumRelativePath}";
                     string checksumLocalPath = Path.Combine(tempFolder, SaveFileUploadManager.ChecksumFilename);
 
@@ -200,7 +214,7 @@ namespace SaveTracker.Resources.Logic
                         SaveFileUploadManager.ChecksumFilename,
                         effectiveProvider
                     );
-                    
+
                     if (!downloaded || !File.Exists(checksumLocalPath))
                     {
                         DebugConsole.WriteWarning("Failed to download cloud checksum file");
@@ -271,7 +285,7 @@ namespace SaveTracker.Resources.Logic
         {
             if (time < TimeSpan.Zero)
                 time = time.Negate();
-            
+
             return $"{(int)time.TotalHours:D2}:{time.Minutes:D2}:{time.Seconds:D2}";
         }
     }

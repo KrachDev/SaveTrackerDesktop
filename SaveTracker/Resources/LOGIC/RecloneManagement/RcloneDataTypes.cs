@@ -29,7 +29,7 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
         public string Path { get; set; }
         public long FileSize { get; set; }
 
-        public string GetAbsolutePath(string gameDirectory = null)
+        public string GetAbsolutePath(string gameDirectory = null, string? detectedPrefix = null)
         {
             if (string.IsNullOrEmpty(Path))
                 return Path;
@@ -41,7 +41,7 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                 return System.IO.Path.Combine(gameDirectory, relativePath);
             }
 
-            return PathContractor.ExpandPath(Path, gameDirectory);
+            return PathContractor.ExpandPath(Path, gameDirectory, detectedPrefix);
         }
 
         public override string ToString()

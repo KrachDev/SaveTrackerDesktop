@@ -24,7 +24,13 @@ namespace SaveTracker.ViewModels
         private string _editableGameName = string.Empty;
 
         [ObservableProperty]
-        private string _editableExecutablePath = string.Empty;
+        private string _editableExecutablePath = "";
+
+        [ObservableProperty]
+        private string _editablePrefix = "";
+
+        // Read-only property for UI binding
+        public bool IsLinux => System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Linux);
 
         [ObservableProperty]
         private string _cloudCheckStatus = "";
@@ -40,10 +46,23 @@ namespace SaveTracker.ViewModels
 
         // ========== INITIALIZATION ==========
 
-        private void InitializeGameProperties(Game game)
+        private async void InitializeGameProperties(Game game)
         {
             EditableGameName = game.Name;
             EditableExecutablePath = game.ExecutablePath;
+
+            // Load detected prefix from game data
+            try
+            {
+                var gameData = await ConfigManagement.GetGameData(game);
+                EditablePrefix = gameData?.DetectedPrefix ?? "";
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteException(ex, "Failed to load game prefix");
+                EditablePrefix = "";
+            }
+
             // Fetch potential matches for autocomplete
             _ = LoadCloudGameSuggestionsAsync();
 
@@ -281,6 +300,16 @@ namespace SaveTracker.ViewModels
             try
             {
                 var game = SelectedGame.Game;
+                var data = await ConfigManagement.GetGameData(game);
+                EditableGameName = game.Name;
+                EditableExecutablePath = game.ExecutablePath;
+                EditablePrefix = data?.DetectedPrefix ?? "";
+
+                // Trigger cloud check for the new name
+                if (!string.IsNullOrEmpty(EditableGameName))
+                {
+                    await CheckCloudGameExistence(EditableGameName);
+                }
                 string newName = EditableGameName.Trim();
                 string newPath = EditableExecutablePath.Trim();
                 string oldName = game.Name;
@@ -432,10 +461,15 @@ namespace SaveTracker.ViewModels
                 EditableGameName = newName;
                 EditableExecutablePath = newPath;
 
-                DebugConsole.WriteSuccess($"Game properties updated: {newName}");
+                // 3. Update Extra Data (Prefix)
+                var gameData = await ConfigManagement.GetGameData(game);
+                if (gameData == null) gameData = new GameUploadData();
 
-                // Refresh cloud check
-                OnEditableGameNameChanged(newName);
+                gameData.DetectedPrefix = EditablePrefix;
+                await ConfigManagement.SaveGameData(game, gameData);
+
+                DebugConsole.WriteSuccess($"Game properties updated for: {game.Name}");
+                _notificationService?.Show("Success", "Game properties saved successfully.", Avalonia.Controls.Notifications.NotificationType.Success);
             }
             catch (Exception ex)
             {
