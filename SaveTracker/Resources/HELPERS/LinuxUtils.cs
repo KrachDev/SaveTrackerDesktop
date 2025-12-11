@@ -148,5 +148,59 @@ namespace SaveTracker.Resources.HELPERS
             catch { }
             return pids;
         }
+        public static void KillProcessTree(int rootPid)
+        {
+            try
+            {
+                // Build parent map
+                var allPids = GetAllProcesses();
+                var parentMap = new Dictionary<int, int>();
+                foreach (var pid in allPids)
+                {
+                    parentMap[pid] = GetParentPid(pid);
+                }
+
+                // BFS to find all descendants
+                var toKill = new HashSet<int>();
+                toKill.Add(rootPid);
+
+                var queue = new Queue<int>();
+                queue.Enqueue(rootPid);
+
+                while (queue.Count > 0)
+                {
+                    int parent = queue.Dequeue();
+
+                    // Find children
+                    foreach (var kvp in parentMap)
+                    {
+                        if (kvp.Value == parent && !toKill.Contains(kvp.Key))
+                        {
+                            toKill.Add(kvp.Key);
+                            queue.Enqueue(kvp.Key);
+                        }
+                    }
+                }
+
+                // Kill all identifiable processes in tree
+                foreach (var pid in toKill)
+                {
+                    try
+                    {
+                        DebugConsole.WriteInfo($"[KillProcessTree] Killing PID {pid}");
+                        var proc = System.Diagnostics.Process.GetProcessById(pid);
+                        proc.Kill();
+                    }
+                    catch (Exception ex)
+                    {
+                        DebugConsole.WriteWarning($"[KillProcessTree] Failed to kill {pid}: {ex.Message}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"KillProcessTree Error: {ex.Message}");
+            }
+        }
     }
 }

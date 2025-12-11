@@ -181,7 +181,7 @@ namespace SaveTracker.ViewModels
 
         [ObservableProperty]
         private bool _isCheckingForUpdates;
-
+        private bool _skipNextExitUpload = false;
         private UpdateInfo? _latestUpdateInfo;
 
         private Config? _mainConfig;
@@ -403,7 +403,8 @@ namespace SaveTracker.ViewModels
                 GameIcon = Misc.ExtractIconFromExe(game.ExecutablePath);
 
                 // Check if sync is available
-                IsSyncEnabled = (bool)await ConfigManagement.HasData(game);
+                // Always enable to allow checking for cloud saves (user request for fresh installs)
+                IsSyncEnabled = true; // Was: (bool)await ConfigManagement.HasData(game);
 
                 // Load tracked files
                 await UpdateTrackedListAsync(game);
@@ -896,6 +897,12 @@ namespace SaveTracker.ViewModels
 
         private async Task OnGameExitedAsync(Process process)
         {
+            if (_skipNextExitUpload)
+            {
+                DebugConsole.WriteInfo("Skipping OnGameExitedAsync upload due to Smart Sync termination.");
+                return;
+            }
+
             var game = SelectedGame?.Game; // capture once for use in try/finally
             try
             {
@@ -1822,6 +1829,53 @@ namespace SaveTracker.ViewModels
                             NotificationType.Information
                         );
 
+                        // [Linux Specific] Detect & Save Prefix immediately if missing
+                        if (System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Linux))
+                        {
+                            var prefixData = await ConfigManagement.GetGameData(game);
+                            if (string.IsNullOrEmpty(prefixData?.DetectedPrefix))
+                            {
+                                try
+                                {
+                                    DebugConsole.WriteInfo("Auto-detected game has no stored prefix. Attempting to detect...");
+                                    var tracker = SaveTracker.Resources.LOGIC.Tracking.GameProcessTrackerFactory.Create();
+                                    var pInfo = new SaveTracker.Resources.LOGIC.Tracking.ProcessInfo
+                                    {
+                                        Id = processId,
+                                        Name = game.Name,
+                                        ExecutablePath = game.ExecutablePath
+                                    };
+
+                                    string prefix = await tracker.DetectGamePrefix(pInfo);
+
+                                    if (!string.IsNullOrEmpty(prefix))
+                                    {
+                                        DebugConsole.WriteSuccess($"Auto-detected Prefix via Process ID: {prefix}");
+                                        if (prefixData == null) prefixData = new SaveTracker.Resources.Logic.RecloneManagement.GameUploadData();
+
+                                        prefixData.DetectedPrefix = prefix;
+                                        await ConfigManagement.SaveGameData(game, prefixData);
+                                        DebugConsole.WriteInfo("Prefix persisted to game data.");
+                                    }
+                                    else
+                                    {
+                                        DebugConsole.WriteWarning("Could not auto-detect prefix for this process.");
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    DebugConsole.WriteWarning($"Prefix detection error: {ex.Message}");
+                                }
+                            }
+                        }
+
+                        // Check Smart Sync for auto-hooked games
+                        var gd = await ConfigManagement.GetGameData(game);
+                        if (gd?.EnableSmartSync ?? true)
+                        {
+                            _ = CheckSmartSyncForAutoHookAsync(game, process);
+                        }
+
                         process.Exited += async (s, e) =>
                         {
                             try
@@ -1967,6 +2021,71 @@ namespace SaveTracker.ViewModels
         }
 
         #region Smart Sync Helper Methods
+
+        private async Task CheckSmartSyncForAutoHookAsync(Game game, Process process)
+        {
+            try
+            {
+                DebugConsole.WriteInfo($"Checking Smart Sync status for auto-hooked game: {game.Name}");
+                var smartSync = new SmartSyncService();
+                var provider = await smartSync.GetEffectiveProvider(game);
+
+                // Use 1 minute threshold as established
+                var comparison = await smartSync.CompareProgressAsync(game, TimeSpan.FromMinutes(1), provider);
+
+                if (comparison.Status == SmartSyncService.ProgressStatus.CloudAhead)
+                {
+                    await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(async () =>
+                    {
+                        var doSync = await ShowSmartSyncPromptAsync(
+                           "Cloud Save Found",
+                           $"A newer save was found in the cloud (Cloud: {FormatTimeSpan(comparison.CloudPlayTime)} vs Local: {FormatTimeSpan(comparison.LocalPlayTime)}).\n\nDo you want to close the game and sync now?\n(You will need to restart the game manually)",
+                           "Sync & Close Game",
+                           "Ignore");
+
+                        if (doSync == true)
+                        {
+                            DebugConsole.WriteInfo("User accepted auto-hook Smart Sync. Terminating game...");
+
+                            // Prevent OnGameExitedAsync from uploading current state (which we are about to overwrite)
+                            _skipNextExitUpload = true;
+
+                            try
+                            {
+                                if (!process.HasExited)
+                                {
+                                    if (System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Linux))
+                                    {
+                                        SaveTracker.Resources.HELPERS.LinuxUtils.KillProcessTree(process.Id);
+                                    }
+                                    else
+                                    {
+                                        process.Kill();
+                                    }
+                                    await Task.Delay(1000); // Wait for release
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                DebugConsole.WriteWarning($"Failed to kill process: {ex.Message}");
+                            }
+
+                            // Download files
+                            await DownloadCloudSaveAsync(game);
+
+                            // Reset the skip flag now that operation is complete
+                            _skipNextExitUpload = false;
+
+                            _notificationService?.Show("Sync Complete", "Save files updated. Please restart the game manually.", NotificationType.Success);
+                        }
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteException(ex, "Auto-hook Smart Sync check failed");
+            }
+        }
 
         private async Task<bool?> ShowSmartSyncPromptAsync(
             string title,

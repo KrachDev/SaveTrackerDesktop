@@ -38,6 +38,10 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                 Path.StartsWith("%GAMEPATH%", StringComparison.OrdinalIgnoreCase))
             {
                 string relativePath = Path.Substring("%GAMEPATH%".Length).TrimStart('/', '\\');
+                if (System.IO.Path.DirectorySeparatorChar == '/')
+                {
+                    relativePath = relativePath.Replace('\\', '/');
+                }
                 return System.IO.Path.Combine(gameDirectory, relativePath);
             }
 

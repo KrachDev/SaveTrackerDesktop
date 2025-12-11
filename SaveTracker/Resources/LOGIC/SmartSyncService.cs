@@ -252,7 +252,7 @@ namespace SaveTracker.Resources.Logic
             }
         }
 
-        private async Task<CloudProvider> GetEffectiveProvider(Game game)
+        public async Task<CloudProvider> GetEffectiveProvider(Game game)
         {
             try
             {

@@ -533,6 +533,10 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
         {
             string stagingFolder = Path.Combine(Path.GetTempPath(), "SaveTracker_Download_" + Guid.NewGuid().ToString("N"));
 
+            // Get detected prefix for correct path expansion on Linux
+            var gameData = await ConfigManagement.GetGameData(game);
+            string? detectedPrefix = gameData?.DetectedPrefix;
+
             try
             {
                 DebugConsole.WriteInfo($"Downloading cloud saves to staging folder: {stagingFolder}");
@@ -547,58 +551,45 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                     return false;
                 }
 
-                // The checksum file might be in a subdirectory due to path preservation
-                // Search for it recursively
-                string checksumFilePath = Path.Combine(stagingFolder, SaveFileUploadManager.ChecksumFilename);
-                if (!File.Exists(checksumFilePath))
-                {
-                    // Search in subdirectories
-                    var foundFiles = Directory.GetFiles(stagingFolder, SaveFileUploadManager.ChecksumFilename, SearchOption.AllDirectories);
-                    if (foundFiles.Length > 0)
-                    {
-                        checksumFilePath = foundFiles[0];
-                        DebugConsole.WriteInfo($"Found checksum file in subdirectory: {checksumFilePath}");
-                    }
-                }
-
-                if (!File.Exists(checksumFilePath))
-                {
-                    DebugConsole.WriteWarning("Checksum file not found - using fallback");
-                    await CopyDirectoryContents(stagingFolder, game.InstallDirectory);
-                    return true;
-                }
-
-                DebugConsole.WriteInfo("Reading checksum file...");
-                string checksumJson = await File.ReadAllTextAsync(checksumFilePath);
-                var checksumData = JsonConvert.DeserializeObject<GameUploadData>(checksumJson);
-
-                if (checksumData?.Files == null || checksumData.Files.Count == 0)
-                {
-                    DebugConsole.WriteWarning("Checksum file is empty or invalid");
-                    return false;
-                }
+                // Drive restoration from Staging Files (Source of Truth)
+                // This handles cases where checksum keys are flattened/broken but Staging has correct structure.
+                var stagingFiles = Directory.GetFiles(stagingFolder, "*", SearchOption.AllDirectories);
+                DebugConsole.WriteInfo($"Restoring {stagingFiles.Length} files from staging...");
 
                 int successCount = 0;
                 int failCount = 0;
 
-                foreach (var fileEntry in checksumData.Files)
+                foreach (var sourceFile in stagingFiles)
                 {
                     try
                     {
-                        string relativePath = fileEntry.Key;
-                        string fileName = Path.GetFileName(relativePath);
-                        // Try the full relative path first (Rclone preserves structure)
-                        string sourceFile = Path.Combine(stagingFolder, relativePath);
-                        if (!File.Exists(sourceFile))
+                        string relativeStagingPath = Path.GetRelativePath(stagingFolder, sourceFile);
+                        string fileName = Path.GetFileName(sourceFile);
+
+                        // Skip checksum files
+                        if (fileName.Equals(SaveFileUploadManager.ChecksumFilename, StringComparison.OrdinalIgnoreCase))
+                            continue;
+
+                        // Calculate Target Path based on Staging Structure
+                        string targetPath;
+
+                        // Handle variable-based paths (e.g. %USERPROFILE%/...)
+                        if (relativeStagingPath.Contains("%"))
                         {
-                            // Fallback to flat filename
-                            sourceFile = Path.Combine(stagingFolder, fileName);
+                            // Normalize for ExpandPath
+                            string contractedPath = relativeStagingPath.Replace('\\', '/');
+                            targetPath = PathContractor.ExpandPath(contractedPath, game.InstallDirectory, detectedPrefix);
+                        }
+                        else
+                        {
+                            // Assume relative to Game Directory
+                            targetPath = Path.Combine(game.InstallDirectory, relativeStagingPath);
                         }
 
-                        string targetPath = fileEntry.Value.GetAbsolutePath(game.InstallDirectory);
-                        if (!File.Exists(sourceFile))
+                        // Safety: Ensure target is not empty
+                        if (string.IsNullOrWhiteSpace(targetPath))
                         {
-                            DebugConsole.WriteWarning($"File not found in staging: {fileName}");
+                            DebugConsole.WriteWarning($"Could not determine target path for {relativeStagingPath}");
                             failCount++;
                             continue;
                         }
@@ -610,29 +601,18 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                         }
 
                         File.Copy(sourceFile, targetPath, overwrite: true);
-                        DebugConsole.WriteSuccess($"✓ Restored: {relativePath}");
+                        DebugConsole.WriteSuccess($"✓ Restored: {relativeStagingPath}");
                         successCount++;
+
+                        // UPDATE LOCAL CHECKSUM RECORD to fix the metadata for future
+                        // This regenerates the checksums.json with CORRECT paths
+                        await _checksumService.UpdateFileChecksumRecord(targetPath, game.InstallDirectory, detectedPrefix);
                     }
                     catch (Exception ex)
                     {
-                        DebugConsole.WriteError($"✗ Failed to restore {fileEntry.Key}: {ex.Message}");
+                        DebugConsole.WriteError($"✗ Failed to restore {Path.GetFileName(sourceFile)}: {ex.Message}");
                         failCount++;
                     }
-                }
-
-                // Copy checksum file to game install directory for future tracking
-                try
-                {
-                    string targetChecksumPath = Path.Combine(game.InstallDirectory, SaveFileUploadManager.ChecksumFilename);
-                    if (File.Exists(checksumFilePath))
-                    {
-                        File.Copy(checksumFilePath, targetChecksumPath, overwrite: true);
-                        DebugConsole.WriteSuccess($"✓ Checksum file saved to install directory");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    DebugConsole.WriteWarning($"Failed to copy checksum file to install directory: {ex.Message}");
                 }
 
                 DebugConsole.WriteSuccess($"Download complete: {successCount} files restored, {failCount} failed");

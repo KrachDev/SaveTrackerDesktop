@@ -116,6 +116,8 @@ namespace SaveTracker.Resources.HELPERS
             // Pattern: users/<username>/Documents -> %USERPROFILE%/Documents
             var wineMappings = new List<(string winePattern, string envVar)>
             {
+                ("Program Files (x86)/", "%PROGRAMFILES(X86)%"), // Must check x86 before regular Program Files
+                ("Program Files/", "%PROGRAMFILES%"),
                 ("users/", "%USERPROFILE%"), // Generic user folder mapping
                 ("programdata/", "%PROGRAMDATA%")
             };

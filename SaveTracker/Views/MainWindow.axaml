@@ -809,8 +809,8 @@
                                Background="White" 
                                Opacity="0.3"
                                VerticalAlignment="Center"/>
-                    <TextBlock Text="{Binding OsVersionText, StringFormat='Platform: {0}'}" 
-                               Foreground="White"/>
+                    <!-- TextBlock Text="{Binding OsVersionText, StringFormat='Platform: {0}'}" 
+                               Foreground="White"/ -->
                 </StackPanel>
                 
                 <StackPanel Grid.Column="2" 
