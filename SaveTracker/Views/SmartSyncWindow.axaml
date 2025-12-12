@@ -1,0 +1,274 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:SaveTracker.ViewModels"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="700" d:DesignHeight="600"
+        x:Class="SaveTracker.Views.SmartSyncWindow"
+        x:DataType="vm:SmartSyncViewModel"
+        Title="Smart Sync"
+        Width="700" Height="600"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        Icon="/Assets/avalonia-logo.ico">
+
+    <Window.Styles>
+        <Style Selector="TextBlock.header">
+            <Setter Property="FontSize" Value="16"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="Margin" Value="0,0,0,10"/>
+        </Style>
+        
+        <Style Selector="TextBlock.label">
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="Margin" Value="0,5"/>
+        </Style>
+        
+        <Style Selector="TextBlock.value">
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Margin" Value="10,5"/>
+        </Style>
+        
+        <Style Selector="Button.action">
+            <Setter Property="Padding" Value="20,10"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="Margin" Value="5"/>
+        </Style>
+    </Window.Styles>
+
+    <Grid RowDefinitions="Auto,*,Auto" Margin="20">
+        <!-- Header -->
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,20">
+            <!-- Game Icon -->
+            <Border Width="64" Height="64" Background="#2D2D30" CornerRadius="8" Margin="0,0,15,0" ClipToBounds="True">
+                <Panel>
+                    <TextBlock Text="🎮" FontSize="32" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    <Image Source="{Binding GameIconBitmap}" Stretch="UniformToFill"/>
+                </Panel>
+            </Border>
+            
+            <StackPanel VerticalAlignment="Center">
+                <TextBlock Text="{Binding GameName}" FontSize="20" FontWeight="Bold"/>
+                <TextBlock Text="Smart Sync" FontSize="14" Foreground="Gray"/>
+            </StackPanel>
+        </StackPanel>
+
+        <!-- Tabs -->
+        <TabControl Grid.Row="1" SelectedIndex="{Binding SelectedTabIndex}">
+            <!-- Overview Tab -->
+            <TabItem Header="Overview">
+                <ScrollViewer>
+                    <StackPanel Margin="10">
+                        <!-- Suggestion Box -->
+                        <Border Background="#2D2D30" CornerRadius="8" Padding="15" Margin="0,0,0,20">
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                    <TextBlock Text="{Binding SuggestionIcon}" FontSize="24" Margin="0,0,10,0"/>
+                                    <TextBlock Text="Suggestion" Classes="header"/>
+                                </StackPanel>
+                                
+                                <TextBlock Text="{Binding SuggestedAction}" 
+                                          FontSize="18" 
+                                          FontWeight="Bold" 
+                                          Margin="0,0,0,10"/>
+                                
+                                <TextBlock Text="{Binding SuggestionReason}" 
+                                          TextWrapping="Wrap" 
+                                          FontSize="14" 
+                                          Foreground="LightGray"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Quick Stats -->
+                        <TextBlock Text="Quick Overview" Classes="header"/>
+                        
+                        <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto,Auto,Auto" Margin="0,0,0,20">
+                            <!-- Playtime -->
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Local Playtime:" Classes="label"/>
+                            <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding LocalPlayTime}" Classes="value"/>
+                            
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Cloud Playtime:" Classes="label"/>
+                            <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding CloudPlayTime}" Classes="value"/>
+                            
+                            <TextBlock Grid.Row="2" Grid.Column="0" Text="Difference:" Classes="label"/>
+                            <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal">
+                                <TextBlock Text="{Binding PlayTimeDifference}" Classes="value"/>
+                                <TextBlock Text="{Binding PlayTimeIndicator}" 
+                                          FontSize="12" 
+                                          Foreground="Orange" 
+                                          VerticalAlignment="Center" 
+                                          Margin="10,0,0,0"/>
+                            </StackPanel>
+                            
+                            <!-- File Counts -->
+                            <TextBlock Grid.Row="3" Grid.Column="0" Text="Local Files:" Classes="label"/>
+                            <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding LocalFileCount}" Classes="value"/>
+                        </Grid>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- Comparison Tab -->
+            <TabItem Header="Comparison">
+                <ScrollViewer>
+                    <StackPanel Margin="10">
+                        <!-- Playtime Comparison -->
+                        <TextBlock Text="Playtime Comparison" Classes="header"/>
+                        <Grid ColumnDefinitions="150,*,*" RowDefinitions="Auto,Auto,Auto,Auto" Margin="0,0,0,20">
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="" FontWeight="Bold"/>
+                            <TextBlock Grid.Row="0" Grid.Column="1" Text="Local" FontWeight="Bold" HorizontalAlignment="Center"/>
+                            <TextBlock Grid.Row="0" Grid.Column="2" Text="Cloud" FontWeight="Bold" HorizontalAlignment="Center"/>
+                            
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Playtime:" Classes="label"/>
+                            <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding LocalPlayTime}" HorizontalAlignment="Center"/>
+                            <TextBlock Grid.Row="1" Grid.Column="2" Text="{Binding CloudPlayTime}" HorizontalAlignment="Center"/>
+                            
+                            <TextBlock Grid.Row="2" Grid.Column="0" Text="Difference:" Classes="label"/>
+                            <TextBlock Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" 
+                                      Text="{Binding PlayTimeDifference}" 
+                                      HorizontalAlignment="Center" 
+                                      FontWeight="Bold"/>
+                        </Grid>
+
+                        <!-- File Count Comparison -->
+                        <TextBlock Text="File Count Comparison" Classes="header"/>
+                        <Grid ColumnDefinitions="150,*,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" Margin="0,0,0,20">
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="" FontWeight="Bold"/>
+                            <TextBlock Grid.Row="0" Grid.Column="1" Text="Local" FontWeight="Bold" HorizontalAlignment="Center"/>
+                            <TextBlock Grid.Row="0" Grid.Column="2" Text="Cloud" FontWeight="Bold" HorizontalAlignment="Center"/>
+                            
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Total Files:" Classes="label"/>
+                            <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding LocalFileCount}" HorizontalAlignment="Center"/>
+                            <TextBlock Grid.Row="1" Grid.Column="2" Text="{Binding CloudFileCount}" HorizontalAlignment="Center"/>
+                            
+                            <TextBlock Grid.Row="2" Grid.Column="0" Text="New in Local:" Classes="label"/>
+                            <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding NewInLocal}" HorizontalAlignment="Center"/>
+                            
+                            <TextBlock Grid.Row="3" Grid.Column="0" Text="New in Cloud:" Classes="label"/>
+                            <TextBlock Grid.Row="3" Grid.Column="2" Text="{Binding NewInCloud}" HorizontalAlignment="Center"/>
+                            
+                            <TextBlock Grid.Row="4" Grid.Column="0" Text="Modified:" Classes="label"/>
+                            <TextBlock Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="2" 
+                                      Text="{Binding ModifiedCount}" 
+                                      HorizontalAlignment="Center"/>
+                        </Grid>
+
+                        <!-- File List -->
+                        <TextBlock Text="File Details" Classes="header"/>
+                        <Border Background="#2D2D30" CornerRadius="8" Padding="10">
+                            <ScrollViewer MaxHeight="200">
+                                <ItemsControl ItemsSource="{Binding FileComparisonList}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border BorderBrush="Gray" BorderThickness="0,0,0,1" Padding="5">
+                                                <Grid ColumnDefinitions="30,*,100">
+                                                    <TextBlock Grid.Column="0" Text="{Binding Icon}" FontSize="16"/>
+                                                    <TextBlock Grid.Column="1" Text="{Binding FileName}" Margin="10,0"/>
+                                                    <TextBlock Grid.Column="2" Text="{Binding Status}" 
+                                                              FontSize="12" 
+                                                              Foreground="Gray" 
+                                                              HorizontalAlignment="Right"/>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- Progress Tab -->
+            <TabItem Header="Progress">
+                <StackPanel Margin="10" VerticalAlignment="Center">
+                    <!-- Progress Bar -->
+                    <TextBlock Text="{Binding CurrentOperation}" 
+                              FontSize="18" 
+                              FontWeight="Bold" 
+                              HorizontalAlignment="Center" 
+                              Margin="0,0,0,20"/>
+                    
+                    <ProgressBar Value="{Binding ProgressValue}" 
+                                Maximum="100" 
+                                Height="30" 
+                                Margin="0,0,0,10"/>
+                    
+                    <TextBlock Text="{Binding ProgressValue, StringFormat='{}{0:F0}%'}" 
+                              HorizontalAlignment="Center" 
+                              FontSize="14" 
+                              Margin="0,0,0,20"/>
+
+                    <!-- Current File -->
+                    <TextBlock Text="{Binding CurrentFile}" 
+                              HorizontalAlignment="Center" 
+                              FontSize="14" 
+                              Foreground="LightGray" 
+                              Margin="0,0,0,10"/>
+                    
+                    <!-- Speed and ETA -->
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,20">
+                        <TextBlock Text="{Binding Speed}" Margin="0,0,20,0"/>
+                        <TextBlock Text="{Binding Eta}"/>
+                    </StackPanel>
+
+                    <!-- Operation Log -->
+                    <TextBlock Text="Log" Classes="header" Margin="0,20,0,10"/>
+                    <Border Background="#2D2D30" CornerRadius="8" Padding="10" MaxHeight="200">
+                        <ScrollViewer>
+                            <ItemsControl ItemsSource="{Binding OperationLog}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding}" 
+                                                  FontFamily="Consolas" 
+                                                  FontSize="12" 
+                                                  Margin="0,2"/>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </Border>
+                </StackPanel>
+            </TabItem>
+        </TabControl>
+
+        <!-- Action Buttons -->
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
+            <Button Content="Download Cloud Save" 
+                    Command="{Binding DownloadCloudSaveCommand}"
+                    IsEnabled="{Binding CanDownload}"
+                    Classes="action"
+                    Background="#0E7C0E"/>
+            
+            <Button Content="Upload Local Save" 
+                    Command="{Binding UploadLocalSaveCommand}"
+                    IsEnabled="{Binding CanUpload}"
+                    Classes="action"
+                    Background="#0078D4"/>
+            
+            <Button Content="Cancel" 
+                    Click="CancelButton_Click"
+                    Classes="action"/>
+        </StackPanel>
+
+        <!-- Loading Overlay -->
+        <Border Grid.RowSpan="3" 
+                Background="#CC000000" 
+                IsVisible="{Binding IsLoading}"
+                CornerRadius="0">
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                <ProgressBar IsIndeterminate="True" 
+                            Width="250" 
+                            Height="6" 
+                            Margin="0,0,0,20"
+                            Foreground="{DynamicResource SystemControlHighlightAccentBrush}"/>
+                <TextBlock Text="{Binding LoadingMessage}" 
+                          FontSize="18" 
+                          FontWeight="SemiBold"
+                          Foreground="White" 
+                          HorizontalAlignment="Center"/>
+            </StackPanel>
+        </Border>
+    </Grid>
+</Window>

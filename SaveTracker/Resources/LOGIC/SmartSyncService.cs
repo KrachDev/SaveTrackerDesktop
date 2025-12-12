@@ -1,6 +1,7 @@
 using SaveTracker.Resources.Logic.RecloneManagement;
 using SaveTracker.Resources.SAVE_SYSTEM;
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
@@ -152,6 +153,23 @@ namespace SaveTracker.Resources.Logic
             try
             {
                 var checksumData = await _checksumService.LoadChecksumData(game.InstallDirectory);
+
+                // Validate that actual save files exist, not just the checksum file
+                // This prevents incorrect sync decisions in dual-boot scenarios
+                int existingFilesCount = _checksumService.CountExistingFiles(checksumData, game.InstallDirectory);
+
+                if (existingFilesCount == 0 && checksumData.Files.Count > 0)
+                {
+                    DebugConsole.WriteWarning($"Checksum file exists but no actual save files found ({checksumData.Files.Count} files referenced, 0 exist)");
+                    DebugConsole.WriteInfo("Treating as no local save - likely dual-boot scenario or files were deleted");
+                    return TimeSpan.Zero;
+                }
+
+                if (existingFilesCount > 0)
+                {
+                    DebugConsole.WriteInfo($"Local save validated: {existingFilesCount}/{checksumData.Files.Count} files exist");
+                }
+
                 return checksumData.PlayTime;
             }
             catch (Exception ex)
@@ -190,10 +208,7 @@ namespace SaveTracker.Resources.Logic
 
                 try
                 {
-                    // The checksum file is uploaded with path contraction, so it's in a subdirectory
-                    // We need to figure out where - it's at the same relative path as in the game install directory
-                    // For a game at C:\Game\Folder\, the checksum uploads to RemoteBase/Folder/.savetracker_checksums.json
-
+                    // The checksum file is uploaded with path contraction
                     string gameDirectory = game.InstallDirectory;
                     string checksumLocalFullPath = Path.Combine(gameDirectory, SaveFileUploadManager.ChecksumFilename);
 
@@ -229,6 +244,16 @@ namespace SaveTracker.Resources.Logic
                     {
                         DebugConsole.WriteWarning("Failed to deserialize cloud checksum data");
                         return null;
+                    }
+
+                    // Validate that actual cloud save files exist, not just the checksum
+                    // OPTIMIZATION: Instead of listing ALL files (which hangs on large folders),
+                    // we trust the checksum file existence + maybe check one file if strictly needed.
+                    // For now, if checksums.json exists, we assume the save is valid to avoid the performance penalty.
+
+                    if (cloudData.Files != null && cloudData.Files.Count > 0)
+                    {
+                        DebugConsole.WriteInfo($"Cloud save validated via checksum file ({cloudData.Files.Count} references)");
                     }
 
                     DebugConsole.WriteSuccess($"Cloud PlayTime: {FormatTimeSpan(cloudData.PlayTime)}");

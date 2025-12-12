@@ -140,51 +140,44 @@ namespace SaveTracker.Resources.HELPERS
 
         public static Bitmap? ExtractIconFromExe(string exePath)
         {
+            var data = ExtractIconDataFromExe(exePath);
+            if (data == null) return null;
+
+            using (var ms = new MemoryStream(data))
+            {
+                return new Bitmap(ms);
+            }
+        }
+
+        public static byte[]? ExtractIconDataFromExe(string exePath)
+        {
             if (string.IsNullOrEmpty(exePath) || !File.Exists(exePath))
                 return null;
 
             try
             {
-                // Cross-platform icon extraction using PeNet
-                return ExtractIconCrossPlatform(exePath);
+                return ExtractIconDataCrossPlatform(exePath);
             }
             catch
             {
-                // If extraction fails, return null for fallback
             }
-
             return null;
         }
 
-        private static Bitmap? ExtractIconCrossPlatform(string exePath)
+        private static byte[]? ExtractIconDataCrossPlatform(string exePath)
         {
             try
             {
-                Console.WriteLine($"[DEBUG] Attempting to extract icon from: {exePath}");
-
-                // Create IcoReader instance
                 var icoReader = new IcoReader();
-
-                // Read icon data from the executable
                 var icoData = icoReader.Read(exePath);
 
                 if (icoData == null || icoData.Groups == null || icoData.Groups.Count == 0)
-                {
-                    Console.WriteLine("[DEBUG] No icon groups found in executable");
                     return null;
-                }
 
-                // Get the first group (standalone exes typically have one icon group)
                 var group = icoData.Groups[0];
-
                 if (group.DirectoryEntries == null || group.DirectoryEntries.Length == 0)
-                {
-                    Console.WriteLine("[DEBUG] No images found in icon group");
                     return null;
-                }
 
-                // Find the largest icon for best quality
-                // ImageReferences are sorted, so we can pick the largest by dimensions
                 int largestIndex = 0;
                 int maxSize = 0;
 
@@ -199,28 +192,10 @@ namespace SaveTracker.Resources.HELPERS
                     }
                 }
 
-                Console.WriteLine($"[DEBUG] Extracting icon at index {largestIndex} with size {group.DirectoryEntries[largestIndex].Width}x{group.DirectoryEntries[largestIndex].Height}");
-
-                // Extract the image as PNG data
-                byte[] pngData = icoData.GetImage(group, largestIndex);
-
-                if (pngData == null || pngData.Length == 0)
-                {
-                    Console.WriteLine("[DEBUG] Failed to extract PNG data");
-                    return null;
-                }
-
-                // Convert PNG byte array to Avalonia Bitmap
-                using (var memoryStream = new MemoryStream(pngData))
-                {
-                    var bitmap = new Bitmap(memoryStream);
-                    Console.WriteLine("[DEBUG] Successfully created Avalonia Bitmap from icon");
-                    return bitmap;
-                }
+                return icoData.GetImage(group, largestIndex);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                Console.WriteLine($"[DEBUG] Exception during icon extraction: {ex.Message}");
                 return null;
             }
         }

@@ -1,13 +1,19 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using SaveTracker.Resources.HELPERS;
 using static CloudConfig;
+
+using System.Text.RegularExpressions;
+using SaveTracker.Resources.Logic.RecloneManagement;
 
 namespace SaveTracker.Resources.Logic.RecloneManagement
 {
     public class RcloneTransferService
     {
+        // Relaxed regex to match "12%" or " 12%" or ", 12%"
+        private static readonly Regex ProgressRegex = new Regex(@"(\d+)%", RegexOptions.Compiled);
         private readonly RcloneExecutor _executor = new RcloneExecutor();
         private readonly int _maxRetries = 3;
         private readonly TimeSpan _retryDelay = TimeSpan.FromSeconds(2);
@@ -17,7 +23,8 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             string localPath,
             string remotePath,
             string fileName,
-            CloudProvider provider)
+            CloudProvider provider,
+            IProgress<double>? progress = null)
         {
             for (int attempt = 1; attempt <= _maxRetries; attempt++)
             {
@@ -30,7 +37,17 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                     string configPath = RclonePathHelper.GetConfigPath(provider);
                     var result = await _executor.ExecuteRcloneCommand(
                         $"copyto \"{localPath}\" \"{remotePath}\" --config \"{configPath}\" --progress",
-                        _processTimeout
+                        _processTimeout,
+                        hideWindow: true,
+                        allowedExitCodes: null,
+                        onOutput: (line) =>
+                        {
+                            var match = ProgressRegex.Match(line);
+                            if (match.Success && double.TryParse(match.Groups[1].Value, out double percent))
+                            {
+                                progress?.Report(percent);
+                            }
+                        }
                     );
 
                     if (result.Success)
@@ -69,7 +86,8 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             string sourceRoot,
             string remoteRoot,
             List<string> relativeFilePaths,
-            CloudProvider provider)
+            CloudProvider provider,
+            IProgress<double>? progress = null)
         {
             // Create a temporary file list for rclone
             string listFilePath = System.IO.Path.GetTempFileName();
@@ -99,7 +117,17 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                         // The destination is the remote root directory
                         var result = await _executor.ExecuteRcloneCommand(
                             $"copy \"{sourceRoot}\" \"{remoteRoot}\" --files-from \"{listFilePath}\" --config \"{configPath}\" --progress",
-                            _processTimeout
+                            _processTimeout,
+                            hideWindow: true,
+                            allowedExitCodes: null,
+                            onOutput: (line) =>
+                            {
+                                var match = ProgressRegex.Match(line);
+                                if (match.Success && double.TryParse(match.Groups[1].Value, out double percent))
+                                {
+                                    progress?.Report(percent);
+                                }
+                            }
                         );
 
                         if (result.Success)
@@ -152,7 +180,8 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             string remotePath,
             string localPath,
             string fileName,
-            CloudProvider provider)
+            CloudProvider provider,
+            IProgress<double>? progress = null)
         {
             for (int attempt = 1; attempt <= _maxRetries; attempt++)
             {
@@ -165,7 +194,17 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                     string configPath = RclonePathHelper.GetConfigPath(provider);
                     var result = await _executor.ExecuteRcloneCommand(
                         $"copyto \"{remotePath}\" \"{localPath}\" --config \"{configPath}\" --progress",
-                        _processTimeout
+                        _processTimeout,
+                        hideWindow: true,
+                        allowedExitCodes: null,
+                        onOutput: (line) =>
+                        {
+                            var match = ProgressRegex.Match(line);
+                            if (match.Success && double.TryParse(match.Groups[1].Value, out double percent))
+                            {
+                                progress?.Report(percent);
+                            }
+                        }
                     );
 
                     if (result.Success)
@@ -200,7 +239,7 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             return false;
         }
 
-        public async Task<bool> DownloadDirectory(string remotePath, string localPath, CloudProvider provider)
+        public async Task<bool> DownloadDirectory(string remotePath, string localPath, CloudProvider provider, IProgress<double>? progress = null)
         {
             try
             {
@@ -209,7 +248,17 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                 string configPath = RclonePathHelper.GetConfigPath(provider);
                 var result = await _executor.ExecuteRcloneCommand(
                     $"copy \"{remotePath}\" \"{localPath}\" --config \"{configPath}\" --progress",
-                    TimeSpan.FromMinutes(5)
+                    TimeSpan.FromMinutes(5),
+                    hideWindow: true,
+                    allowedExitCodes: null,
+                    onOutput: (line) =>
+                    {
+                        var match = ProgressRegex.Match(line);
+                        if (match.Success && double.TryParse(match.Groups[1].Value, out double percent))
+                        {
+                            progress?.Report(percent);
+                        }
+                    }
                 );
 
                 if (result.Success)
@@ -300,6 +349,41 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             {
                 DebugConsole.WriteException(ex, "Cloud folder rename exception");
                 return false;
+            }
+        }
+
+        /// <summary>
+        /// List all files in a cloud directory (recursive)
+        /// </summary>
+        public async Task<List<string>> ListCloudFiles(string remotePath, CloudProvider provider)
+        {
+            try
+            {
+                string configPath = RclonePathHelper.GetConfigPath(provider);
+                var result = await _executor.ExecuteRcloneCommand(
+                    $"lsf \"{remotePath}\" --recursive --config \"{configPath}\"",
+                    TimeSpan.FromSeconds(30),
+                    hideWindow: true
+                );
+
+                if (result.Success && !string.IsNullOrWhiteSpace(result.Output))
+                {
+                    // Split by newlines and filter out empty entries
+                    var files = result.Output
+                        .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                        .Select(f => f.Trim())
+                        .Where(f => !string.IsNullOrWhiteSpace(f))
+                        .ToList();
+
+                    return files;
+                }
+
+                return new List<string>();
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteException(ex, "Failed to list cloud files");
+                return new List<string>();
             }
         }
     }

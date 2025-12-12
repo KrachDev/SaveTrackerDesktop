@@ -64,10 +64,16 @@ namespace SaveTracker.ViewModels
             }
 
             // Fetch potential matches for autocomplete
-            _ = LoadCloudGameSuggestionsAsync();
+            // OPTIMIZATION: Don't load this on every game select. Only needed when editing.
+            // _ = LoadCloudGameSuggestionsAsync();
 
             // Trigger check initially? Maybe not, or yes.
-            OnEditableGameNameChanged(game.Name);
+            // OPTIMIZATION: Don't check cloud existence on every game select.
+            // OnEditableGameNameChanged(game.Name);
+
+            // Reset status
+            CloudCheckStatus = "";
+            CloudCheckColor = "Gray";
         }
 
         [RelayCommand]

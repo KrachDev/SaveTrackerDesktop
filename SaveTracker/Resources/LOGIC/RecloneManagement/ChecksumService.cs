@@ -15,6 +15,24 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
     {
         private static readonly SemaphoreSlim _checksumFileLock = new SemaphoreSlim(1, 1);
 
+        public async Task UpdatePlayTime(string gameDirectory, TimeSpan playTime)
+        {
+            try
+            {
+                var data = await LoadChecksumData(gameDirectory) ?? new GameUploadData();
+                data.PlayTime = playTime;
+                data.LastUpdated = DateTime.Now;
+
+                string checksumPath = GetChecksumFilePath(gameDirectory);
+                string json = JsonConvert.SerializeObject(data, Formatting.Indented);
+                await File.WriteAllLinesAsync(checksumPath, new[] { json });
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteException(ex, "Failed to update local PlayTime manually");
+            }
+        }
+
         public string GetChecksumFilePath(string gameDirectory)
         {
             return Path.Combine(gameDirectory, SaveFileUploadManager.ChecksumFilename);
@@ -39,40 +57,53 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
         // Internal method without lock (for use within locked contexts)
         private async Task<GameUploadData> LoadChecksumDataInternal(string gameDirectory)
         {
-            try
-            {
-                string checksumFilePath = GetChecksumFilePath(gameDirectory);
+            int maxRetries = 3;
+            int delayMs = 500;
 
-                if (!File.Exists(checksumFilePath))
+            for (int i = 0; i < maxRetries; i++)
+            {
+                try
                 {
+                    string checksumFilePath = GetChecksumFilePath(gameDirectory);
+
+                    if (!File.Exists(checksumFilePath))
+                    {
+                        DebugConsole.WriteDebug(
+                            $"Checksum file doesn't exist at {checksumFilePath} - creating new one"
+                        );
+                        return new GameUploadData();
+                    }
+
+                    string jsonContent;
+                    using (var stream = new FileStream(checksumFilePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                    using (var reader = new StreamReader(stream))
+                    {
+                        jsonContent = await reader.ReadToEndAsync();
+                    }
+
+                    var data = JsonConvert.DeserializeObject<GameUploadData>(jsonContent);
+
                     DebugConsole.WriteDebug(
-                        $"Checksum file doesn't exist at {checksumFilePath} - creating new one"
+                        $"Loaded checksum data from {checksumFilePath} with {data?.Files?.Count ?? 0} file records"
+                    );
+                    return data ?? new GameUploadData();
+                }
+                catch (IOException ioEx) when (i < maxRetries - 1)
+                {
+                    DebugConsole.WriteWarning($"File access error loading checksum (Attempt {i + 1}/{maxRetries}): {ioEx.Message}");
+                    await Task.Delay(delayMs);
+                    delayMs *= 2; // Exponential backoff
+                }
+                catch (Exception ex)
+                {
+                    DebugConsole.WriteException(
+                        ex,
+                        $"Failed to load checksum data from {gameDirectory} - creating new"
                     );
                     return new GameUploadData();
                 }
-
-                string jsonContent;
-                using (var stream = new FileStream(checksumFilePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
-                using (var reader = new StreamReader(stream))
-                {
-                    jsonContent = await reader.ReadToEndAsync();
-                }
-
-                var data = JsonConvert.DeserializeObject<GameUploadData>(jsonContent);
-
-                DebugConsole.WriteDebug(
-                    $"Loaded checksum data from {checksumFilePath} with {data?.Files?.Count ?? 0} file records"
-                );
-                return data ?? new GameUploadData();
             }
-            catch (Exception ex)
-            {
-                DebugConsole.WriteException(
-                    ex,
-                    $"Failed to load checksum data from {gameDirectory} - creating new"
-                );
-                return new GameUploadData();
-            }
+            return new GameUploadData();
         }
 
         // Public method with lock
@@ -92,26 +123,52 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
         // Internal method without lock (for use within locked contexts)
         private async Task SaveChecksumDataInternal(GameUploadData data, string gameDirectory)
         {
-            string checksumFilePath = GetChecksumFilePath(gameDirectory);
+            int maxRetries = 3;
+            int delayMs = 500;
 
-            if (!Directory.Exists(gameDirectory))
+            for (int i = 0; i < maxRetries; i++)
             {
-                Directory.CreateDirectory(gameDirectory);
+                try
+                {
+                    string checksumFilePath = GetChecksumFilePath(gameDirectory);
+
+                    if (!Directory.Exists(gameDirectory))
+                    {
+                        Directory.CreateDirectory(gameDirectory);
+                    }
+
+                    string jsonContent = JsonConvert.SerializeObject(data, Formatting.Indented);
+
+                    using (var stream = new FileStream(checksumFilePath, FileMode.Create, FileAccess.Write, FileShare.Read))
+                    using (var writer = new StreamWriter(stream))
+                    {
+                        await writer.WriteAsync(jsonContent);
+                        await writer.FlushAsync();
+                    }
+
+                    DebugConsole.WriteDebug($"Saved checksum data to {checksumFilePath}");
+                    DebugConsole.WriteInfo(
+                        $"Checksum file updated with {data.Files.Count} file records"
+                    );
+                    return; // Success
+                }
+                catch (IOException ioEx) when (i < maxRetries - 1)
+                {
+                    DebugConsole.WriteWarning($"File access error saving checksum (Attempt {i + 1}/{maxRetries}): {ioEx.Message}");
+                    await Task.Delay(delayMs);
+                    delayMs *= 2; // Exponential backoff
+                }
+                catch (Exception ex)
+                {
+                    DebugConsole.WriteException(ex, $"Failed to save checksum data to {gameDirectory}");
+                    // On final failure or non-IO exception, we might want to throw or just log. 
+                    // Original code logged exception inside this method but caller also caught?
+                    // Caller 'SaveChecksumData' catches and throws.
+                    // If we return here, caller thinks success?
+                    // We should rethrow if we can't save.
+                    throw;
+                }
             }
-
-            string jsonContent = JsonConvert.SerializeObject(data, Formatting.Indented);
-
-            using (var stream = new FileStream(checksumFilePath, FileMode.Create, FileAccess.Write, FileShare.Read))
-            using (var writer = new StreamWriter(stream))
-            {
-                await writer.WriteAsync(jsonContent);
-                await writer.FlushAsync();
-            }
-
-            DebugConsole.WriteDebug($"Saved checksum data to {checksumFilePath}");
-            DebugConsole.WriteInfo(
-                $"Checksum file updated with {data.Files.Count} file records"
-            );
         }
 
         // Public method with lock
@@ -281,6 +338,34 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             {
                 _checksumFileLock.Release();
             }
+        }
+
+        /// <summary>
+        /// Count how many files referenced in the checksum data actually exist on disk
+        /// </summary>
+        public int CountExistingFiles(GameUploadData checksumData, string gameDirectory)
+        {
+            if (checksumData?.Files == null || checksumData.Files.Count == 0)
+                return 0;
+
+            int existingCount = 0;
+            foreach (var fileRecord in checksumData.Files.Values)
+            {
+                try
+                {
+                    string absolutePath = fileRecord.GetAbsolutePath(gameDirectory);
+                    if (File.Exists(absolutePath))
+                    {
+                        existingCount++;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    DebugConsole.WriteDebug($"Error checking file existence: {ex.Message}");
+                }
+            }
+
+            return existingCount;
         }
     }
 }

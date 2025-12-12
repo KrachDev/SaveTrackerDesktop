@@ -20,7 +20,8 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             string arguments,
             TimeSpan timeout,
             bool hideWindow = true,
-            int[]? allowedExitCodes = null
+            int[]? allowedExitCodes = null,
+            Action<string>? onOutput = null
         )
         {
             DebugConsole.WriteDebug($"Executing: rclone {arguments}");
@@ -53,7 +54,7 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                 using var cts = new CancellationTokenSource(timeout);
 
                 // Use async methods with cancellation token for better performance
-                var outputTask = ReadStreamAsync(process.StandardOutput, cts.Token);
+                var outputTask = ReadStreamAsync(process.StandardOutput, cts.Token, onOutput);
                 var errorTask = ReadStreamAsync(process.StandardError, cts.Token);
 
                 // Wait for process to exit with cancellation support
@@ -116,29 +117,31 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             }
         }
 
+        // Method to read stream line-by-line and invoke callback
         private static async Task<string> ReadStreamAsync(
             StreamReader reader,
-            CancellationToken cancellationToken
+            CancellationToken cancellationToken,
+            Action<string>? onLineRead = null
         )
         {
+            var sb = new System.Text.StringBuilder();
             try
             {
-                var readTask = reader.ReadToEndAsync();
-                var completedTask = await Task.WhenAny(
-                    readTask,
-                    Task.Delay(Timeout.Infinite, cancellationToken)
-                );
-
-                if (completedTask != readTask)
+                while (!reader.EndOfStream)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
+                    var line = await reader.ReadLineAsync();
+                    if (line != null)
+                    {
+                        sb.AppendLine(line);
+                        onLineRead?.Invoke(line);
+                    }
                 }
-
-                return await readTask;
+                return sb.ToString();
             }
             catch (OperationCanceledException)
             {
-                return string.Empty;
+                return sb.ToString(); // Return partial output on cancel
             }
         }
         private static async Task WaitForExitAsync(

@@ -529,7 +529,7 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             return await _transferService.RenameFolder(oldRemoteBasePath, newRemoteBasePath, effectiveProvider);
         }
 
-        public async Task<bool> DownloadWithChecksumAsync(string remotePath, Game game, CloudProvider? provider = null)
+        public async Task<bool> DownloadWithChecksumAsync(string remotePath, Game game, CloudProvider? provider = null, IProgress<double>? progress = null)
         {
             string stagingFolder = Path.Combine(Path.GetTempPath(), "SaveTracker_Download_" + Guid.NewGuid().ToString("N"));
 
@@ -543,12 +543,34 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                 Directory.CreateDirectory(stagingFolder);
 
                 CloudProvider effectiveProvider = provider ?? await GetEffectiveProvider(game);
-                var downloadResult = await _transferService.DownloadDirectory(remotePath, stagingFolder, effectiveProvider);
+                var downloadResult = await _transferService.DownloadDirectory(remotePath, stagingFolder, effectiveProvider, progress);
 
                 if (!downloadResult)
                 {
                     DebugConsole.WriteError($"Failed to download files to staging");
                     return false;
+                }
+
+                // Explicitly check for checksum file and try to download it specifically if missing
+                // This covers cases where rclone filtering might have excluded it or it was somehow missed
+                string stagingChecksumPath = Path.Combine(stagingFolder, SaveFileUploadManager.ChecksumFilename);
+                if (!File.Exists(stagingChecksumPath))
+                {
+                    DebugConsole.WriteWarning("Checksum file missing from bulk download - attempting explicit fetch...");
+                    string remoteChecksumPath = $"{remotePath}/{SaveFileUploadManager.ChecksumFilename}";
+
+                    // We assume checksums.json is at the root of the remote path
+                    bool checksumDownloaded = await _transferService.DownloadFileWithRetry(
+                        remoteChecksumPath,
+                        stagingChecksumPath,
+                        SaveFileUploadManager.ChecksumFilename,
+                        effectiveProvider
+                    );
+
+                    if (checksumDownloaded)
+                        DebugConsole.WriteSuccess("Successfully recovered checksum file.");
+                    else
+                        DebugConsole.WriteWarning("Could not recover checksum file - PlayTime metadata might be lost.");
                 }
 
                 // Drive restoration from Staging Files (Source of Truth)
@@ -613,6 +635,27 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                         DebugConsole.WriteError($"✗ Failed to restore {Path.GetFileName(sourceFile)}: {ex.Message}");
                         failCount++;
                     }
+                }
+
+                // Copy the cloud checksum file to the game directory so the app knows what files are tracked
+                try
+                {
+                    string cloudChecksumPath = Path.Combine(stagingFolder, SaveFileUploadManager.ChecksumFilename);
+                    string localChecksumPath = Path.Combine(game.InstallDirectory, SaveFileUploadManager.ChecksumFilename);
+
+                    if (File.Exists(cloudChecksumPath))
+                    {
+                        File.Copy(cloudChecksumPath, localChecksumPath, overwrite: true);
+                        DebugConsole.WriteSuccess($"✓ Checksum file copied to game directory: {localChecksumPath}");
+                    }
+                    else
+                    {
+                        DebugConsole.WriteWarning("Cloud checksum file not found in staging folder");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    DebugConsole.WriteWarning($"Failed to copy checksum file to game directory: {ex.Message}");
                 }
 
                 DebugConsole.WriteSuccess($"Download complete: {successCount} files restored, {failCount} failed");

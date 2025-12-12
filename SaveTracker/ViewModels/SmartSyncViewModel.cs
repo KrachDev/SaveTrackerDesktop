@@ -1,0 +1,657 @@
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using SaveTracker.Models;
+using SaveTracker.Resources.HELPERS;
+using SaveTracker.Resources.Logic;
+using SaveTracker.Resources.Logic.RecloneManagement;
+using SaveTracker.Resources.SAVE_SYSTEM;
+using System;
+using System.Collections.ObjectModel;
+using System.Linq;
+using System.Threading.Tasks;
+using Avalonia.Threading;
+using Avalonia.Media.Imaging;
+using System.IO;
+using System.Collections.Generic;
+
+namespace SaveTracker.ViewModels
+{
+    public partial class SmartSyncViewModel : ObservableObject
+    {
+        private readonly Game _game;
+        private readonly SmartSyncMode _mode;
+        private SmartSyncService.ProgressComparison? _comparison;
+
+        [ObservableProperty]
+        private string _gameName = string.Empty;
+
+        [ObservableProperty]
+        private Bitmap? _gameIconBitmap;
+
+        [ObservableProperty]
+        private bool _isLoading;
+
+        [ObservableProperty]
+        private string _loadingMessage = "Loading...";
+
+        // Playtime Comparison
+        [ObservableProperty]
+        private string _localPlayTime = "00:00:00";
+
+        [ObservableProperty]
+        private string _cloudPlayTime = "00:00:00";
+
+        [ObservableProperty]
+        private string _playTimeDifference = "00:00:00";
+
+        [ObservableProperty]
+        private string _playTimeIndicator = ""; // "↑" or "↓"
+
+        // File Counts
+        [ObservableProperty]
+        private int _localFileCount;
+
+        [ObservableProperty]
+        private int _cloudFileCount;
+
+        [ObservableProperty]
+        private int _newInLocal;
+
+        [ObservableProperty]
+        private int _newInCloud;
+
+        [ObservableProperty]
+        private int _modifiedCount;
+
+        // Suggestion
+        [ObservableProperty]
+        private string _suggestedAction = "Skip";
+
+        [ObservableProperty]
+        private string _suggestionReason = "No action needed";
+
+        [ObservableProperty]
+        private string _suggestionIcon = "ℹ️";
+
+        // Progress
+        [ObservableProperty]
+        private double _progressValue;
+
+        [ObservableProperty]
+        private string _currentOperation = "Ready";
+
+        [ObservableProperty]
+        private string _currentFile = "";
+
+        [ObservableProperty]
+        private string _speed = "";
+
+        [ObservableProperty]
+        private string _eta = "";
+
+        [ObservableProperty]
+        private bool _isOperationInProgress;
+
+        // UI State
+        [ObservableProperty]
+        private int _selectedTabIndex;
+
+        [ObservableProperty]
+        private bool _canDownload;
+
+        [ObservableProperty]
+        private bool _canUpload;
+
+        // Collections
+        public ObservableCollection<FileComparisonItem> FileComparisonList { get; } = new();
+        public ObservableCollection<string> OperationLog { get; } = new();
+
+        public SmartSyncViewModel(Game game, SmartSyncMode mode)
+        {
+            _game = game;
+            _mode = mode;
+
+            GameName = game.Name;
+
+            // Initialize in background
+            _ = InitializeAsync();
+        }
+
+        private async Task InitializeAsync()
+        {
+            try
+            {
+                // UI updates must happen on UI thread
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    IsLoading = true;
+                    LoadingMessage = "Analyzing save data...";
+                });
+                DebugConsole.WriteInfo($"Initializing Smart Sync window for {_game.Name}");
+
+                // Load Icon
+                await Task.Run(async () =>
+                {
+                    try
+                    {
+                        var bitmap = Misc.ExtractIconFromExe(_game.ExecutablePath);
+                        await Dispatcher.UIThread.InvokeAsync(() =>
+                        {
+                            GameIconBitmap = bitmap;
+                        });
+                    }
+                    catch { }
+                });
+
+                // Perform heavy comparison logic on background thread
+                await Task.Run(async () =>
+                {
+                    try
+                    {
+                        var smartSync = new SmartSyncService();
+                        var provider = await smartSync.GetEffectiveProvider(_game);
+
+                        // comparison logic
+                        _comparison = await smartSync.CompareProgressAsync(_game, TimeSpan.Zero, provider);
+
+                        await UpdateComparisonUIAsync(_comparison);
+
+                        // Load file comparison details
+                        await CompareChecksumsInternalAsync();
+                    }
+                    catch (Exception ex)
+                    {
+                        DebugConsole.WriteException(ex, "Error during async init calculation");
+                    }
+                });
+
+                await Dispatcher.UIThread.InvokeAsync(() => CalculateSuggestion());
+
+                // Auto-start upload if in GameExit mode
+                if (_mode == SmartSyncMode.GameExit && CanUpload)
+                {
+                    await Dispatcher.UIThread.InvokeAsync(() => SelectedTabIndex = 2); // Switch to Progress tab
+                    _ = UploadLocalSaveAsync(); // Fire and forget
+                }
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteException(ex, "Failed to initialize Smart Sync window");
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    LoadingMessage = "Error loading data.";
+                });
+            }
+            finally
+            {
+                await Dispatcher.UIThread.InvokeAsync(() => IsLoading = false);
+                DebugConsole.WriteSuccess("Smart Sync window initialized");
+            }
+        }
+
+        private async Task UpdateComparisonUIAsync(SmartSyncService.ProgressComparison comparison)
+        {
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                LocalPlayTime = FormatTimeSpan(comparison.LocalPlayTime);
+                CloudPlayTime = FormatTimeSpan(comparison.CloudPlayTime);
+                PlayTimeDifference = FormatTimeSpan(comparison.Difference);
+
+                if (comparison.CloudPlayTime > comparison.LocalPlayTime)
+                {
+                    PlayTimeIndicator = "↑ Cloud ahead";
+                }
+                else if (comparison.LocalPlayTime > comparison.CloudPlayTime)
+                {
+                    PlayTimeIndicator = "↓ Local ahead";
+                }
+                else
+                {
+                    PlayTimeIndicator = "= Equal";
+                }
+
+                CanDownload = comparison.CloudPlayTime > TimeSpan.Zero;
+                CanUpload = comparison.LocalPlayTime > TimeSpan.Zero;
+            });
+        }
+
+        private async Task CompareChecksumsInternalAsync()
+        {
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                DebugConsole.WriteInfo("Comparing local and cloud checksums...");
+                FileComparisonList.Clear();
+            });
+
+            // Load local checksum
+            var checksumService = new ChecksumService();
+            var localData = await checksumService.LoadChecksumData(_game.InstallDirectory);
+
+            // Load cloud checksum (download to temp)
+            GameUploadData cloudData = new GameUploadData();
+            string tempFolder = Path.Combine(Path.GetTempPath(), $"SaveTracker_SyncCheck_{Guid.NewGuid():N}");
+            Directory.CreateDirectory(tempFolder);
+
+            try
+            {
+                var config = await ConfigManagement.LoadConfigAsync();
+                if (config?.CloudConfig != null)
+                {
+                    var rcloneOps = new RcloneFileOperations(_game);
+                    var remoteName = GetProviderConfigName(config.CloudConfig.Provider);
+                    var sanitizedGameName = SanitizeGameName(_game.Name);
+                    var remotePath = $"{remoteName}:{SaveFileUploadManager.RemoteBaseFolder}/{sanitizedGameName}";
+
+                    string gameDirectory = _game.InstallDirectory;
+                    string checksumLocalFullPath = Path.Combine(gameDirectory, SaveFileUploadManager.ChecksumFilename);
+                    string checksumRelativePath = PathContractor.ContractPath(checksumLocalFullPath, gameDirectory).Replace('\\', '/');
+                    string checksumRemotePath = $"{remotePath}/{checksumRelativePath}";
+                    string checksumLocalPath = Path.Combine(tempFolder, SaveFileUploadManager.ChecksumFilename);
+
+                    var transferService = new RcloneTransferService();
+                    bool downloaded = await transferService.DownloadFileWithRetry(
+                        checksumRemotePath,
+                        checksumLocalPath,
+                        SaveFileUploadManager.ChecksumFilename,
+                        config.CloudConfig.Provider
+                    );
+
+                    if (downloaded && File.Exists(checksumLocalPath))
+                    {
+                        string json = await File.ReadAllTextAsync(checksumLocalPath);
+                        cloudData = Newtonsoft.Json.JsonConvert.DeserializeObject<GameUploadData>(json) ?? new GameUploadData();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteWarning($"Failed to load cloud checksum: {ex.Message}");
+            }
+            finally
+            {
+                // cleanup
+                try
+                {
+                    if (Directory.Exists(tempFolder)) Directory.Delete(tempFolder, true);
+                }
+                catch { }
+            }
+
+            // Prepare items for UI
+            var items = new List<FileComparisonItem>();
+
+            var allPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (localData?.Files != null) allPaths.UnionWith(localData.Files.Keys);
+            if (cloudData?.Files != null) allPaths.UnionWith(cloudData.Files.Keys);
+
+            int modified = 0;
+            int newInLocal = 0;
+            int newInCloud = 0;
+
+            foreach (var path in allPaths)
+            {
+                var localFile = localData?.Files?.ContainsKey(path) == true ? localData.Files[path] : null;
+                var cloudFile = cloudData?.Files?.ContainsKey(path) == true ? cloudData.Files[path] : null;
+
+                var item = new FileComparisonItem { FileName = Path.GetFileName(path) };
+
+                if (localFile != null && cloudFile != null)
+                {
+                    if (localFile.Checksum != cloudFile.Checksum)
+                    {
+                        item.Status = "Modified";
+                        item.Icon = "⚠️";
+                        modified++;
+                    }
+                    else
+                    {
+                        item.Status = "Synced";
+                        item.Icon = "✓";
+                    }
+                }
+                else if (localFile != null)
+                {
+                    item.Status = "New Local";
+                    item.Icon = "✨";
+                    newInLocal++;
+                }
+                else if (cloudFile != null)
+                {
+                    item.Status = "New Cloud";
+                    item.Icon = "☁️";
+                    newInCloud++;
+                }
+
+                items.Add(item);
+            }
+
+            // Update UI on UI Thread
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                LocalFileCount = localData?.Files?.Count ?? 0;
+                CloudFileCount = cloudData?.Files?.Count ?? 0;
+                ModifiedCount = modified;
+                NewInLocal = newInLocal;
+                NewInCloud = newInCloud;
+
+                foreach (var item in items)
+                {
+                    FileComparisonList.Add(item);
+                }
+
+                DebugConsole.WriteInfo($"Comparison done: {modified} mod, {newInLocal} local, {newInCloud} cloud");
+            });
+        }
+
+        public async Task CompareChecksumsAsync()
+        {
+            await Task.Run(CompareChecksumsInternalAsync);
+        }
+
+        private void CalculateSuggestion()
+        {
+            if (_comparison == null) return;
+
+            if (_comparison.Status == SmartSyncService.ProgressStatus.CloudAhead)
+            {
+                SuggestedAction = "Download";
+                SuggestionIcon = "⬇️";
+                SuggestionReason = $"Cloud: +{FormatTimeSpan(_comparison.Difference)} playtime.";
+            }
+            else if (_comparison.Status == SmartSyncService.ProgressStatus.LocalAhead)
+            {
+                SuggestedAction = "Upload";
+                SuggestionIcon = "⬆️";
+                SuggestionReason = $"Local: +{FormatTimeSpan(_comparison.Difference)} playtime.";
+            }
+            else if (_comparison.Status == SmartSyncService.ProgressStatus.CloudNotFound)
+            {
+                SuggestedAction = "Upload";
+                SuggestionIcon = "⬆️";
+                SuggestionReason = "Cloud save missing.";
+            }
+            else
+            {
+                SuggestedAction = "Skip";
+                SuggestionIcon = "✓";
+                SuggestionReason = "Saves in sync.";
+            }
+        }
+
+        [RelayCommand]
+        private async Task DownloadCloudSaveAsync()
+        {
+            try
+            {
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    IsLoading = true;
+                    LoadingMessage = "Initializing download...";
+                    IsOperationInProgress = true;
+                    CanDownload = false; // Disable buttons
+                    CanUpload = false;
+                });
+
+                DebugConsole.WriteInfo("Starting cloud save download...");
+
+                // Run heavy work on background thread
+                await Task.Run(async () =>
+                {
+                    try
+                    {
+                        var rcloneOps = new RcloneFileOperations(_game);
+                        var config = await ConfigManagement.LoadConfigAsync();
+
+                        // Short initialization delay to let UI show "Initializing" briefly if needed, 
+                        // but mainly we want to switch to Progress Tab and hide overlay for the actual transfer.
+                        await Task.Delay(500);
+
+                        await Dispatcher.UIThread.InvokeAsync(() =>
+                        {
+                            IsLoading = false; // HIDE OVERLAY
+                            SelectedTabIndex = 2; // Switch to Progress tab
+                            CurrentOperation = "Downloading";
+                            ProgressValue = 0;
+                            OperationLog.Clear();
+                            OperationLog.Add($"[{DateTime.Now:HH:mm:ss}] Starting download...");
+                        });
+
+                        if (config?.CloudConfig == null)
+                        {
+                            await Dispatcher.UIThread.InvokeAsync(() =>
+                            {
+                                DebugConsole.WriteError("Cloud configuration not found");
+                                OperationLog.Add($"[{DateTime.Now:HH:mm:ss}] ❌ Error: Cloud not configured");
+                            });
+                            return;
+                        }
+
+                        var remoteName = GetProviderConfigName(config.CloudConfig.Provider);
+                        var sanitizedGameName = SanitizeGameName(_game.Name);
+                        var remotePath = $"{remoteName}:{SaveFileUploadManager.RemoteBaseFolder}/{sanitizedGameName}";
+
+                        await Dispatcher.UIThread.InvokeAsync(() =>
+                        {
+                            OperationLog.Add($"[{DateTime.Now:HH:mm:ss}] Downloading from {remotePath}...");
+                        });
+
+                        var progress = new Progress<double>(percent =>
+                        {
+                            Dispatcher.UIThread.Post(() =>
+                            {
+                                ProgressValue = percent;
+                                LoadingMessage = $"Downloading... {percent:F0}%";
+                            });
+                        });
+
+                        bool success = await rcloneOps.DownloadWithChecksumAsync(remotePath, _game, config.CloudConfig.Provider, progress);
+
+                        if (success)
+                        {
+                            await Dispatcher.UIThread.InvokeAsync(() =>
+                            {
+                                OperationLog.Add($"[{DateTime.Now:HH:mm:ss}] ✓ Download complete!");
+                                DebugConsole.WriteSuccess("Cloud save downloaded successfully");
+                            });
+
+                            // Force update local PlayTime with the cloud value we just synced
+                            // This ensures the UI updates immediately even if file system reads lag or fail
+                            if (_comparison?.CloudPlayTime != null && _comparison.CloudPlayTime > TimeSpan.Zero)
+                            {
+                                DebugConsole.WriteInfo($"Updating local PlayTime to match cloud: {_comparison.CloudPlayTime}");
+                                var checksum = new ChecksumService();
+                                await checksum.UpdatePlayTime(_game.InstallDirectory, _comparison.CloudPlayTime);
+                            }
+
+                            // Refresh logic
+                            await Dispatcher.UIThread.InvokeAsync(() =>
+                            {
+                                IsLoading = true;
+                                LoadingMessage = "Refreshing data...";
+                            });
+
+                            var smartSync = new SmartSyncService();
+                            _comparison = await smartSync.CompareProgressAsync(_game, TimeSpan.Zero, config.CloudConfig.Provider);
+                            await UpdateComparisonUIAsync(_comparison);
+                            await CompareChecksumsInternalAsync();
+                            await Dispatcher.UIThread.InvokeAsync(() => CalculateSuggestion());
+                        }
+                        else
+                        {
+                            await Dispatcher.UIThread.InvokeAsync(() =>
+                            {
+                                OperationLog.Add($"[{DateTime.Now:HH:mm:ss}] ❌ Download failed");
+                                DebugConsole.WriteError("Failed to download cloud save");
+                            });
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        await Dispatcher.UIThread.InvokeAsync(() =>
+                        {
+                            DebugConsole.WriteException(ex, "Download process failed");
+                            OperationLog.Add($"[{DateTime.Now:HH:mm:ss}] ❌ Error: {ex.Message}");
+                        });
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteException(ex, "Download failed");
+            }
+            finally
+            {
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    IsOperationInProgress = false;
+                    CurrentOperation = "Complete";
+                    IsLoading = false;
+                });
+            }
+        }
+
+        [RelayCommand]
+        private async Task UploadLocalSaveAsync()
+        {
+            try
+            {
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    IsLoading = true;
+                    LoadingMessage = "Initializing upload...";
+                    IsOperationInProgress = true;
+                    CanDownload = false;
+                    CanUpload = false;
+                });
+
+                DebugConsole.WriteInfo("Starting local save upload...");
+
+                // Run heavy work on background thread
+                await Task.Run(async () =>
+                {
+                    try
+                    {
+                        var rcloneOps = new RcloneFileOperations(_game);
+                        var config = await ConfigManagement.LoadConfigAsync();
+
+                        await Task.Delay(500);
+
+                        await Dispatcher.UIThread.InvokeAsync(() =>
+                       {
+                           IsLoading = false; // HIDE OVERLAY
+                           SelectedTabIndex = 2; // Switch to Progress tab
+                           CurrentOperation = "Uploading";
+                           ProgressValue = 0;
+                           OperationLog.Clear();
+                           OperationLog.Add($"[{DateTime.Now:HH:mm:ss}] Starting upload...");
+                       });
+
+                        if (config?.CloudConfig == null)
+                        {
+                            await Dispatcher.UIThread.InvokeAsync(() =>
+                            {
+                                OperationLog.Add($"[{DateTime.Now:HH:mm:ss}] ❌ Error: Cloud config missing");
+                            });
+                            return;
+                        }
+
+                        var remoteName = GetProviderConfigName(config.CloudConfig.Provider);
+                        var sanitizedGameName = SanitizeGameName(_game.Name);
+                        var remotePath = $"{remoteName}:{SaveFileUploadManager.RemoteBaseFolder}/{sanitizedGameName}";
+
+                        // Get all files in game directory
+                        var allFiles = Directory.GetFiles(_game.InstallDirectory, "*", SearchOption.AllDirectories).ToList();
+
+                        await Dispatcher.UIThread.InvokeAsync(() =>
+                        {
+                            OperationLog.Add($"[{DateTime.Now:HH:mm:ss}] Found {allFiles.Count} local files to check");
+                            OperationLog.Add($"[{DateTime.Now:HH:mm:ss}] Processing batch upload...");
+                        });
+
+                        var stats = new UploadStats();
+                        await rcloneOps.ProcessBatch(allFiles, remotePath, stats, _game, config.CloudConfig.Provider);
+
+                        await Dispatcher.UIThread.InvokeAsync(() =>
+                        {
+                            if (stats.FailedCount == 0)
+                            {
+                                OperationLog.Add($"[{DateTime.Now:HH:mm:ss}] ✓ Upload complete!");
+                                OperationLog.Add($"[{DateTime.Now:HH:mm:ss}] Stats: {stats.UploadedCount} uploaded, {stats.SkippedCount} skipped");
+                                DebugConsole.WriteSuccess("Local save uploaded successfully");
+                            }
+                            else
+                            {
+                                OperationLog.Add($"[{DateTime.Now:HH:mm:ss}] ⚠️ Upload finished with {stats.FailedCount} errors");
+                                OperationLog.Add($"[{DateTime.Now:HH:mm:ss}] Stats: {stats.UploadedCount} uploaded, {stats.SkippedCount} skipped");
+                            }
+                        });
+
+                        if (stats.FailedCount == 0)
+                        {
+                            // Refresh comparison
+                            await Dispatcher.UIThread.InvokeAsync(() =>
+                            {
+                                IsLoading = true;
+                                LoadingMessage = "Refreshing data...";
+                            });
+
+                            var smartSync = new SmartSyncService();
+                            _comparison = await smartSync.CompareProgressAsync(_game, TimeSpan.Zero, config.CloudConfig.Provider);
+                            await UpdateComparisonUIAsync(_comparison);
+                            await CompareChecksumsInternalAsync();
+                            await Dispatcher.UIThread.InvokeAsync(() => CalculateSuggestion());
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        await Dispatcher.UIThread.InvokeAsync(() =>
+                        {
+                            DebugConsole.WriteException(ex, "Upload process failed");
+                            OperationLog.Add($"[{DateTime.Now:HH:mm:ss}] ❌ Error: {ex.Message}");
+                        });
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteException(ex, "Upload failed");
+            }
+            finally
+            {
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    IsOperationInProgress = false;
+                    CurrentOperation = "Complete";
+                    IsLoading = false;
+                });
+            }
+        }
+
+        private static string FormatTimeSpan(TimeSpan timeSpan)
+        {
+            return timeSpan.ToString(@"hh\:mm\:ss");
+        }
+
+        private static string SanitizeGameName(string gameName)
+        {
+            if (string.IsNullOrWhiteSpace(gameName))
+                return "UnknownGame";
+
+            var invalidChars = System.IO.Path.GetInvalidFileNameChars()
+                .Concat(new[] { '/', '\\', ':', '*', '?', '"', '<', '>', '|' });
+            return invalidChars.Aggregate(gameName, (current, c) => current.Replace(c, '_')).Trim();
+        }
+
+        private static string GetProviderConfigName(CloudProvider provider)
+        {
+            return provider switch
+            {
+                CloudProvider.GoogleDrive => "gdrive",
+                CloudProvider.OneDrive => "onedrive",
+                CloudProvider.Dropbox => "dropbox",
+                CloudProvider.Box => "box",
+                _ => "gdrive"
+            };
+        }
+    }
+}

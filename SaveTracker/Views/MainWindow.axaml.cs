@@ -118,6 +118,7 @@ namespace SaveTracker.Views
                 viewModel.RequestMinimize += MinimizeWindow;
                 viewModel.OnCloudSaveFound += ShowCloudSaveFoundDialog;
                 viewModel.OnUpdateAvailable += ShowUpdateDialog;
+                viewModel.OnSmartSyncRequested += ShowSmartSyncWindow;
 
                 DebugConsole.WriteSuccess("ViewModel event subscriptions complete");
             }
@@ -395,6 +396,27 @@ namespace SaveTracker.Views
             }
         }
 
+        private async Task ShowSmartSyncWindow(SmartSyncViewModel vm)
+        {
+            try
+            {
+                await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(async () =>
+                {
+                    EnsureWindowVisible();
+                    var window = new SmartSyncWindow
+                    {
+                        DataContext = vm,
+                        WindowStartupLocation = WindowStartupLocation.CenterOwner
+                    };
+                    await window.ShowDialog(this);
+                });
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteException(ex, "Failed to show Smart Sync window");
+            }
+        }
+
         private void TrackedFile_DoubleTapped(object? sender, Avalonia.Input.TappedEventArgs e)
         {
             if (sender is Border border && border.DataContext is TrackedFileViewModel fileVm)
@@ -443,6 +465,7 @@ namespace SaveTracker.Views
                 _viewModel.RequestMinimize -= MinimizeWindow;
                 _viewModel.OnCloudSaveFound -= ShowCloudSaveFoundDialog;
                 _viewModel.OnUpdateAvailable -= ShowUpdateDialog;
+                _viewModel.OnSmartSyncRequested -= ShowSmartSyncWindow;
             }
         }
     }
