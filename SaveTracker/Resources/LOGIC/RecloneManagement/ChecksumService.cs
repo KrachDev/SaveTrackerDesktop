@@ -211,12 +211,14 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                 // Contract the path to portable format before storing (with Wine prefix support)
                 string portablePath = PathContractor.ContractPath(filePath, gameDirectory, detectedPrefix);
 
+                var fileInfo = new FileInfo(filePath);
                 checksumData.Files[portablePath] = new FileChecksumRecord
                 {
                     Checksum = checksum,
                     LastUpload = DateTime.UtcNow,
-                    FileSize = new FileInfo(filePath).Length,
-                    Path = portablePath
+                    FileSize = fileInfo.Length,
+                    Path = portablePath,
+                    LastWriteTime = fileInfo.LastWriteTimeUtc // Store timestamp for future optimizations
                 };
 
                 await SaveChecksumDataInternal(checksumData, gameDirectory);

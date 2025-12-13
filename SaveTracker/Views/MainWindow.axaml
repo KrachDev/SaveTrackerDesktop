@@ -775,6 +775,22 @@
                                                            TextWrapping="Wrap"/>
                                             </StackPanel>
 
+                                            <StackPanel Spacing="8">
+                                                <TextBlock Text="Launch Arguments" Foreground="#CCCCCC"/>
+                                                <TextBox Text="{Binding EditableLaunchArguments}"
+                                                         Watermark="e.g. -skipintro -windowed"/>
+                                            </StackPanel>
+
+                                            <StackPanel Spacing="8" IsVisible="{Binding IsLinux}">
+                                                <TextBlock Text="Custom Linux Launcher (Wrapper)" Foreground="#CCCCCC"/>
+                                                <TextBox Text="{Binding EditableLinuxLaunchWrapper}"
+                                                         Watermark="e.g. 'gamemoderun wine', 'heroic run'"/>
+                                                <TextBlock Text="Wraps the execution: [Wrapper] [WrapperArgs] &quot;[GameExe]&quot; [GameArgs]"
+                                                           FontSize="11"
+                                                           Foreground="#858585"
+                                                           TextWrapping="Wrap"/>
+                                            </StackPanel>
+
                                             <StackPanel Spacing="8" IsVisible="{Binding IsLinux}">
                                                 <TextBlock Text="Wine Prefix (Linux)" Foreground="#CCCCCC"/>
                                                 <TextBox Text="{Binding EditablePrefix}"

@@ -28,6 +28,7 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
         public DateTime LastUpload { get; set; }
         public string Path { get; set; }
         public long FileSize { get; set; }
+        public DateTime LastWriteTime { get; set; } // Optimization: skip hash if timestamp unchanged
 
         public string GetAbsolutePath(string gameDirectory = null, string? detectedPrefix = null)
         {

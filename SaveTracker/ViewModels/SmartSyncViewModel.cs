@@ -501,6 +501,10 @@ namespace SaveTracker.ViewModels
 
                             var smartSync = new SmartSyncService();
                             _comparison = await smartSync.CompareProgressAsync(_game, TimeSpan.Zero, config.CloudConfig.Provider);
+
+                            // INVALIDATE CACHE AND RE-FETCH
+                            _cachedCloudData = await DownloadCloudChecksumOnce(config.CloudConfig.Provider);
+
                             await UpdateComparisonUIAsync(_comparison);
                             await CompareChecksumsInternalAsync();
                             await Dispatcher.UIThread.InvokeAsync(() => CalculateSuggestion());
@@ -648,7 +652,6 @@ namespace SaveTracker.ViewModels
 
                         // Create progress reporter with file-level granularity
                         int totalFiles = trackedFiles.Count;
-                        int currentFileIndex = 0;
 
                         var progress = new Progress<double>(percent =>
                         {
@@ -701,6 +704,10 @@ namespace SaveTracker.ViewModels
 
                             var smartSync = new SmartSyncService();
                             _comparison = await smartSync.CompareProgressAsync(_game, TimeSpan.Zero, config.CloudConfig.Provider);
+
+                            // INVALIDATE CACHE AND RE-FETCH
+                            _cachedCloudData = await DownloadCloudChecksumOnce(config.CloudConfig.Provider);
+
                             await UpdateComparisonUIAsync(_comparison);
                             await CompareChecksumsInternalAsync();
                             await Dispatcher.UIThread.InvokeAsync(() => CalculateSuggestion());

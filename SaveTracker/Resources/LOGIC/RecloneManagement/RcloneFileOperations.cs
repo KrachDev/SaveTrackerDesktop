@@ -433,40 +433,56 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
         {
             try
             {
-                // Get current file checksum
+                var fileInfo = new FileInfo(localFilePath);
+                if (!fileInfo.Exists) return false;
+
+                // Load stored checksum data
+                var checksumData = await _checksumService.LoadChecksumData(gameDirectory);
+
+                // Load game data for Wine prefix support
+                var gameData = await ConfigManagement.GetGameData(_currentGame);
+                string? detectedPrefix = gameData?.DetectedPrefix;
+
+                // Use contracted path as dictionary key
+                string contractedPath = PathContractor.ContractPath(localFilePath, gameDirectory, detectedPrefix);
+
+                // OPTIMIZATION: Check LastWriteTime and Size first (Fast Check)
+                if (checksumData.Files.TryGetValue(contractedPath, out var record))
+                {
+                    // If file size and timestamp match exactly, skip hash calculation
+                    // This is much faster for large files or many files
+                    if (record.FileSize == fileInfo.Length &&
+                        record.LastWriteTime.ToString("O") == fileInfo.LastWriteTimeUtc.ToString("O"))
+                    // String comparison for safety against minor tick differences if any serialization loss
+                    // Better: just compare Ticks or standard equality if serialization is precise
+                    {
+                        if (record.LastWriteTime == fileInfo.LastWriteTimeUtc)
+                        {
+                            DebugConsole.WriteDebug($"Fast check: {Path.GetFileName(localFilePath)} unchanged (Timestamp/Size match)");
+                            return false;
+                        }
+                    }
+                }
+
+                // If fast check fails (or legacy record with no timestamp), do full hash check
                 string currentChecksum = await _checksumService.GetFileChecksum(localFilePath);
                 if (string.IsNullOrEmpty(currentChecksum))
                 {
-                    DebugConsole.WriteWarning(
-                        "Could not compute local file checksum - uploading to be safe"
-                    );
+                    DebugConsole.WriteWarning("Could not compute local file checksum - uploading to be safe");
                     return true;
                 }
 
-                DebugConsole.WriteDebug($"Current file MD5: {currentChecksum}");
-
-                // Get stored checksum from JSON in game directory
-                string storedChecksum = await GetStoredFileChecksum(localFilePath, gameDirectory);
-
-                if (string.IsNullOrEmpty(storedChecksum))
+                if (record != null)
                 {
-                    DebugConsole.WriteInfo("No stored checksum found - upload needed");
-                    return true;
+                    if (string.Equals(currentChecksum, record.Checksum, StringComparison.OrdinalIgnoreCase))
+                    {
+                        DebugConsole.WriteSuccess($"SKIPPED: {Path.GetFileName(localFilePath)} - Content identical (Hash verified)");
+                        return false;
+                    }
                 }
 
-                DebugConsole.WriteDebug($"Stored MD5: {storedChecksum}");
-
-                // Compare checksums
-                bool different = !currentChecksum.Equals(
-                    storedChecksum,
-                    StringComparison.OrdinalIgnoreCase
-                );
-
-                DebugConsole.WriteInfo(different
-                    ? "File has changed since last upload - upload needed"
-                    : "File unchanged since last upload - skipping");
-
-                return different;
+                DebugConsole.WriteInfo($"File changed: {Path.GetFileName(localFilePath)} - Upload needed");
+                return true;
             }
             catch (Exception ex)
             {

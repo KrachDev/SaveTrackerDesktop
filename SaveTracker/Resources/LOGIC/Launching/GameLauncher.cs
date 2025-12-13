@@ -38,31 +38,57 @@ namespace SaveTracker.Resources.LOGIC.Launching
             {
                 FileName = game.ExecutablePath,
                 WorkingDirectory = game.InstallDirectory,
-                UseShellExecute = true
+                UseShellExecute = true,
+                Arguments = game.LaunchArguments
             };
             return Process.Start(startInfo);
         }
 
         private static Process? LaunchLinux(Game game)
         {
-            // Simple heuristic for Linux:
-            // 1. If it's a .exe, try to run with Wine.
-            // 2. If it's a .sh or binary, run natively.
-            // 3. TODO: Check for specific launcher configs (Steam/Lutris) in the future.
-
-            string ext = Path.GetExtension(game.ExecutablePath).ToLower();
             var startInfo = new ProcessStartInfo
             {
                 WorkingDirectory = game.InstallDirectory,
-                UseShellExecute = false // We generally needed false to redirect stdout/err or change env, but true is often safer for xdg-open. Let's start with explicit commands.
+                UseShellExecute = false
             };
+
+            // 1. Custom Linux Wrapper (User override)
+            if (!string.IsNullOrEmpty(game.LinuxLaunchWrapper))
+            {
+                DebugConsole.WriteInfo($"Launching with custom wrapper: {game.LinuxLaunchWrapper}");
+
+                // Heuristic to split command and arguments
+                string[] parts = game.LinuxLaunchWrapper.Split(new[] { ' ' }, 2, StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length > 0)
+                {
+                    string runner = parts[0];
+                    string runnerArgs = parts.Length > 1 ? parts[1] : "";
+
+                    startInfo.FileName = runner;
+                    // Format: [RunnerArgs] "[GameExe]" [GameArgs]
+                    startInfo.Arguments = $"{runnerArgs} \"{game.ExecutablePath}\" {game.LaunchArguments}".Trim();
+
+                    try
+                    {
+                        return Process.Start(startInfo);
+                    }
+                    catch (Exception ex)
+                    {
+                        DebugConsole.WriteError($"Failed to launch via wrapper '{runner}': {ex.Message}");
+                        // Don't swallow exception here, user explicitly asked for this wrapper
+                        throw;
+                    }
+                }
+            }
+
+            // 2. Default Auto-Detection
+            string ext = Path.GetExtension(game.ExecutablePath).ToLower();
 
             if (ext == ".exe" || ext == ".bat" || ext == ".msi")
             {
                 // Assume Wine
                 DebugConsole.WriteInfo("Detected Windows executable on Linux - attempting to launch with Wine...");
 
-                // Check if wine is installed
                 string? winePath = LinuxUtils.FindExecutable("wine");
                 if (string.IsNullOrEmpty(winePath))
                 {
@@ -75,38 +101,36 @@ namespace SaveTracker.Resources.LOGIC.Launching
                 }
 
                 startInfo.FileName = winePath;
-                startInfo.Arguments = $"\"{game.ExecutablePath}\"";
+                startInfo.Arguments = $"\"{game.ExecutablePath}\" {game.LaunchArguments}".Trim();
                 startInfo.UseShellExecute = false;
-
-                // If the user has a specific WINEPREFIX set in their environment, it will be respected.
-                // We could allow per-game overrides in the future.
             }
             else
             {
-                // Assume Native
+                // Native
                 DebugConsole.WriteInfo("Detected Native executable/script on Linux...");
 
                 // Determine valid filename
                 if (ext == ".sh")
                 {
-                    // For shell scripts, it's often safer to run with /bin/bash if not executable
                     string? bashPath = LinuxUtils.FindExecutable("bash");
                     if (!string.IsNullOrEmpty(bashPath))
                     {
                         startInfo.FileName = bashPath;
-                        startInfo.Arguments = $"\"{game.ExecutablePath}\"";
+                        startInfo.Arguments = $"\"{game.ExecutablePath}\" {game.LaunchArguments}".Trim();
                         startInfo.UseShellExecute = false;
                     }
                     else
                     {
                         startInfo.FileName = game.ExecutablePath;
+                        startInfo.Arguments = game.LaunchArguments;
                         startInfo.UseShellExecute = true;
                     }
                 }
                 else
                 {
                     startInfo.FileName = game.ExecutablePath;
-                    startInfo.UseShellExecute = true; // Use shell execute for native apps to allow them to spawn properly in DE?
+                    startInfo.Arguments = game.LaunchArguments;
+                    startInfo.UseShellExecute = true; // Use shell execute for native apps
                 }
             }
 
@@ -117,7 +141,7 @@ namespace SaveTracker.Resources.LOGIC.Launching
             catch (Exception ex)
             {
                 DebugConsole.WriteWarning($"Failed to launch on Linux: {ex.Message}");
-                // Fallback: try xdg-open?
+                // Fallback: try xdg-open
                 try
                 {
                     DebugConsole.WriteInfo("Attempting fallback with xdg-open...");

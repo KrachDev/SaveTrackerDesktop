@@ -29,8 +29,15 @@ namespace SaveTracker.ViewModels
         [ObservableProperty]
         private string _editablePrefix = "";
 
+        [ObservableProperty]
+        private string _editableLaunchArguments = "";
+
+        [ObservableProperty]
+        private string _editableLinuxLaunchWrapper = "";
+
         // Read-only property for UI binding
         public bool IsLinux => System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Linux);
+
 
         [ObservableProperty]
         private string _cloudCheckStatus = "";
@@ -50,6 +57,8 @@ namespace SaveTracker.ViewModels
         {
             EditableGameName = game.Name;
             EditableExecutablePath = game.ExecutablePath;
+            EditableLaunchArguments = game.LaunchArguments ?? "";
+            EditableLinuxLaunchWrapper = game.LinuxLaunchWrapper ?? "";
 
             // Load detected prefix from game data
             try
@@ -416,6 +425,8 @@ namespace SaveTracker.ViewModels
                 game.Name = newName;
                 game.ExecutablePath = newPath;
                 game.InstallDirectory = newInstallDir;
+                game.LaunchArguments = EditableLaunchArguments;
+                game.LinuxLaunchWrapper = EditableLinuxLaunchWrapper;
 
                 bool nameChanged = !oldName.Equals(newName, StringComparison.OrdinalIgnoreCase);
 

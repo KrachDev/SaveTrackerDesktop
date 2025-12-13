@@ -430,6 +430,20 @@ public class Game : INotifyPropertyChanged
         set { _isDeleted = value; OnPropertyChanged(); }
     }
 
+    private string _launchArguments = "";
+    public string LaunchArguments
+    {
+        get => _launchArguments;
+        set { _launchArguments = value; OnPropertyChanged(); }
+    }
+
+    private string _linuxLaunchWrapper = "";
+    public string LinuxLaunchWrapper
+    {
+        get => _linuxLaunchWrapper;
+        set { _linuxLaunchWrapper = value; OnPropertyChanged(); }
+    }
+
 
     public string GetGameDataFile()
     {
