@@ -93,6 +93,11 @@ namespace SaveTracker.Resources.HELPERS
                     DebugConsole.WriteInfo("Showing Windows toast notification");
                     ShowWindowsToast(title, message, type);
                 }
+                else if (OperatingSystem.IsLinux())
+                {
+                    DebugConsole.WriteInfo("Showing Linux system notification");
+                    ShowLinuxNotification(title, message, type);
+                }
                 else
                 {
                     // Fallback: log to debug console
@@ -103,6 +108,51 @@ namespace SaveTracker.Resources.HELPERS
             {
                 // Fallback to debug console if notification fails
                 DebugConsole.WriteException(ex, $"Failed to show notification: {title}");
+            }
+        }
+
+        private void ShowLinuxNotification(string title, string message, NotificationType type)
+        {
+            try
+            {
+                // Map Avalonia NotificationType to standard Linux icon names
+                string iconName = type switch
+                {
+                    NotificationType.Error => "dialog-error",
+                    NotificationType.Warning => "dialog-warning",
+                    NotificationType.Success => "emblem-default",
+                    _ => "dialog-information"
+                };
+
+                // Use ProcessStartInfo with ArgumentList for safe argument handling (no shell code injection)
+                var info = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "notify-send",
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+
+                info.ArgumentList.Add(title);
+                info.ArgumentList.Add(message);
+                info.ArgumentList.Add("-i");
+                info.ArgumentList.Add(iconName);
+                info.ArgumentList.Add("-a");
+                info.ArgumentList.Add("SaveTracker");
+                // info.ArgumentList.Add("-t"); // Optional: duration
+                // info.ArgumentList.Add("5000");
+
+                using (var process = System.Diagnostics.Process.Start(info))
+                {
+                    // Fire and forget, or wait? notify-send is quick.
+                    // waiting ensures we know if it failed to start (exception) or exit code.
+                    process?.WaitForExit(1000);
+                }
+
+                DebugConsole.WriteSuccess($"Linux notification dispatched: {title}");
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteException(ex, "Failed to dispatch Linux notification (notify-send). Ensure 'libnotify-bin' or equivalent is installed.");
             }
         }
 
