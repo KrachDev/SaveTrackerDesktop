@@ -63,7 +63,7 @@
                   BorderBrush="#3F3F46" 
                   BorderThickness="1"
                   CornerRadius="4">
-            <ScrollViewer>
+            <ScrollViewer Padding="0,0,0,100">
               <StackPanel Name="DirectoryListPanel" Margin="10"/>
             </ScrollViewer>
           </Border>
@@ -115,7 +115,7 @@
                   BorderBrush="#3F3F46" 
                   BorderThickness="1"
                   CornerRadius="4">
-            <ScrollViewer>
+            <ScrollViewer Padding="0,0,0,100">
               <WrapPanel Name="ExtensionWrapPanel" 
                         Margin="10"
                         Orientation="Horizontal"/>
@@ -169,7 +169,7 @@
                   BorderBrush="#3F3F46" 
                   BorderThickness="1"
                   CornerRadius="4">
-            <ScrollViewer>
+            <ScrollViewer Padding="0,0,0,100">
               <WrapPanel Name="FileNameWrapPanel" 
                         Margin="10"
                         Orientation="Horizontal"/>
@@ -223,7 +223,7 @@
                   BorderBrush="#3F3F46" 
                   BorderThickness="1"
                   CornerRadius="4">
-            <ScrollViewer>
+            <ScrollViewer Padding="0,0,0,100">
               <WrapPanel Name="KeywordWrapPanel" 
                         Margin="10"
                         Orientation="Horizontal"/>

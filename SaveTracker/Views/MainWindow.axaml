@@ -358,7 +358,7 @@
                             </Border>
 
                             <!-- File List -->
-                            <ScrollViewer Grid.Row="2">
+                            <ScrollViewer Grid.Row="2" Padding="0,0,0,100">
                                 <ItemsControl ItemsSource="{Binding TrackedFiles}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
@@ -498,7 +498,7 @@
                             </Border>
 
                             <!-- Cloud File List -->
-                            <ScrollViewer Grid.Row="2">
+                            <ScrollViewer Grid.Row="2" Padding="0,0,0,100">
                                 <ItemsControl ItemsSource="{Binding CloudFiles}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
@@ -596,18 +596,22 @@
 
                             <!-- Settings Content -->
                             <ScrollViewer Grid.Row="1" Padding="20">
-                                <StackPanel Spacing="20" Margin="0,0,0,40">
+                                <StackPanel Spacing="20" Margin="0,0,0,100">
                                     
                                     <!-- Tracking Settings Section -->
-                                    <Border Background="#2D2D30" 
-                                            Padding="20" 
-                                            CornerRadius="8">
-                                        <StackPanel Spacing="15">
+                                    <!-- Tracking Settings Section -->
+                                    <Expander IsExpanded="True" 
+                                              Background="#2D2D30" 
+                                              CornerRadius="8"
+                                              BorderThickness="0"
+                                              HorizontalAlignment="Stretch">
+                                        <Expander.Header>
                                             <TextBlock Text="📊 Tracking Settings" 
                                                        FontSize="14" 
                                                        FontWeight="SemiBold" 
                                                        Foreground="#4EC9B0"/>
-                                            
+                                        </Expander.Header>
+                                        <StackPanel Spacing="15" Margin="10">
                                             <CheckBox Content="Enable file tracking for this game" 
                                                       IsChecked="{Binding GameCanTrack}"/>
                                             
@@ -620,18 +624,22 @@
                                                        TextWrapping="Wrap"
                                                        Margin="0,5,0,0"/>
                                         </StackPanel>
-                                    </Border>
+                                    </Expander>
 
                                     <!-- Cloud Provider Settings Section -->
-                                    <Border Background="#2D2D30" 
-                                            Padding="20" 
-                                            CornerRadius="8">
-                                        <StackPanel Spacing="15">
+                                    <!-- Cloud Provider Settings Section -->
+                                    <Expander IsExpanded="True" 
+                                              Background="#2D2D30" 
+                                              CornerRadius="8"
+                                              BorderThickness="0"
+                                              HorizontalAlignment="Stretch">
+                                        <Expander.Header>
                                             <TextBlock Text="☁️ Cloud Provider" 
                                                        FontSize="14" 
                                                        FontWeight="SemiBold" 
                                                        Foreground="#4EC9B0"/>
-                                            
+                                        </Expander.Header>
+                                        <StackPanel Spacing="15" Margin="10">
                                             <StackPanel Spacing="8">
                                                 <TextBlock Text="Cloud Provider:" 
                                                            Foreground="#CCCCCC"/>
@@ -658,18 +666,22 @@
                                                        TextWrapping="Wrap"
                                                        Margin="0,5,0,0"/>
                                         </StackPanel>
-                                    </Border>
+                                    </Expander>
 
                                     <!-- Game Watcher Settings Section -->
-                                    <Border Background="#2D2D30" 
-                                            Padding="20" 
-                                            CornerRadius="8">
-                                        <StackPanel Spacing="15">
+                                    <!-- Game Watcher Settings Section -->
+                                    <Expander IsExpanded="True" 
+                                              Background="#2D2D30" 
+                                              CornerRadius="8"
+                                              BorderThickness="0"
+                                              HorizontalAlignment="Stretch">
+                                        <Expander.Header>
                                             <TextBlock Text="👁️ Game Watcher" 
                                                        FontSize="14" 
                                                        FontWeight="SemiBold" 
                                                        Foreground="#4EC9B0"/>
-                                            
+                                        </Expander.Header>
+                                        <StackPanel Spacing="15" Margin="10">
                                             <CheckBox Content="Allow automatic game detection" 
                                                       IsChecked="{Binding GameAllowWatcher}"/>
                                             
@@ -679,18 +691,22 @@
                                                        TextWrapping="Wrap"
                                                        Margin="0,5,0,0"/>
                                         </StackPanel>
-                                    </Border>
+                                    </Expander>
 
                                     <!-- Smart Sync Settings Section -->
-                                    <Border Background="#2D2D30" 
-                                            Padding="20" 
-                                            CornerRadius="8">
-                                        <StackPanel Spacing="15">
+                                    <!-- Smart Sync Settings Section -->
+                                    <Expander IsExpanded="True" 
+                                              Background="#2D2D30" 
+                                              CornerRadius="8"
+                                              BorderThickness="0"
+                                              HorizontalAlignment="Stretch">
+                                        <Expander.Header>
                                             <TextBlock Text="🔄 Smart Sync" 
                                                        FontSize="14" 
                                                        FontWeight="SemiBold" 
                                                        Foreground="#4EC9B0"/>
-                                            
+                                        </Expander.Header>
+                                        <StackPanel Spacing="15" Margin="10">
                                             <CheckBox Content="Enable Smart Sync for this game" 
                                                       IsChecked="{Binding GameEnableSmartSync}"/>
                                             
@@ -700,7 +716,7 @@
                                                        TextWrapping="Wrap"
                                                        Margin="0,5,0,0"/>
                                         </StackPanel>
-                                    </Border>
+                                    </Expander>
                                 </StackPanel>
                             </ScrollViewer>
                         </Grid>
@@ -729,36 +745,36 @@
                             </Border>
 
                             <ScrollViewer Grid.Row="1" Padding="20">
-                                <StackPanel Spacing="20" MaxWidth="600" HorizontalAlignment="Left">
+                                <StackPanel Spacing="20" MaxWidth="600" HorizontalAlignment="Left" Margin="0,0,0,100">
                                     
                                     <Border Background="#2D2D30"
                                             Padding="20"
                                             CornerRadius="8">
-                                        <StackPanel Spacing="15">
+                                        <StackPanel Spacing="10">
                                             <TextBlock Text="📝 General Information"
                                                        FontSize="14"
                                                        FontWeight="SemiBold"
                                                        Foreground="#4EC9B0"/>
 
-                                            <StackPanel Spacing="8">
+                                            <StackPanel Spacing="5">
                                                 <TextBlock Text="Game Name" Foreground="#CCCCCC"/>
                                                 <AutoCompleteBox Text="{Binding EditableGameName}"
                                                                  ItemsSource="{Binding AvailableCloudGames}"
                                                                  Watermark="Enter game name..."
                                                                  FilterMode="Contains"/>
                                                 <Grid ColumnDefinitions="*,Auto">
-                                                    <TextBlock Text="Changing the name will update the display name in the list."
-                                                           FontSize="11"
+                                                    <TextBlock Text="Updates display name."
+                                                           FontSize="10"
                                                            Foreground="#858585"/>
                                                      <TextBlock Text="{Binding CloudCheckStatus}"
                                                                 Foreground="{Binding CloudCheckColor}"
-                                                                FontSize="11"
+                                                                FontSize="10"
                                                                 HorizontalAlignment="Right"
                                                                 FontWeight="Bold"/>
                                                 </Grid>
                                             </StackPanel>
 
-                                            <StackPanel Spacing="8">
+                                            <StackPanel Spacing="5">
                                                 <TextBlock Text="Executable Path" Foreground="#CCCCCC"/>
                                                 <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto">
                                                     <TextBox Grid.Column="0"
@@ -769,36 +785,36 @@
                                                             Command="{Binding BrowseForGameExecutableCommand}"
                                                             Content="📂 Browse..."/>
                                                 </Grid>
-                                                <TextBlock Text="The main game executable. Changing this will update the install directory and game icon."
-                                                           FontSize="11"
+                                                <TextBlock Text="Main executable. Updates install dir &amp; icon."
+                                                           FontSize="10"
                                                            Foreground="#858585"
                                                            TextWrapping="Wrap"/>
                                             </StackPanel>
 
-                                            <StackPanel Spacing="8">
-                                                <TextBlock Text="Launch Arguments" Foreground="#CCCCCC"/>
+                                            <StackPanel Spacing="5" IsVisible="{Binding IsWindows}">
+                                                <TextBlock Text="Launch Arguments (Windows)" Foreground="#CCCCCC"/>
                                                 <TextBox Text="{Binding EditableLaunchArguments}"
-                                                         Watermark="e.g. -skipintro -windowed"/>
+                                                         Watermark="e.g. -skipintro"/>
                                             </StackPanel>
 
-                                            <StackPanel Spacing="8" IsVisible="{Binding IsLinux}">
-                                                <TextBlock Text="Custom Linux Launcher (Wrapper)" Foreground="#CCCCCC"/>
+                                            <StackPanel Spacing="5" IsVisible="{Binding IsLinux}">
+                                                <TextBlock Text="Launch Arguments (Linux)" Foreground="#CCCCCC"/>
+                                                <TextBox Text="{Binding EditableLinuxArguments}"
+                                                         Watermark="e.g. -skipintro"/>
+                                            </StackPanel>
+
+                                            <StackPanel Spacing="5" IsVisible="{Binding IsLinux}">
+                                                <TextBlock Text="Launcher Wrapper" Foreground="#CCCCCC"/>
                                                 <TextBox Text="{Binding EditableLinuxLaunchWrapper}"
-                                                         Watermark="e.g. 'gamemoderun wine', 'heroic run'"/>
-                                                <TextBlock Text="Wraps the execution: [Wrapper] [WrapperArgs] &quot;[GameExe]&quot; [GameArgs]"
-                                                           FontSize="11"
-                                                           Foreground="#858585"
-                                                           TextWrapping="Wrap"/>
+                                                         Watermark="e.g. gamemoderun wine"
+                                                         ToolTip.Tip="Wraps execution: [Wrapper] [WrapperArgs] &quot;[Exe]&quot; [Args]"/>
                                             </StackPanel>
 
-                                            <StackPanel Spacing="8" IsVisible="{Binding IsLinux}">
-                                                <TextBlock Text="Wine Prefix (Linux)" Foreground="#CCCCCC"/>
+                                            <StackPanel Spacing="5" IsVisible="{Binding IsLinux}">
+                                                <TextBlock Text="Wine Prefix" Foreground="#CCCCCC"/>
                                                 <TextBox Text="{Binding EditablePrefix}"
-                                                         Watermark="Auto-detected or custom path..."/>
-                                                <TextBlock Text="The Wine prefix used for this game. Leave empty to auto-detect."
-                                                           FontSize="11"
-                                                           Foreground="#858585"
-                                                           TextWrapping="Wrap"/>
+                                                         Watermark="Auto-detected or custom..."
+                                                         ToolTip.Tip="Leave empty to auto-detect."/>
                                             </StackPanel>
                                         </StackPanel>
                                     </Border>

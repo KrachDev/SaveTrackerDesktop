@@ -27,7 +27,7 @@
 
         <!-- Main Content -->
         <ScrollViewer Grid.Row="1">
-            <StackPanel Margin="20" Spacing="20">
+            <StackPanel Margin="20,20,20,100" Spacing="20">
 
                 <!-- Game Selection Method -->
                 <Border Background="#252526" Padding="15" CornerRadius="6">
@@ -103,7 +103,7 @@
                                 BorderThickness="1" 
                                 CornerRadius="4"
                                 Height="200">
-                            <ScrollViewer>
+                            <ScrollViewer Padding="0,0,0,50">
                                 <StackPanel Margin="5" Spacing="2">
                                     <!-- Sample Process Items -->
                                     <Border Background="#252526" 

@@ -18,7 +18,7 @@
             </Border>
 
             <!-- Content -->
-            <StackPanel Grid.Row="1" Margin="20" Spacing="20">
+            <StackPanel Grid.Row="1" Margin="20,20,20,50" Spacing="20">
                 
                 <!-- Rclone Status Section -->
                 <Border Background="#2D2D30" CornerRadius="4" Padding="15">

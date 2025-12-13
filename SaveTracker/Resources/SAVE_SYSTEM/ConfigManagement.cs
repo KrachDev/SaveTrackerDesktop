@@ -437,6 +437,13 @@ public class Game : INotifyPropertyChanged
         set { _launchArguments = value; OnPropertyChanged(); }
     }
 
+    private string _linuxArguments = "";
+    public string LinuxArguments
+    {
+        get => _linuxArguments;
+        set { _linuxArguments = value; OnPropertyChanged(); }
+    }
+
     private string _linuxLaunchWrapper = "";
     public string LinuxLaunchWrapper
     {

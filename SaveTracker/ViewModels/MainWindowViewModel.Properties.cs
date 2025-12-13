@@ -33,17 +33,21 @@ namespace SaveTracker.ViewModels
         private string _editableLaunchArguments = "";
 
         [ObservableProperty]
+        private string _editableLinuxArguments = "";
+
+        [ObservableProperty]
         private string _editableLinuxLaunchWrapper = "";
 
         // Read-only property for UI binding
         public bool IsLinux => System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Linux);
+        public bool IsWindows => !IsLinux;
 
 
         [ObservableProperty]
         private string _cloudCheckStatus = "";
 
         [ObservableProperty]
-        private string _cloudCheckColor = "Gray"; // Gray, Green, Red/Orange
+        private string _cloudCheckColor = "#FFFFFF"; // Gray, Green, Red/Orange
 
         [ObservableProperty]
         private System.Collections.ObjectModel.ObservableCollection<string> _availableCloudGames = new();
@@ -58,6 +62,7 @@ namespace SaveTracker.ViewModels
             EditableGameName = game.Name;
             EditableExecutablePath = game.ExecutablePath;
             EditableLaunchArguments = game.LaunchArguments ?? "";
+            EditableLinuxArguments = game.LinuxArguments ?? "";
             EditableLinuxLaunchWrapper = game.LinuxLaunchWrapper ?? "";
 
             // Load detected prefix from game data
@@ -72,18 +77,11 @@ namespace SaveTracker.ViewModels
                 EditablePrefix = "";
             }
 
-            // Fetch potential matches for autocomplete
-            // OPTIMIZATION: Don't load this on every game select. Only needed when editing.
-            // _ = LoadCloudGameSuggestionsAsync();
-
-            // Trigger check initially? Maybe not, or yes.
-            // OPTIMIZATION: Don't check cloud existence on every game select.
-            // OnEditableGameNameChanged(game.Name);
-
-            // Reset status
-            CloudCheckStatus = "";
-            CloudCheckColor = "Gray";
+            // Trigger cloud check
+            OnEditableGameNameChanged(game.Name);
         }
+
+
 
         [RelayCommand]
         private async Task RefreshCloudGamesAsync()
@@ -426,6 +424,7 @@ namespace SaveTracker.ViewModels
                 game.ExecutablePath = newPath;
                 game.InstallDirectory = newInstallDir;
                 game.LaunchArguments = EditableLaunchArguments;
+                game.LinuxArguments = EditableLinuxArguments;
                 game.LinuxLaunchWrapper = EditableLinuxLaunchWrapper;
 
                 bool nameChanged = !oldName.Equals(newName, StringComparison.OrdinalIgnoreCase);

@@ -52,6 +52,9 @@ namespace SaveTracker.Resources.LOGIC.Launching
                 UseShellExecute = false
             };
 
+            // Use Linux-specific arguments
+            string args = game.LinuxArguments ?? "";
+
             // 1. Custom Linux Wrapper (User override)
             if (!string.IsNullOrEmpty(game.LinuxLaunchWrapper))
             {
@@ -66,7 +69,7 @@ namespace SaveTracker.Resources.LOGIC.Launching
 
                     startInfo.FileName = runner;
                     // Format: [RunnerArgs] "[GameExe]" [GameArgs]
-                    startInfo.Arguments = $"{runnerArgs} \"{game.ExecutablePath}\" {game.LaunchArguments}".Trim();
+                    startInfo.Arguments = $"{runnerArgs} \"{game.ExecutablePath}\" {args}".Trim();
 
                     try
                     {
@@ -75,7 +78,6 @@ namespace SaveTracker.Resources.LOGIC.Launching
                     catch (Exception ex)
                     {
                         DebugConsole.WriteError($"Failed to launch via wrapper '{runner}': {ex.Message}");
-                        // Don't swallow exception here, user explicitly asked for this wrapper
                         throw;
                     }
                 }
@@ -101,7 +103,7 @@ namespace SaveTracker.Resources.LOGIC.Launching
                 }
 
                 startInfo.FileName = winePath;
-                startInfo.Arguments = $"\"{game.ExecutablePath}\" {game.LaunchArguments}".Trim();
+                startInfo.Arguments = $"\"{game.ExecutablePath}\" {args}".Trim();
                 startInfo.UseShellExecute = false;
             }
             else
@@ -116,20 +118,20 @@ namespace SaveTracker.Resources.LOGIC.Launching
                     if (!string.IsNullOrEmpty(bashPath))
                     {
                         startInfo.FileName = bashPath;
-                        startInfo.Arguments = $"\"{game.ExecutablePath}\" {game.LaunchArguments}".Trim();
+                        startInfo.Arguments = $"\"{game.ExecutablePath}\" {args}".Trim();
                         startInfo.UseShellExecute = false;
                     }
                     else
                     {
                         startInfo.FileName = game.ExecutablePath;
-                        startInfo.Arguments = game.LaunchArguments;
+                        startInfo.Arguments = args;
                         startInfo.UseShellExecute = true;
                     }
                 }
                 else
                 {
                     startInfo.FileName = game.ExecutablePath;
-                    startInfo.Arguments = game.LaunchArguments;
+                    startInfo.Arguments = args;
                     startInfo.UseShellExecute = true; // Use shell execute for native apps
                 }
             }

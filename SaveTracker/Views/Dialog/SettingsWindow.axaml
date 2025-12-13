@@ -40,21 +40,22 @@
             
             <!-- General Settings Tab -->
             <TabItem Header="⚙️ General">
-                <ScrollViewer Padding="20" VerticalScrollBarVisibility="Auto">
+                <ScrollViewer Padding="20,20,20,100" VerticalScrollBarVisibility="Auto">
                     <StackPanel Spacing="20" Margin="0,0,0,20">
                         
                         <!-- Tracking Settings -->
-                        <Border Background="#2A2A2A" 
-                                Padding="20" 
-                                CornerRadius="8"
-                                BorderBrush="#3F3F46"
-                                BorderThickness="1">
-                            <StackPanel Spacing="12">
+                        <Expander IsExpanded="True" 
+                                  Background="#2A2A2A" 
+                                  CornerRadius="8"
+                                  BorderThickness="0"
+                                  HorizontalAlignment="Stretch">
+                            <Expander.Header>
                                 <TextBlock Text="Tracking" 
                                            FontSize="16" 
                                            FontWeight="SemiBold" 
                                            Foreground="White"/>
-                                
+                            </Expander.Header>
+                            <StackPanel Spacing="12" Margin="10">
                                 <StackPanel Spacing="8">
                                     <CheckBox IsChecked="{Binding EnableAutomaticTracking}" 
                                               Content="Enable Game Watcher"
@@ -65,20 +66,21 @@
                                                Margin="28,0,0,0"/>
                                 </StackPanel>
                             </StackPanel>
-                        </Border>
+                        </Expander>
 
                         <!-- Startup Settings -->
-                        <Border Background="#2A2A2A" 
-                                Padding="20" 
-                                CornerRadius="8"
-                                BorderBrush="#3F3F46"
-                                BorderThickness="1">
-                            <StackPanel Spacing="12">
+                        <Expander IsExpanded="True" 
+                                  Background="#2A2A2A" 
+                                  CornerRadius="8"
+                                  BorderThickness="0"
+                                  HorizontalAlignment="Stretch">
+                            <Expander.Header>
                                 <TextBlock Text="Startup" 
                                            FontSize="16" 
                                            FontWeight="SemiBold" 
                                            Foreground="White"/>
-                                
+                            </Expander.Header>
+                            <StackPanel Spacing="12" Margin="10">
                                 <CheckBox IsChecked="{Binding StartWithWindows}" 
                                           Content="Start with Windows"
                                           Foreground="#CCCCCC"/>
@@ -87,20 +89,21 @@
                                           Content="Start Minimized to Tray"
                                           Foreground="#CCCCCC"/>
                             </StackPanel>
-                        </Border>
+                        </Expander>
 
                         <!-- Interface Settings -->
-                        <Border Background="#2A2A2A" 
-                                Padding="20" 
-                                CornerRadius="8"
-                                BorderBrush="#3F3F46"
-                                BorderThickness="1">
-                            <StackPanel Spacing="12">
+                        <Expander IsExpanded="True" 
+                                  Background="#2A2A2A" 
+                                  CornerRadius="8"
+                                  BorderThickness="0"
+                                  HorizontalAlignment="Stretch">
+                            <Expander.Header>
                                 <TextBlock Text="Interface" 
                                            FontSize="16" 
                                            FontWeight="SemiBold" 
                                            Foreground="White"/>
-                                
+                            </Expander.Header>
+                            <StackPanel Spacing="12" Margin="10">
                                 <CheckBox IsChecked="{Binding ShowDebugConsole}" 
                                           Content="Show Debug Console"
                                           Foreground="#CCCCCC"/>
@@ -115,7 +118,7 @@
                                                Margin="28,0,0,0"/>
                                 </StackPanel>
                             </StackPanel>
-                        </Border>
+                        </Expander>
                         
                     </StackPanel>
                 </ScrollViewer>
@@ -123,21 +126,22 @@
 
             <!-- Analytics Tab -->
             <TabItem Header="📊 Analytics">
-                <ScrollViewer Padding="20" VerticalScrollBarVisibility="Auto">
+                <ScrollViewer Padding="20,20,20,100" VerticalScrollBarVisibility="Auto">
                     <StackPanel Spacing="20" Margin="0,0,0,20">
                         
                         <!-- Privacy Notice -->
-                        <Border Background="#2A2A2A" 
-                                Padding="20" 
-                                CornerRadius="8"
-                                BorderBrush="#3F3F46"
-                                BorderThickness="1">
-                            <StackPanel Spacing="12">
+                        <Expander IsExpanded="True" 
+                                  Background="#2A2A2A" 
+                                  CornerRadius="8"
+                                  BorderThickness="0"
+                                  HorizontalAlignment="Stretch">
+                            <Expander.Header>
                                 <TextBlock Text="Privacy-Focused Analytics" 
                                            FontSize="16" 
                                            FontWeight="SemiBold" 
                                            Foreground="White"/>
-                                
+                            </Expander.Header>
+                            <StackPanel Spacing="12" Margin="10">
                                 <StackPanel Spacing="8">
                                     <CheckBox IsChecked="{Binding EnableAnalytics}" 
                                               Content="Enable Anonymous Analytics"
@@ -149,20 +153,21 @@
                                                Margin="28,0,0,0"/>
                                 </StackPanel>
                             </StackPanel>
-                        </Border>
+                        </Expander>
 
                         <!-- Analytics Data -->
-                        <Border Background="#2A2A2A" 
-                                Padding="20" 
-                                CornerRadius="8"
-                                BorderBrush="#3F3F46"
-                                BorderThickness="1">
-                            <StackPanel Spacing="15">
+                        <Expander IsExpanded="True" 
+                                  Background="#2A2A2A" 
+                                  CornerRadius="8"
+                                  BorderThickness="0"
+                                  HorizontalAlignment="Stretch">
+                            <Expander.Header>
                                 <TextBlock Text="Your Analytics Data" 
                                            FontSize="16" 
                                            FontWeight="SemiBold" 
                                            Foreground="White"/>
-                                
+                            </Expander.Header>
+                            <StackPanel Spacing="15" Margin="10">
                                 <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="10">
                                     <TextBlock Grid.Row="0" 
                                                Grid.Column="0"
@@ -211,20 +216,21 @@
                                             Cursor="Hand"/>
                                 </StackPanel>
                             </StackPanel>
-                        </Border>
+                        </Expander>
 
                         <!-- What's Collected -->
-                        <Border Background="#2A2A2A" 
-                                Padding="20" 
-                                CornerRadius="8"
-                                BorderBrush="#3F3F46"
-                                BorderThickness="1">
-                            <StackPanel Spacing="12">
+                        <Expander IsExpanded="True" 
+                                  Background="#2A2A2A" 
+                                  CornerRadius="8"
+                                  BorderThickness="0"
+                                  HorizontalAlignment="Stretch">
+                            <Expander.Header>
                                 <TextBlock Text="What We Collect" 
                                            FontSize="16" 
                                            FontWeight="SemiBold" 
                                            Foreground="White"/>
-                                
+                            </Expander.Header>
+                            <StackPanel Spacing="12" Margin="10">
                                 <StackPanel Spacing="8">
                                     <TextBlock Text="✅ Anonymous device ID (SHA256 hash)" 
                                                FontSize="12" 
@@ -252,7 +258,7 @@
                                                Foreground="#EF4444"/>
                                 </StackPanel>
                             </StackPanel>
-                        </Border>
+                        </Expander>
                         
                     </StackPanel>
                 </ScrollViewer>
@@ -260,39 +266,41 @@
 
             <!-- Updates Tab -->
             <TabItem Header="🔄 Updates">
-                <ScrollViewer Padding="20" VerticalScrollBarVisibility="Auto">
+                <ScrollViewer Padding="20,20,20,100" VerticalScrollBarVisibility="Auto">
                     <StackPanel Spacing="20" Margin="0,0,0,20">
                         
                         <!-- Update Settings -->
-                        <Border Background="#2A2A2A" 
-                                Padding="20" 
-                                CornerRadius="8"
-                                BorderBrush="#3F3F46"
-                                BorderThickness="1">
-                            <StackPanel Spacing="12">
+                        <Expander IsExpanded="True" 
+                                  Background="#2A2A2A" 
+                                  CornerRadius="8"
+                                  BorderThickness="0"
+                                  HorizontalAlignment="Stretch">
+                            <Expander.Header>
                                 <TextBlock Text="Automatic Updates" 
                                            FontSize="16" 
                                            FontWeight="SemiBold" 
                                            Foreground="White"/>
-                                
+                            </Expander.Header>
+                            <StackPanel Spacing="12" Margin="10">
                                 <CheckBox IsChecked="{Binding CheckForUpdatesOnStartup}" 
                                           Content="Check for updates on startup"
                                           Foreground="#CCCCCC"/>
                             </StackPanel>
-                        </Border>
+                        </Expander>
 
                         <!-- Current Version -->
-                        <Border Background="#2A2A2A" 
-                                Padding="20" 
-                                CornerRadius="8"
-                                BorderBrush="#3F3F46"
-                                BorderThickness="1">
-                            <StackPanel Spacing="15">
+                        <Expander IsExpanded="True" 
+                                  Background="#2A2A2A" 
+                                  CornerRadius="8"
+                                  BorderThickness="0"
+                                  HorizontalAlignment="Stretch">
+                            <Expander.Header>
                                 <TextBlock Text="Version Information" 
                                            FontSize="16" 
                                            FontWeight="SemiBold" 
                                            Foreground="White"/>
-                                
+                            </Expander.Header>
+                            <StackPanel Spacing="15" Margin="10">
                                 <Grid ColumnDefinitions="Auto,*">
                                     <TextBlock Grid.Column="0"
                                                Text="Current Version:" 
@@ -322,7 +330,7 @@
                                            Margin="0,5,0,0"
                                            IsVisible="{Binding UpdateVersion, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                             </StackPanel>
-                        </Border>
+                        </Expander>
 
                         <!-- Install Update -->
                         <Border Background="#2A2A2A" 
