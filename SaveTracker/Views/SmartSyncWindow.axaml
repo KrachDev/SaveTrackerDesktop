@@ -198,14 +198,21 @@
                     <TextBlock Text="{Binding ProgressValue, StringFormat='{}{0:F0}%'}" 
                               HorizontalAlignment="Center" 
                               FontSize="14" 
-                              Margin="0,0,0,20"/>
-
-                    <!-- Current File -->
-                    <TextBlock Text="{Binding CurrentFile}" 
-                              HorizontalAlignment="Center" 
-                              FontSize="14" 
-                              Foreground="LightGray" 
                               Margin="0,0,0,10"/>
+
+                    <!-- Current File and Progress Count -->
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,5">
+                        <TextBlock Text="{Binding CurrentFile}" 
+                                  HorizontalAlignment="Center" 
+                                  FontSize="14" 
+                                  Foreground="LightGray"/>
+                        <TextBlock Text="{Binding FileProgress}" 
+                                  HorizontalAlignment="Center" 
+                                  FontSize="14" 
+                                  Foreground="Orange" 
+                                  Margin="10,0,0,0"
+                                  FontWeight="SemiBold"/>
+                    </StackPanel>
                     
                     <!-- Speed and ETA -->
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,20">

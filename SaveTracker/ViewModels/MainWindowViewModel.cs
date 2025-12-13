@@ -966,7 +966,7 @@ namespace SaveTracker.ViewModels
                     try
                     {
                         await _trackingTask;
-                        DebugConsole.WriteInfo("Tracking session completed");
+                        DebugConsole.WriteSuccess("Tracking session completed - PlayTime committed to disk");
                     }
                     catch (Exception ex)
                     {
@@ -1023,20 +1023,10 @@ namespace SaveTracker.ViewModels
 
         private async Task RefreshPlayTimeAsync(Game game)
         {
-            // Retry a few times to account for async save completion in TrackingSession.Stop()
-            const int maxAttempts = 5;
-            const int delayMs = 200;
-
-            GameUploadData? lastData = null;
-            for (int attempt = 0; attempt < maxAttempts; attempt++)
-            {
-                lastData = await ConfigManagement.GetGameData(game);
-                if (lastData != null && lastData.PlayTime > TimeSpan.Zero)
-                    break;
-                await Task.Delay(delayMs);
-            }
-
+            // PlayTime update is now properly awaited, so no retry needed
+            var lastData = await ConfigManagement.GetGameData(game);
             var play = lastData?.PlayTime ?? TimeSpan.Zero;
+
             if (play > TimeSpan.Zero)
                 GamePlayTimeText = "Play Time: " + play.ToString(@"hh\:mm\:ss");
             else

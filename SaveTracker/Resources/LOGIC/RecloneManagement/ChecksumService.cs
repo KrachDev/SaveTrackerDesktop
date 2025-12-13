@@ -343,7 +343,7 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
         /// <summary>
         /// Count how many files referenced in the checksum data actually exist on disk
         /// </summary>
-        public int CountExistingFiles(GameUploadData checksumData, string gameDirectory)
+        public int CountExistingFiles(GameUploadData checksumData, string gameDirectory, string? detectedPrefix = null)
         {
             if (checksumData?.Files == null || checksumData.Files.Count == 0)
                 return 0;
@@ -353,10 +353,14 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             {
                 try
                 {
-                    string absolutePath = fileRecord.GetAbsolutePath(gameDirectory);
+                    string absolutePath = fileRecord.GetAbsolutePath(gameDirectory, detectedPrefix);
                     if (File.Exists(absolutePath))
                     {
                         existingCount++;
+                    }
+                    else
+                    {
+                        DebugConsole.WriteDebug($"File not found: {absolutePath}");
                     }
                 }
                 catch (Exception ex)

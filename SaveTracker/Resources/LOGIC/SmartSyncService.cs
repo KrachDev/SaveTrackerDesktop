@@ -152,11 +152,23 @@ namespace SaveTracker.Resources.Logic
         {
             try
             {
+                DebugConsole.WriteInfo($"Reading local PlayTime from: {game.InstallDirectory}");
                 var checksumData = await _checksumService.LoadChecksumData(game.InstallDirectory);
+
+                DebugConsole.WriteInfo($"Checksum data loaded: PlayTime={checksumData.PlayTime}, Files={checksumData.Files.Count}");
+
+                // Load detected prefix for Wine path expansion on Linux
+                var gameData = await ConfigManagement.GetGameData(game);
+                string? detectedPrefix = gameData?.DetectedPrefix;
+
+                if (!string.IsNullOrEmpty(detectedPrefix))
+                {
+                    DebugConsole.WriteInfo($"Using detected prefix for path expansion: {detectedPrefix}");
+                }
 
                 // Validate that actual save files exist, not just the checksum file
                 // This prevents incorrect sync decisions in dual-boot scenarios
-                int existingFilesCount = _checksumService.CountExistingFiles(checksumData, game.InstallDirectory);
+                int existingFilesCount = _checksumService.CountExistingFiles(checksumData, game.InstallDirectory, detectedPrefix);
 
                 if (existingFilesCount == 0 && checksumData.Files.Count > 0)
                 {
@@ -167,14 +179,14 @@ namespace SaveTracker.Resources.Logic
 
                 if (existingFilesCount > 0)
                 {
-                    DebugConsole.WriteInfo($"Local save validated: {existingFilesCount}/{checksumData.Files.Count} files exist");
+                    DebugConsole.WriteSuccess($"Local save validated: {existingFilesCount}/{checksumData.Files.Count} files exist, PlayTime={checksumData.PlayTime}");
                 }
 
                 return checksumData.PlayTime;
             }
             catch (Exception ex)
             {
-                DebugConsole.WriteWarning($"Failed to read local PlayTime: {ex.Message}");
+                DebugConsole.WriteException(ex, "Failed to read local PlayTime");
                 return TimeSpan.Zero;
             }
         }

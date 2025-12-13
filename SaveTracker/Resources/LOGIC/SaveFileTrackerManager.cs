@@ -714,13 +714,17 @@ namespace SaveTracker.Resources.LOGIC
             }
             finally
             {
-                Stop();
+                await StopAsync();
             }
 
             DebugConsole.WriteLine("Tracking session complete.");
         }
 
-        public void Stop()
+        /// <summary>
+        /// Asynchronously stops the tracking session and commits PlayTime updates.
+        /// This method MUST be awaited to ensure PlayTime is persisted before Smart Sync reads it.
+        /// </summary>
+        public async Task StopAsync()
         {
             if (!_isTracking || _isDisposed)
                 return;
@@ -729,7 +733,7 @@ namespace SaveTracker.Resources.LOGIC
 
             _isTracking = false;
 
-            // Calculate and persist playtime (fire-and-forget to keep Stop() sync)
+            // CRITICAL: Await PlayTime commit to prevent race condition with Smart Sync
             if (!_playtimeCommitted && _trackingStartUtc != DateTime.MinValue)
             {
                 _playtimeCommitted = true; // ensure we only add once per session
@@ -741,25 +745,7 @@ namespace SaveTracker.Resources.LOGIC
                 }
                 if (sessionDuration > TimeSpan.Zero)
                 {
-                    Task.Run(async () =>
-                    {
-                        try
-                        {
-                            var data = await ConfigManagement.GetGameData(_game);
-                            if (data == null)
-                            {
-                                // Avoid explicit type to not require additional using
-                                data = new SaveTracker.Resources.Logic.RecloneManagement.GameUploadData();
-                            }
-                            data.PlayTime += sessionDuration;
-                            await ConfigManagement.SaveGameData(_game, data);
-                            DebugConsole.WriteLine($"PlayTime updated for '{_game.Name}': start={_trackingStartUtc:o}, end={sessionEndUtc:o}, +{sessionDuration}, total {data.PlayTime}");
-                        }
-                        catch (Exception ex)
-                        {
-                            DebugConsole.WriteWarning($"Failed to update PlayTime: {ex.Message}");
-                        }
-                    });
+                    await UpdatePlayTimeAsync(sessionDuration);
                 }
             }
 
@@ -788,6 +774,55 @@ namespace SaveTracker.Resources.LOGIC
             }
 
             DebugConsole.WriteLine("Session stopped.");
+        }
+
+        /// <summary>
+        /// Synchronous version of Stop for backward compatibility (e.g., Dispose).
+        /// Prefer StopAsync() when possible.
+        /// </summary>
+        public void Stop()
+        {
+            // For Dispose and cleanup paths that can't await
+            StopAsync().GetAwaiter().GetResult();
+        }
+
+        /// <summary>
+        /// Updates PlayTime in both GameUploadData config AND checksums.json.
+        /// CRITICAL: Smart Sync reads from checksums.json, so both must be updated atomically.
+        /// </summary>
+        private async Task UpdatePlayTimeAsync(TimeSpan sessionDuration)
+        {
+            try
+            {
+                // 1. Update GameUploadData.json (per-game config)
+                var data = await ConfigManagement.GetGameData(_game);
+                if (data == null)
+                {
+                    data = new SaveTracker.Resources.Logic.RecloneManagement.GameUploadData();
+                }
+
+                var oldPlayTime = data.PlayTime;
+                data.PlayTime += sessionDuration;
+                await ConfigManagement.SaveGameData(_game, data);
+
+                // 2. CRITICAL: Also update checksums.json in game install directory
+                // This is what Smart Sync reads via SmartSyncService.GetLocalPlayTimeAsync()!
+                var checksumService = new SaveTracker.Resources.Logic.RecloneManagement.ChecksumService();
+                var checksumData = await checksumService.LoadChecksumData(_game.InstallDirectory);
+                checksumData.PlayTime = data.PlayTime; // Set to total, not increment
+                checksumData.LastUpdated = DateTime.Now;
+                await checksumService.SaveChecksumData(checksumData, _game.InstallDirectory);
+
+                DebugConsole.WriteSuccess(
+                    $"PlayTime committed for '{_game.Name}': {oldPlayTime} + {sessionDuration} = {data.PlayTime} (saved to both config and checksums)"
+                );
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteException(ex, "CRITICAL: Failed to update PlayTime - Smart Sync may use stale value!");
+                // Re-throw to ensure caller knows PlayTime commit failed
+                throw;
+            }
         }
 
         /// <summary>

@@ -180,7 +180,8 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             string remoteBasePath,
             UploadStats stats,
             Game game = null,
-            CloudProvider? provider = null)
+            CloudProvider? provider = null,
+            IProgress<double>? progress = null)
         {
             // Use provided game or fall back to constructor game
             game = game ?? _currentGame;
@@ -221,13 +222,24 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             var gameData = await ConfigManagement.GetGameData(game);
             string? detectedPrefix = gameData?.DetectedPrefix;
 
-            foreach (var filePath in filePaths)
+            // Use thread-safe collections for parallel processing
+            var internalFilesToBatchConcurrent = new System.Collections.Concurrent.ConcurrentBag<string>();
+            var relativeInternalPathsConcurrent = new System.Collections.Concurrent.ConcurrentBag<string>();
+            var externalFilesToSingleConcurrent = new System.Collections.Concurrent.ConcurrentBag<string>();
+            long batchUploadSizeAtomic = 0;
+            int processedCount = 0;
+            int skippedCount = 0;
+            long skippedSize = 0;
+            int failedCount = 0;
+
+            // PERFORMANCE: Parallel checksum calculation to use all CPU cores
+            System.Threading.Tasks.Parallel.ForEach(filePaths, new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount }, filePath =>
             {
                 if (!File.Exists(filePath))
                 {
                     DebugConsole.WriteWarning($"File not found, skipping: {filePath}");
-                    stats.FailedCount++;
-                    continue;
+                    Interlocked.Increment(ref failedCount);
+                    return;
                 }
 
                 // Get relative path from game directory for checking purposes
@@ -240,64 +252,93 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
 
                 try
                 {
-                    bool needsUpload = await ShouldUploadFileWithChecksum(filePath, gameDirectory);
+                    // Note: ShouldUploadFileWithChecksum is async, but Parallel.ForEach needs sync
+                    // We'll use Task.Run().GetAwaiter().GetResult() for CPU-bound work
+                    bool needsUpload = ShouldUploadFileWithChecksum(filePath, gameDirectory).GetAwaiter().GetResult();
 
                     if (needsUpload)
                     {
                         if (isInternal)
                         {
-                            internalFilesToBatch.Add(filePath);
+                            internalFilesToBatchConcurrent.Add(filePath);
 
                             // Strip %GAMEPATH%/ or %GAMEPATH%\ prefix to get pure relative path
-                            // Cleaner to just make it relative to gameDirectory directly
                             string pureRelative = Path.GetRelativePath(gameDirectory, filePath);
-                            relativeInternalPaths.Add(pureRelative);
+                            relativeInternalPathsConcurrent.Add(pureRelative);
 
                             var info = new FileInfo(filePath);
-                            batchUploadSize += info.Length;
+                            Interlocked.Add(ref batchUploadSizeAtomic, info.Length);
                         }
                         else
                         {
                             // External file - must upload individually
-                            externalFilesToSingle.Add(filePath);
+                            externalFilesToSingleConcurrent.Add(filePath);
                         }
                     }
                     else
                     {
                         DebugConsole.WriteSuccess($"SKIPPED: {fileName} - Identical to last uploaded version");
-                        stats.SkippedCount++;
-                        stats.SkippedSize += new FileInfo(filePath).Length;
+                        Interlocked.Increment(ref skippedCount);
+                        Interlocked.Add(ref skippedSize, new FileInfo(filePath).Length);
                     }
                 }
                 catch (Exception ex)
                 {
                     DebugConsole.WriteException(ex, $"Error checking file {fileName}");
-                    stats.FailedCount++;
+                    Interlocked.Increment(ref failedCount);
                 }
-            }
+
+                // Report progress during file checking (0-40% of total progress)
+                int currentCount = Interlocked.Increment(ref processedCount);
+                if (currentCount % 10 == 0 || currentCount == filePaths.Count)
+                {
+                    progress?.Report((double)currentCount / filePaths.Count * 40);
+                }
+            });
+
+            // Convert concurrent collections to regular lists
+            internalFilesToBatch = internalFilesToBatchConcurrent.ToList();
+            relativeInternalPaths = relativeInternalPathsConcurrent.ToList();
+            externalFilesToSingle = externalFilesToSingleConcurrent.ToList();
+            batchUploadSize = batchUploadSizeAtomic;
+            stats.SkippedCount += skippedCount;
+            stats.SkippedSize += skippedSize;
+            stats.FailedCount += failedCount;
+
 
             if (internalFilesToBatch.Count == 0 && externalFilesToSingle.Count == 0)
             {
                 DebugConsole.WriteSuccess("All files up to date. No upload needed.");
+                progress?.Report(100);
                 return;
             }
 
             CloudProvider effectiveProvider = provider ?? await GetEffectiveProvider(game);
 
-            // 1. Process Batch (Internal Files)
+            // 1. Process Batch (Internal Files) - 40-70% of progress
             if (internalFilesToBatch.Count > 0)
             {
                 DebugConsole.WriteSeparator('-', 40);
                 DebugConsole.WriteInfo($"Batch uploading {internalFilesToBatch.Count} internal files ({batchUploadSize / 1024.0:F2} KB)...");
 
+                progress?.Report(40);
+
                 // Execute batch upload
                 // Internal files go to remoteBasePath/%GAMEPATH%/
                 string batchRemotePath = $"{remoteBasePath}/%GAMEPATH%";
+
+                // Create progress reporter that maps rclone's 0-100 to our 40-70 range
+                var batchProgress = new Progress<double>(percent =>
+                {
+                    progress?.Report(40 + (percent * 0.3)); // 40-70%
+                });
+
                 bool success = await _transferService.UploadBatchAsync(
                     gameDirectory,
                     batchRemotePath,
                     relativeInternalPaths,
-                    effectiveProvider);
+                    effectiveProvider,
+                    batchProgress);
 
                 if (success)
                 {
@@ -313,14 +354,21 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                     DebugConsole.WriteError($"Batch upload failed for {internalFilesToBatch.Count} files.");
                     stats.FailedCount += internalFilesToBatch.Count;
                 }
+
+                progress?.Report(70);
+            }
+            else
+            {
+                progress?.Report(70);
             }
 
-            // 2. Process Single (External Files)
+            // 2. Process Single (External Files) - 70-100% of progress
             if (externalFilesToSingle.Count > 0)
             {
                 DebugConsole.WriteSeparator('-', 40);
                 DebugConsole.WriteInfo($"Uploading {externalFilesToSingle.Count} external files individually...");
 
+                int externalProcessed = 0;
                 foreach (var filePath in externalFilesToSingle)
                 {
                     // Reuse detectedPrefix from outer scope
@@ -347,7 +395,14 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                         DebugConsole.WriteError($"Failed to upload external file: {fileName}");
                         stats.FailedCount++;
                     }
+
+                    externalProcessed++;
+                    progress?.Report(70 + ((double)externalProcessed / externalFilesToSingle.Count * 30)); // 70-100%
                 }
+            }
+            else
+            {
+                progress?.Report(100);
             }
         }
 

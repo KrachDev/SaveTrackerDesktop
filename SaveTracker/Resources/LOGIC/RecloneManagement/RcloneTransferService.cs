@@ -115,8 +115,9 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                         // Use 'copy' instead of 'copyto' when using --files-from
                         // The source is the root directory
                         // The destination is the remote root directory
+                        // --transfers=4 enables parallel transfers for better speed
                         var result = await _executor.ExecuteRcloneCommand(
-                            $"copy \"{sourceRoot}\" \"{remoteRoot}\" --files-from \"{listFilePath}\" --config \"{configPath}\" --progress",
+                            $"copy \"{sourceRoot}\" \"{remoteRoot}\" --files-from \"{listFilePath}\" --config \"{configPath}\" --transfers=4 --progress",
                             _processTimeout,
                             hideWindow: true,
                             allowedExitCodes: null,
@@ -247,7 +248,7 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
 
                 string configPath = RclonePathHelper.GetConfigPath(provider);
                 var result = await _executor.ExecuteRcloneCommand(
-                    $"copy \"{remotePath}\" \"{localPath}\" --config \"{configPath}\" --progress",
+                    $"copy \"{remotePath}\" \"{localPath}\" --config \"{configPath}\" --transfers=4 --progress",
                     TimeSpan.FromMinutes(5),
                     hideWindow: true,
                     allowedExitCodes: null,

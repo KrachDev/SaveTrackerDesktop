@@ -21,6 +21,7 @@ namespace SaveTracker.ViewModels
         private readonly Game _game;
         private readonly SmartSyncMode _mode;
         private SmartSyncService.ProgressComparison? _comparison;
+        private GameUploadData? _cachedCloudData; // Cache to avoid downloading twice
 
         [ObservableProperty]
         private string _gameName = string.Empty;
@@ -82,6 +83,9 @@ namespace SaveTracker.ViewModels
 
         [ObservableProperty]
         private string _currentFile = "";
+
+        [ObservableProperty]
+        private string _fileProgress = ""; // e.g., "(3/10)"
 
         [ObservableProperty]
         private string _speed = "";
@@ -151,12 +155,20 @@ namespace SaveTracker.ViewModels
                         var smartSync = new SmartSyncService();
                         var provider = await smartSync.GetEffectiveProvider(_game);
 
-                        // comparison logic
+                        // OPTIMIZATION: Download cloud checksum ONCE and cache it
+                        await Dispatcher.UIThread.InvokeAsync(() =>
+                        {
+                            LoadingMessage = "Downloading cloud data...";
+                        });
+
+                        _cachedCloudData = await DownloadCloudChecksumOnce(provider);
+
+                        // comparison logic - now uses cached data
                         _comparison = await smartSync.CompareProgressAsync(_game, TimeSpan.Zero, provider);
 
                         await UpdateComparisonUIAsync(_comparison);
 
-                        // Load file comparison details
+                        // Load file comparison details - reuses cached cloud data
                         await CompareChecksumsInternalAsync();
                     }
                     catch (Exception ex)
@@ -215,20 +227,8 @@ namespace SaveTracker.ViewModels
             });
         }
 
-        private async Task CompareChecksumsInternalAsync()
+        private async Task<GameUploadData?> DownloadCloudChecksumOnce(CloudProvider provider)
         {
-            await Dispatcher.UIThread.InvokeAsync(() =>
-            {
-                DebugConsole.WriteInfo("Comparing local and cloud checksums...");
-                FileComparisonList.Clear();
-            });
-
-            // Load local checksum
-            var checksumService = new ChecksumService();
-            var localData = await checksumService.LoadChecksumData(_game.InstallDirectory);
-
-            // Load cloud checksum (download to temp)
-            GameUploadData cloudData = new GameUploadData();
             string tempFolder = Path.Combine(Path.GetTempPath(), $"SaveTracker_SyncCheck_{Guid.NewGuid():N}");
             Directory.CreateDirectory(tempFolder);
 
@@ -238,7 +238,7 @@ namespace SaveTracker.ViewModels
                 if (config?.CloudConfig != null)
                 {
                     var rcloneOps = new RcloneFileOperations(_game);
-                    var remoteName = GetProviderConfigName(config.CloudConfig.Provider);
+                    var remoteName = GetProviderConfigName(provider);
                     var sanitizedGameName = SanitizeGameName(_game.Name);
                     var remotePath = $"{remoteName}:{SaveFileUploadManager.RemoteBaseFolder}/{sanitizedGameName}";
 
@@ -253,29 +253,46 @@ namespace SaveTracker.ViewModels
                         checksumRemotePath,
                         checksumLocalPath,
                         SaveFileUploadManager.ChecksumFilename,
-                        config.CloudConfig.Provider
+                        provider
                     );
 
                     if (downloaded && File.Exists(checksumLocalPath))
                     {
                         string json = await File.ReadAllTextAsync(checksumLocalPath);
-                        cloudData = Newtonsoft.Json.JsonConvert.DeserializeObject<GameUploadData>(json) ?? new GameUploadData();
+                        return Newtonsoft.Json.JsonConvert.DeserializeObject<GameUploadData>(json);
                     }
                 }
             }
             catch (Exception ex)
             {
-                DebugConsole.WriteWarning($"Failed to load cloud checksum: {ex.Message}");
+                DebugConsole.WriteWarning($"Failed to download cloud checksum: {ex.Message}");
             }
             finally
             {
-                // cleanup
                 try
                 {
                     if (Directory.Exists(tempFolder)) Directory.Delete(tempFolder, true);
                 }
                 catch { }
             }
+
+            return null;
+        }
+
+        private async Task CompareChecksumsInternalAsync()
+        {
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                DebugConsole.WriteInfo("Comparing local and cloud checksums...");
+                FileComparisonList.Clear();
+            });
+
+            // Load local checksum
+            var checksumService = new ChecksumService();
+            var localData = await checksumService.LoadChecksumData(_game.InstallDirectory);
+
+            // OPTIMIZATION: Reuse cached cloud data instead of re-downloading
+            GameUploadData cloudData = _cachedCloudData ?? new GameUploadData();
 
             // Prepare items for UI
             var items = new List<FileComparisonItem>();
@@ -441,6 +458,18 @@ namespace SaveTracker.ViewModels
                             {
                                 ProgressValue = percent;
                                 LoadingMessage = $"Downloading... {percent:F0}%";
+
+                                // Simple progress indicator for download
+                                if (percent < 100)
+                                {
+                                    CurrentFile = "Downloading files...";
+                                    FileProgress = $"{percent:F0}%";
+                                }
+                                else
+                                {
+                                    CurrentFile = "Download complete!";
+                                    FileProgress = "";
+                                }
                             });
                         });
 
@@ -559,17 +588,88 @@ namespace SaveTracker.ViewModels
                         var sanitizedGameName = SanitizeGameName(_game.Name);
                         var remotePath = $"{remoteName}:{SaveFileUploadManager.RemoteBaseFolder}/{sanitizedGameName}";
 
-                        // Get all files in game directory
-                        var allFiles = Directory.GetFiles(_game.InstallDirectory, "*", SearchOption.AllDirectories).ToList();
+                        // CRITICAL: Only upload files that are tracked in checksums.json
+                        // DO NOT scan entire game directory - that includes executables!
+                        var checksumService = new ChecksumService();
+                        var checksumData = await checksumService.LoadChecksumData(_game.InstallDirectory);
+
+                        if (checksumData?.Files == null || checksumData.Files.Count == 0)
+                        {
+                            await Dispatcher.UIThread.InvokeAsync(() =>
+                            {
+                                OperationLog.Add($"[{DateTime.Now:HH:mm:ss}] ❌ No tracked files found to upload");
+                                OperationLog.Add($"[{DateTime.Now:HH:mm:ss}] Please add files to track first");
+                            });
+                            return;
+                        }
+
+                        // Load game data for prefix
+                        var gameData = await ConfigManagement.GetGameData(_game);
+                        string? detectedPrefix = gameData?.DetectedPrefix;
+
+                        // Convert tracked paths to absolute paths
+                        var trackedFiles = new List<string>();
+                        foreach (var fileRecord in checksumData.Files.Values)
+                        {
+                            try
+                            {
+                                string absolutePath = fileRecord.GetAbsolutePath(_game.InstallDirectory, detectedPrefix);
+                                if (File.Exists(absolutePath))
+                                {
+                                    trackedFiles.Add(absolutePath);
+                                }
+                                else
+                                {
+                                    DebugConsole.WriteWarning($"Tracked file not found: {absolutePath}");
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                DebugConsole.WriteWarning($"Error resolving tracked file path: {ex.Message}");
+                            }
+                        }
+
+                        if (trackedFiles.Count == 0)
+                        {
+                            await Dispatcher.UIThread.InvokeAsync(() =>
+                            {
+                                OperationLog.Add($"[{DateTime.Now:HH:mm:ss}] ❌ No valid tracked files exist on disk");
+                            });
+                            return;
+                        }
 
                         await Dispatcher.UIThread.InvokeAsync(() =>
                         {
-                            OperationLog.Add($"[{DateTime.Now:HH:mm:ss}] Found {allFiles.Count} local files to check");
+                            OperationLog.Add($"[{DateTime.Now:HH:mm:ss}] Found {trackedFiles.Count} tracked files to upload");
                             OperationLog.Add($"[{DateTime.Now:HH:mm:ss}] Processing batch upload...");
                         });
 
                         var stats = new UploadStats();
-                        await rcloneOps.ProcessBatch(allFiles, remotePath, stats, _game, config.CloudConfig.Provider);
+
+                        // Create progress reporter with file-level granularity
+                        int totalFiles = trackedFiles.Count;
+                        int currentFileIndex = 0;
+
+                        var progress = new Progress<double>(percent =>
+                        {
+                            Dispatcher.UIThread.Post(() =>
+                            {
+                                ProgressValue = percent;
+
+                                // Calculate which file we're on based on overall progress
+                                int estimatedFileIndex = (int)(percent / 100.0 * totalFiles);
+                                if (estimatedFileIndex >= totalFiles) estimatedFileIndex = totalFiles - 1;
+
+                                if (estimatedFileIndex >= 0 && estimatedFileIndex < totalFiles)
+                                {
+                                    string filename = Path.GetFileName(trackedFiles[estimatedFileIndex]);
+                                    CurrentFile = filename;
+                                    FileProgress = $"({estimatedFileIndex + 1}/{totalFiles})";
+                                }
+                            });
+                        });
+
+                        await rcloneOps.ProcessBatch(trackedFiles, remotePath, stats, _game, config.CloudConfig.Provider, progress);
 
                         await Dispatcher.UIThread.InvokeAsync(() =>
                         {
@@ -578,11 +678,15 @@ namespace SaveTracker.ViewModels
                                 OperationLog.Add($"[{DateTime.Now:HH:mm:ss}] ✓ Upload complete!");
                                 OperationLog.Add($"[{DateTime.Now:HH:mm:ss}] Stats: {stats.UploadedCount} uploaded, {stats.SkippedCount} skipped");
                                 DebugConsole.WriteSuccess("Local save uploaded successfully");
+                                CurrentFile = "Upload complete!";
+                                FileProgress = "";
                             }
                             else
                             {
                                 OperationLog.Add($"[{DateTime.Now:HH:mm:ss}] ⚠️ Upload finished with {stats.FailedCount} errors");
                                 OperationLog.Add($"[{DateTime.Now:HH:mm:ss}] Stats: {stats.UploadedCount} uploaded, {stats.SkippedCount} skipped");
+                                CurrentFile = "Upload completed with errors";
+                                FileProgress = "";
                             }
                         });
 
