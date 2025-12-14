@@ -789,6 +789,7 @@ namespace SaveTracker.Resources.LOGIC
         /// <summary>
         /// Updates PlayTime in both GameUploadData config AND checksums.json.
         /// CRITICAL: Smart Sync reads from checksums.json, so both must be updated atomically.
+        /// Also adds tracked files to checksum data so they appear in Smart Sync.
         /// </summary>
         private async Task UpdatePlayTimeAsync(TimeSpan sessionDuration)
         {
@@ -811,11 +812,75 @@ namespace SaveTracker.Resources.LOGIC
                 var checksumData = await checksumService.LoadChecksumData(_game.InstallDirectory);
                 checksumData.PlayTime = data.PlayTime; // Set to total, not increment
                 checksumData.LastUpdated = DateTime.Now;
+
+                // 3. Add tracked files to checksum data so they appear in Smart Sync
+                var uploadList = GetUploadList();
+                DebugConsole.WriteInfo($"Processing {uploadList.Count} tracked file(s) for checksum data...");
+                int filesAdded = 0;
+                int filesSkipped = 0;
+                foreach (var filePath in uploadList)
+                {
+                    try
+                    {
+                        if (!File.Exists(filePath))
+                        {
+                            DebugConsole.WriteDebug($"Skipping {Path.GetFileName(filePath)}: file no longer exists");
+                            filesSkipped++;
+                            continue;
+                        }
+
+                        // Contract the path to portable format
+                        string portablePath = PathContractor.ContractPath(filePath, _game.InstallDirectory);
+                        
+                        // Skip if already exists
+                        if (checksumData.Files.ContainsKey(portablePath))
+                        {
+                            DebugConsole.WriteDebug($"Skipping {Path.GetFileName(filePath)}: already in checksum data");
+                            filesSkipped++;
+                            continue;
+                        }
+
+                        // Compute checksum and add to checksum data
+                        string checksum = await checksumService.GetFileChecksum(filePath);
+                        if (string.IsNullOrEmpty(checksum))
+                        {
+                            DebugConsole.WriteWarning($"Could not compute checksum for {Path.GetFileName(filePath)} - skipping");
+                            filesSkipped++;
+                            continue;
+                        }
+
+                        var fileInfo = new FileInfo(filePath);
+                        checksumData.Files[portablePath] = new SaveTracker.Resources.Logic.RecloneManagement.FileChecksumRecord
+                        {
+                            Path = portablePath,
+                            Checksum = checksum,
+                            FileSize = fileInfo.Length,
+                            LastUpload = DateTime.UtcNow,
+                            LastWriteTime = fileInfo.LastWriteTimeUtc
+                        };
+                        DebugConsole.WriteDebug($"Added {Path.GetFileName(filePath)} to checksum data (path: {portablePath})");
+                        filesAdded++;
+                    }
+                    catch (Exception ex)
+                    {
+                        DebugConsole.WriteWarning($"Failed to add tracked file {Path.GetFileName(filePath)} to checksum: {ex.Message}");
+                        filesSkipped++;
+                    }
+                }
+
                 await checksumService.SaveChecksumData(checksumData, _game.InstallDirectory);
 
                 DebugConsole.WriteSuccess(
                     $"PlayTime committed for '{_game.Name}': {oldPlayTime} + {sessionDuration} = {data.PlayTime} (saved to both config and checksums)"
                 );
+                if (filesAdded > 0)
+                {
+                    DebugConsole.WriteSuccess($"Added {filesAdded} tracked file(s) to checksum data for Smart Sync (skipped {filesSkipped})");
+                }
+                else if (uploadList.Count > 0)
+                {
+                    DebugConsole.WriteWarning($"No tracked files were added to checksum data (all {uploadList.Count} were skipped)");
+                }
             }
             catch (Exception ex)
             {

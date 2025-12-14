@@ -35,10 +35,7 @@ namespace SaveTracker.Resources.SAVE_SYSTEM
             if (!File.Exists(CONFIG_PATH))
             {
                 var defaultConfig = new Config();
-                var json = JsonSerializer.Serialize(defaultConfig, new JsonSerializerOptions
-                {
-                    WriteIndented = true
-                });
+                var json = JsonSerializer.Serialize(defaultConfig, JsonHelper.DefaultIndented);
                 File.WriteAllText(CONFIG_PATH, json);
                 DebugConsole.WriteSuccess("Created default config.json");
             }
@@ -47,10 +44,7 @@ namespace SaveTracker.Resources.SAVE_SYSTEM
             if (!File.Exists(GAMESLIST_PATH))
             {
                 var emptyList = new List<Game>();
-                var json = JsonSerializer.Serialize(emptyList, new JsonSerializerOptions
-                {
-                    WriteIndented = true
-                });
+                var json = JsonSerializer.Serialize(emptyList, JsonHelper.DefaultIndented);
                 File.WriteAllText(GAMESLIST_PATH, json);
                 DebugConsole.WriteSuccess("Created empty gameslist.json");
             }
@@ -105,11 +99,7 @@ namespace SaveTracker.Resources.SAVE_SYSTEM
         {
             try
             {
-                var json = JsonSerializer.Serialize(games, new JsonSerializerOptions
-                {
-                    WriteIndented = true,
-                    PropertyNameCaseInsensitive = true
-                });
+                var json = JsonSerializer.Serialize(games, JsonHelper.DefaultIndentedCaseInsensitive);
 
                 await File.WriteAllTextAsync(GAMESLIST_PATH, json);
             }
@@ -162,10 +152,7 @@ namespace SaveTracker.Resources.SAVE_SYSTEM
                     return new List<Game>();
                 }
 
-                var games = JsonSerializer.Deserialize<List<Game>>(json, new JsonSerializerOptions
-                {
-                    PropertyNameCaseInsensitive = true
-                });
+                var games = JsonSerializer.Deserialize<List<Game>>(json, JsonHelper.DefaultCaseInsensitive);
 
                 if (games == null || games.Count == 0)
                 {
@@ -241,7 +228,7 @@ namespace SaveTracker.Resources.SAVE_SYSTEM
                 }
 
                 string jsonContent = await File.ReadAllTextAsync(filePath);
-                return JsonSerializer.Deserialize<GameUploadData>(jsonContent);
+                return JsonSerializer.Deserialize<GameUploadData>(jsonContent, JsonHelper.GetOptions());
             }
             catch (Exception ex)
             {
@@ -267,7 +254,7 @@ namespace SaveTracker.Resources.SAVE_SYSTEM
             GameUploadData data;
             try
             {
-                data = JsonSerializer.Deserialize<GameUploadData>(json);
+                data = JsonSerializer.Deserialize<GameUploadData>(json, JsonHelper.GetOptions());
             }
             catch
             {
@@ -329,11 +316,8 @@ namespace SaveTracker.Resources.SAVE_SYSTEM
                     return new Config();
                 }
 
-                var json = await File.ReadAllTextAsync(CONFIG_PATH);
-                var config = JsonSerializer.Deserialize<Config>(json, new JsonSerializerOptions
-                {
-                    PropertyNameCaseInsensitive = true
-                });
+                var json = await File.ReadAllTextAsync(CONFIG_PATH).ConfigureAwait(false);
+                var config = JsonSerializer.Deserialize<Config>(json, JsonHelper.DefaultCaseInsensitive);
 
                 return config ?? new Config();
             }
@@ -347,10 +331,7 @@ namespace SaveTracker.Resources.SAVE_SYSTEM
             try
             {
                 string filePath = Path.Combine(game.InstallDirectory, SaveFileUploadManager.ChecksumFilename);
-                string jsonContent = JsonSerializer.Serialize(data, new JsonSerializerOptions
-                {
-                    WriteIndented = true
-                });
+                string jsonContent = JsonSerializer.Serialize(data, JsonHelper.DefaultIndented);
 
                 await File.WriteAllTextAsync(filePath, jsonContent);
             }
@@ -366,10 +347,7 @@ namespace SaveTracker.Resources.SAVE_SYSTEM
         {
             try
             {
-                var json = JsonSerializer.Serialize(config, new JsonSerializerOptions
-                {
-                    WriteIndented = true
-                });
+                var json = JsonSerializer.Serialize(config, JsonHelper.DefaultIndented);
 
                 await File.WriteAllTextAsync(CONFIG_PATH, json);
             }
@@ -387,7 +365,7 @@ namespace SaveTracker.Resources.SAVE_SYSTEM
         {
             try
             {
-                var json = JsonSerializer.Serialize(games, new JsonSerializerOptions { WriteIndented = true });
+                var json = JsonSerializer.Serialize(games, JsonHelper.DefaultIndented);
                 await File.WriteAllTextAsync(CLOUD_GAMES_PATH, json);
             }
             catch (Exception ex)
@@ -403,7 +381,7 @@ namespace SaveTracker.Resources.SAVE_SYSTEM
                 if (!File.Exists(CLOUD_GAMES_PATH)) return new List<string>();
                 var json = await File.ReadAllTextAsync(CLOUD_GAMES_PATH);
                 if (string.IsNullOrWhiteSpace(json)) return new List<string>();
-                return JsonSerializer.Deserialize<List<string>>(json) ?? new List<string>();
+                return JsonSerializer.Deserialize<List<string>>(json, JsonHelper.GetOptions()) ?? new List<string>();
             }
             catch (Exception ex)
             {

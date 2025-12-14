@@ -261,10 +261,7 @@ namespace SaveTracker.Resources.Logic
                     return CreateNewAnalyticsData();
                 }
 
-                var data = JsonSerializer.Deserialize<AnalyticsData>(json, new JsonSerializerOptions
-                {
-                    PropertyNameCaseInsensitive = true
-                });
+                var data = JsonSerializer.Deserialize<AnalyticsData>(json, JsonHelper.DefaultCaseInsensitive);
 
                 return data ?? CreateNewAnalyticsData();
             }
@@ -282,10 +279,7 @@ namespace SaveTracker.Resources.Logic
         {
             try
             {
-                var json = JsonSerializer.Serialize(data, new JsonSerializerOptions
-                {
-                    WriteIndented = true
-                });
+                var json = JsonSerializer.Serialize(data, JsonHelper.DefaultIndented);
 
                 // Ensure Data directory exists
                 var dataDir = Path.GetDirectoryName(ANALYTICS_PATH);

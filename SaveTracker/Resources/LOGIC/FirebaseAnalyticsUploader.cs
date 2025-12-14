@@ -84,7 +84,7 @@ namespace SaveTracker.Resources.Logic
                     }
                 };
 
-                var json = JsonSerializer.Serialize(firestoreDoc);
+                var json = JsonSerializer.Serialize(firestoreDoc, JsonHelper.GetOptions());
                 var content = new StringContent(json, Encoding.UTF8, "application/json");
 
                 // Use PATCH to create or update document

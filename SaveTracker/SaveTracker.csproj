@@ -28,6 +28,12 @@
     <SelfContained>true</SelfContained>
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <PublishReadyToRun>true</PublishReadyToRun>
+    <PublishTrimmed>true</PublishTrimmed>
+    <TrimMode>link</TrimMode>
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
   </PropertyGroup>
 
   <ItemGroup>

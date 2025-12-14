@@ -225,7 +225,7 @@ namespace SaveTracker.ViewModels
             _configManagement = new ConfigManagement();
             _rcloneFileOperations = new RcloneFileOperations();
             _providerHelper = new CloudProviderHelper();
-            InitializeGameSettingsProviders(); // ← ADD THIS LINE
+            InitializeGameSettingsProviders();
 
             InitializeAsync();
         }
@@ -1313,7 +1313,7 @@ namespace SaveTracker.ViewModels
                 if (File.Exists(gameDataFile))
                 {
                     string json = await File.ReadAllTextAsync(gameDataFile);
-                    data = System.Text.Json.JsonSerializer.Deserialize<GameUploadData>(json) ?? new GameUploadData();
+                    data = System.Text.Json.JsonSerializer.Deserialize<GameUploadData>(json, JsonHelper.GetOptions()) ?? new GameUploadData();
                 }
                 else
                 {
@@ -1365,7 +1365,7 @@ namespace SaveTracker.ViewModels
                 if (!File.Exists(gameDataFile)) return;
 
                 string json = await File.ReadAllTextAsync(gameDataFile);
-                var data = System.Text.Json.JsonSerializer.Deserialize<GameUploadData>(json);
+                var data = System.Text.Json.JsonSerializer.Deserialize<GameUploadData>(json, JsonHelper.GetOptions());
 
                 if (data == null) return;
 
@@ -1556,7 +1556,7 @@ namespace SaveTracker.ViewModels
                 {
                     try
                     {
-                        var files = System.Text.Json.JsonSerializer.Deserialize<List<RcloneFileInfo>>(result.Output);
+                        var files = System.Text.Json.JsonSerializer.Deserialize<List<RcloneFileInfo>>(result.Output, JsonHelper.GetOptions());
                         if (files != null)
                         {
                             var validFiles = files.Where(f => !f.IsDir && !f.Name.StartsWith(".")).ToList();
@@ -1664,7 +1664,7 @@ namespace SaveTracker.ViewModels
                                                 // We can't easily "jump" back. We must copy the parsing logic here or extract it.
 
                                                 // For now, let's just parse it here to fix the UI
-                                                var files = System.Text.Json.JsonSerializer.Deserialize<List<RcloneFileInfo>>(result.Output);
+                                                var files = System.Text.Json.JsonSerializer.Deserialize<List<RcloneFileInfo>>(result.Output, JsonHelper.GetOptions());
                                                 if (files != null)
                                                 {
                                                     var validFiles = files.Where(f => !f.IsDir && !f.Name.StartsWith(".")).ToList();

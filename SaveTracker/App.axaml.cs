@@ -48,7 +48,8 @@ namespace SaveTracker
                 Config config;
                 try
                 {
-                    config = ConfigManagement.LoadConfigAsync().GetAwaiter().GetResult();
+                    // Use ConfigureAwait(false) to avoid deadlock on UI thread
+                    config = ConfigManagement.LoadConfigAsync().ConfigureAwait(false).GetAwaiter().GetResult();
                 }
                 catch (Exception ex)
                 {

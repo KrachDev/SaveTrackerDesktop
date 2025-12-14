@@ -61,7 +61,7 @@ namespace SaveTracker.Resources.SAVE_SYSTEM
                 }
 
                 string json = await File.ReadAllTextAsync(VERSION_PATH);
-                var versionInfo = JsonSerializer.Deserialize<VersionInfo>(json);
+                var versionInfo = JsonSerializer.Deserialize<VersionInfo>(json, JsonHelper.GetOptions());
                 return versionInfo ?? new VersionInfo();
             }
             catch (Exception ex)
@@ -85,10 +85,7 @@ namespace SaveTracker.Resources.SAVE_SYSTEM
                     Directory.CreateDirectory(dataDir);
                 }
 
-                var json = JsonSerializer.Serialize(versionInfo, new JsonSerializerOptions
-                {
-                    WriteIndented = true
-                });
+                var json = JsonSerializer.Serialize(versionInfo, JsonHelper.DefaultIndented);
 
                 await File.WriteAllTextAsync(VERSION_PATH, json);
             }
