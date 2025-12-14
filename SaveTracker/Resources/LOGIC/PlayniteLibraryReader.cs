@@ -37,20 +37,21 @@ namespace SaveTracker.Resources.LOGIC
 
         public List<PlayniteGame> ReadGamesFromDb(string localDbPath)
         {
+            // Propagate exceptions so the UI knows why it failed
+            byte[]? data = ReadFile(localDbPath);
+            if (data == null)
+            {
+                // If we failed to read, it's almost certainly a lock issue
+                throw new IOException($"Failed to read Playnite database at {localDbPath}. The file is locked (likely by Playnite) and Shadow Copy failed or is unavailable.");
+            }
+
             try
             {
-                byte[]? data = ReadFile(localDbPath);
-                if (data == null)
-                {
-                    DebugConsole.WriteError("Failed to read Playnite database file.");
-                    return new List<PlayniteGame>();
-                }
-
                 return Parse(data);
             }
             catch (Exception ex)
             {
-                DebugConsole.WriteException(ex, "Error reading games from Playnite DB");
+                DebugConsole.WriteException(ex, "Error parsing Playnite DB");
                 return new List<PlayniteGame>();
             }
         }
@@ -73,10 +74,9 @@ namespace SaveTracker.Resources.LOGIC
                 DebugConsole.WriteWarning($"Standard read failed: {ex.Message}");
             }
 
-            // Method 1.5: Copy to Temp (sometimes bypasses certain sharing violations)
+            // Method 1.5: Copy to Temp (using FileStream)
             try
             {
-                // DebugConsole.WriteInfo("Attempting to copy to temp..."); // Reduce verbosity
                 string tempPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString() + ".db");
 
                 // Allow read/write share during copy
@@ -94,7 +94,42 @@ namespace SaveTracker.Resources.LOGIC
             }
             catch (Exception ex)
             {
-                DebugConsole.WriteWarning($"Copy to temp failed: {ex.Message}");
+                DebugConsole.WriteWarning($"Copy to temp (stream) failed: {ex.Message}");
+            }
+
+            // Method 1.6: Simple File.Copy (OS optimized)
+            try
+            {
+                string tempPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString() + "_copy.db");
+                File.Copy(filename, tempPath, true);
+
+                byte[] data = File.ReadAllBytes(tempPath);
+                try { File.Delete(tempPath); } catch { }
+
+                _lastData = data;
+                return data;
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteWarning($"File.Copy failed: {ex.Message}");
+            }
+
+
+            // Method 1.7: WinAPI Direct Read (P/Invoke) - Bypasses some managed stream restrictions
+            // We try this BEFORE VSS because it might work without Admin privileges
+            try
+            {
+                DebugConsole.WriteInfo("Attempting WinAPI direct read...");
+                byte[]? data = ReadViaWinAPI(filename);
+                if (data != null)
+                {
+                    _lastData = data;
+                    return data;
+                }
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteWarning($"WinAPI read failed: {ex.Message}");
             }
 
             // Method 2: Volume Shadow Copy (Windows only)
@@ -119,7 +154,7 @@ namespace SaveTracker.Resources.LOGIC
             // Method 3: Use cached data if available
             if (_lastData != null)
             {
-                DebugConsole.WriteWarning("Using cached data from previous read.");
+                DebugConsole.WriteWarning("Using cached data from previous read as fallback.");
                 return _lastData;
             }
 
@@ -144,8 +179,132 @@ namespace SaveTracker.Resources.LOGIC
             if (data != null) return data;
 
             // Strategy C: PowerShell WMI (Robust fallback)
-            DebugConsole.WriteInfo("vssadmin failed/unsupported, attempting PowerShell WMI fallback...");
-            return ReadViaPowerShell(filename);
+            DebugConsole.WriteInfo("WinAPI direct read (in VSS mode) skipped, attempting PowerShell WMI fallback...");
+            data = ReadViaPowerShell(filename);
+            if (data != null) return data;
+
+            // Strategy D: RawCopy (Nuclear Option)
+            // Requires RawCopy.exe or RawCopy64.exe to be present in Resources/Tools/
+            DebugConsole.WriteInfo("Standard VSS failed, attempting RawCopy strategy...");
+            return ReadViaRawCopy(filename);
+        }
+
+        #region WinAPI P/Invoke
+        [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true, CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+        private static extern Microsoft.Win32.SafeHandles.SafeFileHandle CreateFile(
+            string lpFileName,
+            uint dwDesiredAccess,
+            uint dwShareMode,
+            IntPtr lpSecurityAttributes,
+            uint dwCreationDisposition,
+            uint dwFlagsAndAttributes,
+            IntPtr hTemplateFile);
+
+        private const uint GENERIC_READ = 0x80000000;
+        private const uint FILE_SHARE_READ = 0x1;
+        private const uint FILE_SHARE_WRITE = 0x2;
+        private const uint FILE_SHARE_DELETE = 0x4;
+        private const uint OPEN_EXISTING = 3;
+        private const uint FILE_FLAG_BACKUP_SEMANTICS = 0x02000000;
+
+        private byte[]? ReadViaWinAPI(string filename)
+        {
+            try
+            {
+                using var handle = CreateFile(
+                    filename,
+                    GENERIC_READ,
+                    FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                    IntPtr.Zero,
+                    OPEN_EXISTING,
+                    FILE_FLAG_BACKUP_SEMANTICS,
+                    IntPtr.Zero
+                );
+
+                if (handle.IsInvalid)
+                {
+                    // int error = System.Runtime.InteropServices.Marshal.GetLastWin32Error();
+                    // DebugConsole.WriteWarning($"WinAPI CreateFile failed with error {error}");
+                    return null;
+                }
+
+                using var fs = new FileStream(handle, FileAccess.Read);
+                using var ms = new MemoryStream();
+                fs.CopyTo(ms);
+                return ms.ToArray();
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteWarning($"WinAPI read strategy failed: {ex.Message}");
+                return null;
+            }
+        }
+        #endregion
+
+        private byte[]? ReadViaRawCopy(string filename)
+        {
+            try
+            {
+                // Look for RawCopy.exe in Resources/Tools/
+                string appDir = AppDomain.CurrentDomain.BaseDirectory;
+                // Adjust path based on where the executable is running relative to project structure if needed
+                // For deployed app, it might be in the same folder or a subfolder.
+                // Checking multiple common locations.
+                string[] candidates = new[]
+                {
+                    Path.Combine(appDir, "Resources", "Tools", "RawCopy.exe"),
+                    Path.Combine(appDir, "Resources", "Tools", "RawCopy64.exe"),
+                    Path.Combine(appDir, "RawCopy.exe"),
+                    Path.Combine(appDir, "RawCopy64.exe")
+                };
+
+                string? toolButton = candidates.FirstOrDefault(File.Exists);
+                if (toolButton == null)
+                {
+                    DebugConsole.WriteWarning("RawCopy executable not found. Skipping nuclear option.");
+                    return null;
+                }
+
+                string tempPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString() + ".db");
+
+                var startInfo = new ProcessStartInfo
+                {
+                    FileName = toolButton,
+                    // RawCopy syntax: /FileNamePath:"source" /OutputPath:"dest"
+                    Arguments = $"/FileNamePath:\"{filename}\" /OutputPath:\"{tempPath}\"",
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    // Note: RawCopy usually requires Admin. The app should be running as Admin for this to work generally.
+                };
+
+                DebugConsole.WriteInfo($"Executing RawCopy: {toolButton}");
+
+                using var process = Process.Start(startInfo);
+                if (process == null) return null;
+
+                process.WaitForExit();
+
+                if (File.Exists(tempPath))
+                {
+                    try
+                    {
+                        byte[] data = File.ReadAllBytes(tempPath);
+                        return data;
+                    }
+                    finally
+                    {
+                        try { File.Delete(tempPath); } catch { }
+                    }
+                }
+
+                DebugConsole.WriteWarning("RawCopy finished but output file was not found.");
+                return null;
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteWarning($"RawCopy strategy failed: {ex.Message}");
+                return null;
+            }
         }
 
         private byte[]? ReadViaEsentutl(string filename)
@@ -549,10 +708,12 @@ if ($s.ReturnValue -eq 0) {{
     {
         public string? Id { get; set; }
         public string? Name { get; set; }
+        public string? DisplayName { get; set; } // The refined name to show to user
         public string? InstallDirectory { get; set; }
         public string? ExecutablePath { get; set; }
         public string? GameId { get; set; }
         public bool IsInstalled { get; set; }
+        public bool IsSelected { get; set; } = true; // Default to selected
 
         // Helper to find exe if we only have directory
         public void TryFindExecutable()
@@ -577,6 +738,58 @@ if ($s.ReturnValue -eq 0) {{
                 }
             }
             catch { }
+        }
+
+        public void RefineNameFromExecutable()
+        {
+            if (string.IsNullOrEmpty(ExecutablePath) || !File.Exists(ExecutablePath))
+            {
+                DisplayName = Name;
+                return;
+            }
+
+            try
+            {
+                var info = FileVersionInfo.GetVersionInfo(ExecutablePath);
+                string? bestName = null;
+
+                // Try FileDescription first (usually the most accurate "pretty" name)
+                if (!string.IsNullOrWhiteSpace(info.FileDescription))
+                {
+                    bestName = info.FileDescription.Trim();
+                }
+                // Fallback to ProductName
+                else if (!string.IsNullOrWhiteSpace(info.ProductName))
+                {
+                    bestName = info.ProductName.Trim();
+                }
+
+                // Filter out bad names
+                if (!string.IsNullOrEmpty(bestName))
+                {
+                    string lower = bestName.ToLower();
+                    if (lower.Contains("installer") || lower.Contains("setup") || lower.Contains("update") ||
+                        lower.Equals("game") || lower.Equals("launcher") || lower.Equals("bootstrap"))
+                    {
+                        bestName = null;
+                    }
+                }
+
+                if (!string.IsNullOrEmpty(bestName))
+                {
+                    DisplayName = bestName;
+                    DebugConsole.WriteInfo($"Refined name for '{Name}': '{DisplayName}'");
+                }
+                else
+                {
+                    DisplayName = Name;
+                }
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteWarning($"Failed to refine name from exe: {ex.Message}");
+                DisplayName = Name;
+            }
         }
     }
 }

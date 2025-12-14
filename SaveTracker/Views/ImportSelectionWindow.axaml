@@ -3,11 +3,11 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:vm="using:SaveTracker.ViewModels"
-        mc:Ignorable="d" d:DesignWidth="600" d:DesignHeight="450"
+        mc:Ignorable="d" d:DesignWidth="600" d:DesignHeight="550"
         x:Class="SaveTracker.Views.ImportSelectionWindow"
         x:DataType="vm:ImportSelectionWindowViewModel"
         Title="Import Games"
-        Width="600" Height="450"
+        Width="600" Height="550"
         WindowStartupLocation="CenterOwner"
         CanResize="False"
         Background="#1E1E1E">
@@ -32,17 +32,25 @@
         <!-- Header -->
         <Border Grid.Row="0" Padding="20" BorderBrush="#3F3F46" BorderThickness="0,0,0,1">
             <StackPanel>
-                <TextBlock Text="Import Games" FontSize="20" FontWeight="Bold" Foreground="White"/>
-                <TextBlock Text="Select a launcher to import your library from." Foreground="#AAAAAA" Margin="0,5,0,0"/>
+                <TextBlock Text="Import Games" FontSize="20" FontWeight="Bold" Foreground="White"
+                           IsVisible="{Binding !IsSelectionMode}"/>
+                <TextBlock Text="Select Games" FontSize="20" FontWeight="Bold" Foreground="White"
+                           IsVisible="{Binding IsSelectionMode}"/>
+                
+                <TextBlock Text="Select a launcher to import your library from." Foreground="#AAAAAA" Margin="0,5,0,0"
+                           IsVisible="{Binding !IsSelectionMode}"/>
+                <TextBlock Text="Choose which games you want to import." Foreground="#AAAAAA" Margin="0,5,0,0"
+                           IsVisible="{Binding IsSelectionMode}"/>
             </StackPanel>
         </Border>
 
-        <!-- Launcher List -->
+        <!-- MODE 1: Launcher Selection -->
         <ListBox Grid.Row="1" 
                  ItemsSource="{Binding Launchers}" 
                  SelectedItem="{Binding SelectedLauncher}"
                  Background="Transparent"
-                 Margin="15,15,15,50">
+                 Margin="15"
+                 IsVisible="{Binding !IsSelectionMode}">
             <ListBox.ItemTemplate>
                 <DataTemplate>
                     <Grid ColumnDefinitions="50,*" Margin="5">
@@ -74,6 +82,27 @@
             </ListBox.ItemTemplate>
         </ListBox>
 
+        <!-- MODE 2: Game Selection -->
+        <ListBox Grid.Row="1"
+                 ItemsSource="{Binding DetectedGames}"
+                 Background="Transparent"
+                 Margin="15"
+                 SelectionMode="Multiple"
+                 IsVisible="{Binding IsSelectionMode}">
+            <ListBox.ItemTemplate>
+                <DataTemplate>
+                    <Grid ColumnDefinitions="30,*" Margin="5">
+                        <CheckBox Grid.Column="0" IsChecked="{Binding IsSelected}" VerticalAlignment="Center"/>
+                        
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="5,0,0,0">
+                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" Foreground="White" FontSize="14"/>
+                            <TextBlock Text="{Binding Path}" Foreground="#888" FontSize="11" TextTrimming="CharacterEllipsis"/>
+                        </StackPanel>
+                    </Grid>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+
         <!-- Status -->
         <TextBlock Grid.Row="2" Text="{Binding StatusText}" 
                    Foreground="#4EC9B0" HorizontalAlignment="Center" Margin="0,0,0,15"
@@ -89,15 +118,17 @@
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10">
                 <Button Command="{Binding CancelCommand}" Content="Cancel" 
                         Background="Transparent" BorderBrush="#555" BorderThickness="1"/>
+                
+                <Button Command="{Binding ImportCommand}" Content="Scan Library" 
+                        IsEnabled="{Binding !IsImporting}"
+                        Classes="Primary" Background="#0E639C" Foreground="White"
+                        IsVisible="{Binding !IsSelectionMode}"/>
+                
                 <Button Command="{Binding ImportCommand}" Content="Import Selected" 
                         IsEnabled="{Binding !IsImporting}"
-                        Classes="Primary" Background="#0E639C" Foreground="White"/>
+                        Classes="Primary" Background="#2E7D32" Foreground="White"
+                        IsVisible="{Binding IsSelectionMode}"/>
             </StackPanel>
         </Border>
     </Grid>
-
-    <Window.Resources>
-         <!-- Simple bool converter if needed, or use default provided by Avalonia usually -->
-         <!-- x:Static BoolConverters can be tricky in some versions, but usually works -->
-    </Window.Resources>
 </Window>

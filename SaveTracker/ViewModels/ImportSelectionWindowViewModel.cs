@@ -29,6 +29,13 @@ namespace SaveTracker.ViewModels
         [ObservableProperty]
         private string _statusText = "Select a launcher to import from.";
 
+        [ObservableProperty]
+        private bool _isSelectionMode; // False = Launcher Selection, True = Game Selection
+
+        [ObservableProperty]
+        private ObservableCollection<PlayniteGameWrapper> _detectedGames = new();
+
+        private List<PlayniteGame> _scannedGames = new(); // Raw results
         private readonly PlayniteLibraryReader _playniteReader;
 
         public ImportSelectionWindowViewModel()
@@ -43,7 +50,7 @@ namespace SaveTracker.ViewModels
             {
                 Name = "Playnite",
                 Description = "Import from Playnite Library",
-                IconPath = "/Assets/playnite_icon.png", // Need to ensure icon exists or use generic
+                IconPath = "/Assets/playnite_icon.png",
                 IsAvailable = true,
                 Type = LauncherType.Playnite
             });
@@ -71,56 +78,101 @@ namespace SaveTracker.ViewModels
         [RelayCommand]
         private async Task ImportAsync()
         {
+            if (IsSelectionMode)
+            {
+                await ConfirmImportAsync();
+                return;
+            }
+
+            // Step 1: Scan
             if (SelectedLauncher == null || !SelectedLauncher.IsAvailable) return;
 
             IsImporting = true;
-            StatusText = $"Importing from {SelectedLauncher.Name}...";
+            StatusText = $"Scanning {SelectedLauncher.Name} library...";
+            DetectedGames.Clear();
 
             try
             {
-                List<Game> importedGames = new();
+                List<PlayniteGame> rawGames = new();
 
                 if (SelectedLauncher.Type == LauncherType.Playnite)
                 {
-                    importedGames = await ImportFromPlayniteAsync();
+                    rawGames = await ScanPlayniteAsync();
                 }
 
-                if (importedGames.Count > 0)
+                if (rawGames.Count > 0)
                 {
-                    StatusText = $"Successfully imported {importedGames.Count} games.";
-                    await Task.Delay(1000); // Brief delay to show success
-                    OnCloseRequest?.Invoke(importedGames);
+                    _scannedGames = rawGames;
+                    foreach (var game in _scannedGames)
+                    {
+                        DetectedGames.Add(new PlayniteGameWrapper(game));
+                    }
+                    IsSelectionMode = true;
+                    StatusText = $"Found {DetectedGames.Count} games. Select games to import.";
                 }
                 else
                 {
                     StatusText = "No games found.";
-
                     if (SelectedLauncher.Type == LauncherType.Playnite)
                     {
-                        bool isAdmin = false;
-                        try
+                        if (System.Diagnostics.Process.GetProcessesByName("Playnite.DesktopApp").Length > 0)
                         {
-                            isAdmin = await AdminHelper.IsAdministrator();
+                            StatusText = "No games found. Playnite is running, which might be locking the file. Please close Playnite.";
                         }
-                        catch { }
-
-                        if (!isAdmin)
-                            StatusText += " File is locked. Please Restart SaveTracker as Administrator.";
-                        else
-                            StatusText += " File is locked even with Admin privileges. Please Close Playnite.";
                     }
                     IsImporting = false;
                 }
             }
             catch (Exception ex)
             {
-                StatusText = $"Error: {ex.Message}";
-                DebugConsole.WriteException(ex, "Import failed");
+                HandleImportError(ex);
                 IsImporting = false;
             }
         }
 
-        private async Task<List<Game>> ImportFromPlayniteAsync()
+        private async Task ConfirmImportAsync()
+        {
+            var selected = DetectedGames.Where(g => g.IsSelected).ToList();
+            if (selected.Count == 0)
+            {
+                StatusText = "No games selected.";
+                return;
+            }
+
+            IsImporting = true;
+            StatusText = $"Importing {selected.Count} games...";
+
+            try
+            {
+                var result = new List<Game>();
+                foreach (var wrapper in selected)
+                {
+                    var pg = wrapper.Game;
+                    result.Add(new Game
+                    {
+                        Name = pg.DisplayName ?? pg.Name ?? "Unknown", // Use refined name
+                        InstallDirectory = pg.InstallDirectory ?? "",
+                        ExecutablePath = pg.ExecutablePath ?? "",
+                        LastTracked = DateTime.MinValue,
+                    });
+                }
+
+                StatusText = $"Successfully imported {result.Count} games.";
+                await Task.Delay(1000);
+                OnCloseRequest?.Invoke(result);
+            }
+            catch (Exception ex)
+            {
+                StatusText = $"Error importing: {ex.Message}";
+                DebugConsole.WriteException(ex, "ConfirmImport failed");
+            }
+            finally
+            {
+                IsImporting = false;
+            }
+        }
+
+        private async Task<List<PlayniteGame>> ScanPlayniteAsync()
         {
             return await Task.Run(async () =>
             {
@@ -130,7 +182,6 @@ namespace SaveTracker.ViewModels
 
                 if (!File.Exists(dbPath))
                 {
-                    // Prompt user to find it via UI thread
                     await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(async () =>
                     {
                         var mainWindow = Avalonia.Application.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop ? desktop.MainWindow : null;
@@ -145,64 +196,98 @@ namespace SaveTracker.ViewModels
                             FileTypeFilter = new[] { new Avalonia.Platform.Storage.FilePickerFileType("Playnite Database") { Patterns = new[] { "*.db" } } }
                         });
 
-                        if (files.Count > 0)
-                        {
-                            dbPath = files[0].Path.LocalPath;
-                        }
-                        else
-                        {
-                            dbPath = string.Empty;
-                        }
+                        if (files.Count > 0) dbPath = files[0].Path.LocalPath;
+                        else dbPath = string.Empty;
                     });
                 }
 
                 if (string.IsNullOrEmpty(dbPath) || !File.Exists(dbPath))
                 {
-                    DebugConsole.WriteWarning("Playnite DB file not found or selected.");
-                    return new List<Game>();
+                    throw new FileNotFoundException("Playnite DB file not found or selected.");
                 }
 
                 // 2. Read Games
                 DebugConsole.WriteInfo($"Reading Playnite DB from: {dbPath}");
                 var playniteGames = _playniteReader.ReadGamesFromDb(dbPath);
 
-                // 3. Convert to SaveTracker Games
-                // Identify executables if missing
+                // 3. Post-Process (Find Exe & Refine Name)
                 foreach (var pg in playniteGames)
                 {
                     if (string.IsNullOrEmpty(pg.ExecutablePath) || pg.ExecutablePath == "N/A" || !File.Exists(pg.ExecutablePath))
                     {
                         pg.TryFindExecutable();
                     }
+
+                    // Refine Name using EXE Metadata
+                    pg.RefineNameFromExecutable();
                 }
 
                 // Filter valid ones
                 var validGames = playniteGames.Where(g => g.IsInstalled && !string.IsNullOrEmpty(g.ExecutablePath) && File.Exists(g.ExecutablePath)).ToList();
 
-                DebugConsole.WriteSuccess($"Found {validGames.Count} valid games out of {playniteGames.Count} total entries.");
-
-                // Convert
-                var result = new List<Game>();
-                foreach (var pg in validGames)
-                {
-                    result.Add(new Game
-                    {
-                        Name = pg.Name ?? "Unknown",
-                        InstallDirectory = pg.InstallDirectory ?? "",
-                        ExecutablePath = pg.ExecutablePath ?? "",
-                        LastTracked = DateTime.MinValue,
-                        // Could store source info here if Game model supported it
-                    });
-                }
-
-                return result;
+                DebugConsole.WriteSuccess($"Found {validGames.Count} valid games.");
+                return validGames;
             });
+        }
+
+        private void HandleImportError(Exception ex)
+        {
+            if (SelectedLauncher?.Type == LauncherType.Playnite &&
+              (ex is IOException || ex.Message.Contains("locked")))
+            {
+                bool isRunning = System.Diagnostics.Process.GetProcessesByName("Playnite.DesktopApp").Length > 0;
+                if (isRunning)
+                    StatusText = "Error: Playnite is running and locking the database. Please close Playnite.";
+                else
+                    StatusText = "Error: Database file is locked by another process.";
+            }
+            else
+            {
+                StatusText = $"Error: {ex.Message}";
+            }
+            DebugConsole.WriteException(ex, "Import failed");
         }
 
         [RelayCommand]
         private void Cancel()
         {
-            OnCloseRequest?.Invoke(null);
+            if (IsSelectionMode)
+            {
+                // Go back to launcher selection
+                IsSelectionMode = false;
+                DetectedGames.Clear();
+                StatusText = "Select a launcher to import from.";
+            }
+            else
+            {
+                OnCloseRequest?.Invoke(null);
+            }
+        }
+    }
+
+    public partial class PlayniteGameWrapper : ObservableObject
+    {
+        public PlayniteGame Game { get; }
+
+        public PlayniteGameWrapper(PlayniteGame game)
+        {
+            Game = game;
+        }
+
+        public string Name => Game.DisplayName ?? Game.Name ?? "Unknown";
+        public string Path => Game.InstallDirectory ?? "";
+
+        public bool IsSelected
+        {
+            get => Game.IsSelected;
+            set
+            {
+                if (Game.IsSelected != value)
+                {
+                    Game.IsSelected = value;
+                    OnPropertyChanged();
+                }
+            }
         }
     }
 
