@@ -84,9 +84,7 @@ namespace SaveTracker
                         DebugConsole.WriteException(ex, "GetExecutableDescription");
                     }
 
-                    ViewModel.NewGame.ExecutablePath = path;
-                    ViewModel.NewGame.InstallDirectory = directory ?? string.Empty;
-                    ViewModel.NewGame.Name = name;
+                    ViewModel.UpdateGameInfo(path, directory ?? string.Empty, name);
 
                     DebugConsole.WriteSuccess("Game info updated in ViewModel");
                 }

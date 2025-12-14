@@ -190,7 +190,10 @@ namespace SaveTracker.Resources.Logic
             ChecksumFileManager checksumManager,
             CancellationToken cancellationToken)
         {
+            DebugConsole.WriteInfo("DEBUG: ENTERING PerformUploadAsync");
+
             // Phase 1: Upload save files
+            DebugConsole.WriteInfo("DEBUG: Calling UploadSaveFilesAsync");
             await UploadSaveFilesAsync(
                 session,
                 fileManager.ValidFiles,
@@ -198,11 +201,13 @@ namespace SaveTracker.Resources.Logic
             );
 
             // Phase 2: Upload checksum file
+            DebugConsole.WriteInfo("DEBUG: Calling UploadChecksumFileAsync");
             await UploadChecksumFileAsync(
                 session,
                 checksumManager,
                 cancellationToken
             );
+            DebugConsole.WriteInfo("DEBUG: EXITING PerformUploadAsync");
         }
 
         #endregion
@@ -214,6 +219,7 @@ namespace SaveTracker.Resources.Logic
             List<string> validFiles,
             CancellationToken cancellationToken)
         {
+            DebugConsole.WriteInfo($"DEBUG: UploadSaveFilesAsync with {validFiles.Count} files");
             ReportProgress(new UploadProgressInfo
             {
                 Status = "Processing save files...",
@@ -231,6 +237,7 @@ namespace SaveTracker.Resources.Logic
                     session.Context.Game,
                     session.Context.Provider
                 );
+                DebugConsole.WriteInfo("DEBUG: ProcessBatch returned");
             }
             catch (Exception ex)
             {
@@ -261,7 +268,7 @@ namespace SaveTracker.Resources.Logic
                     file,
                     session.RemoteBasePath,
                     session.Stats,
-                    null,
+                    session.Context.Game,
                     session.Context.Provider
                 );
 
@@ -282,8 +289,14 @@ namespace SaveTracker.Resources.Logic
             ChecksumFileManager checksumManager,
             CancellationToken cancellationToken)
         {
+            DebugConsole.WriteInfo($"DEBUG: UploadChecksumFileAsync called. HasFile: {checksumManager.HasChecksumFile}");
+            DebugConsole.WriteInfo($"DEBUG: Checksum path: {checksumManager.ChecksumFilePath}");
+
             if (!checksumManager.HasChecksumFile)
+            {
+                DebugConsole.WriteWarning("DEBUG: No checksum file to upload.");
                 return;
+            }
 
             if (cancellationToken.IsCancellationRequested)
             {
@@ -303,8 +316,9 @@ namespace SaveTracker.Resources.Logic
                     checksumManager.ChecksumFilePath,
                     session.RemoteBasePath,
                     session.Stats,
-                    null,
-                    session.Context.Provider
+                    session.Context.Game,
+                    session.Context.Provider,
+                    true // Force upload
                 );
 
                 DebugConsole.WriteSuccess("✓ Checksum file uploaded successfully");

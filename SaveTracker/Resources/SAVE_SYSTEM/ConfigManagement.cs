@@ -16,15 +16,13 @@ namespace SaveTracker.Resources.SAVE_SYSTEM
     public class ConfigManagement
     {
         public static string BASE_PATH = AppContext.BaseDirectory;
-        public static string CONFIG_PATH;
-        public static string GAMESLIST_PATH;
+        public static string CONFIG_PATH = Path.Combine(BASE_PATH, "Data", "config.json");
+        public static string GAMESLIST_PATH = Path.Combine(BASE_PATH, "Data", "gameslist.json");
+        public static string CLOUD_GAMES_PATH = Path.Combine(BASE_PATH, "Data", "cloud_games.json");
+
 
         public ConfigManagement()
         {
-            // Define paths
-            CONFIG_PATH = Path.Combine(BASE_PATH, "Data", "config.json");
-            GAMESLIST_PATH = Path.Combine(BASE_PATH, "Data", "gameslist.json");
-
             // Create Data directory if it doesn't exist
             string dataDirectory = Path.Combine(BASE_PATH, "Data");
             if (!Directory.Exists(dataDirectory))
@@ -382,7 +380,41 @@ namespace SaveTracker.Resources.SAVE_SYSTEM
         }
 
         #endregion
+
+        #region Cloud Cache Methods
+
+        public static async Task SaveCloudGamesAsync(List<string> games)
+        {
+            try
+            {
+                var json = JsonSerializer.Serialize(games, new JsonSerializerOptions { WriteIndented = true });
+                await File.WriteAllTextAsync(CLOUD_GAMES_PATH, json);
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteException(ex, "Failed to save cloud games cache");
+            }
+        }
+
+        public static async Task<List<string>> LoadCloudGamesAsync()
+        {
+            try
+            {
+                if (!File.Exists(CLOUD_GAMES_PATH)) return new List<string>();
+                var json = await File.ReadAllTextAsync(CLOUD_GAMES_PATH);
+                if (string.IsNullOrWhiteSpace(json)) return new List<string>();
+                return JsonSerializer.Deserialize<List<string>>(json) ?? new List<string>();
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteException(ex, "Failed to load cloud games cache");
+                return new List<string>();
+            }
+        }
+
+        #endregion
     }
+
 }
 
 public class Game : INotifyPropertyChanged

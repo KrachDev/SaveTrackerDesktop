@@ -82,7 +82,8 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             string remoteBasePath,
             UploadStats stats,
             Game game = null,
-            CloudProvider? provider = null)
+            CloudProvider? provider = null,
+            bool force = false)
         {
             // Use provided game or fall back to constructor game
             game = game ?? _currentGame;
@@ -132,10 +133,14 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                     fileInfo.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss")
                 );
 
-                bool needsUpload = await ShouldUploadFileWithChecksum(
-                    filePath,
-                    gameDirectory
-                );
+                bool needsUpload = force;
+                if (!force)
+                {
+                    needsUpload = await ShouldUploadFileWithChecksum(
+                        filePath,
+                        gameDirectory
+                    );
+                }
 
                 if (!needsUpload)
                 {
@@ -969,6 +974,12 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             {
                 DebugConsole.WriteException(ex, "ProcessDownloadFile exception");
             }
+        }
+        public async Task<List<string>> ListCloudGameFolders(CloudProvider? provider = null)
+        {
+            CloudProvider effectiveProvider = provider ?? await GetEffectiveProvider(_currentGame);
+            string remoteBase = RclonePathHelper.GetRemotePath(effectiveProvider);
+            return await _transferService.ListCloudDirectories(remoteBase, effectiveProvider);
         }
     }
 }

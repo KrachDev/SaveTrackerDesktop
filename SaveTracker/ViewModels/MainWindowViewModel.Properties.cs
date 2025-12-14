@@ -2,6 +2,8 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using SaveTracker.Resources.SAVE_SYSTEM;
 using SaveTracker.Resources.HELPERS;
+using SaveTracker.Resources.HELPERS.Linux;
+
 using SaveTracker.Resources.Logic;
 using SaveTracker.Resources.Logic.RecloneManagement;
 using System;
@@ -37,6 +39,112 @@ namespace SaveTracker.ViewModels
 
         [ObservableProperty]
         private string _editableLinuxLaunchWrapper = "";
+
+        [ObservableProperty]
+        private string _selectedLauncher = "Custom";
+
+        [ObservableProperty]
+        private System.Collections.ObjectModel.ObservableCollection<string> _availableLaunchers = new();
+
+        partial void OnSelectedLauncherChanged(string value)
+        {
+            if (value == "Custom") return;
+
+            // Template logic
+            if (value == "System Wine")
+            {
+                EditableLinuxLaunchWrapper = "wine";
+            }
+            else if (value == "Heroic Games Launcher")
+            {
+                if (!EditableLinuxLaunchWrapper.Contains("heroic://"))
+                {
+                    string idPlaceholder = "GAME_ID_HERE";
+
+                    // Attempt to auto-detect ID and Prefix
+                    var detectedInfo = HeroicLibraryParser.FindGameInfo(EditableGameName);
+                    if (detectedInfo != null && !string.IsNullOrEmpty(detectedInfo.AppId))
+                    {
+                        idPlaceholder = detectedInfo.AppId;
+                        DebugConsole.WriteInfo($"Auto-detected Heroic Game ID: {detectedInfo.AppId}");
+
+                        if (!string.IsNullOrEmpty(detectedInfo.WinePrefix))
+                        {
+                            EditablePrefix = detectedInfo.WinePrefix;
+                            DebugConsole.WriteInfo($"Auto-detected Heroic Wine Prefix: {detectedInfo.WinePrefix}");
+                        }
+                    }
+
+                    EditableLinuxLaunchWrapper = $"heroic \"heroic://launch/{idPlaceholder}\"";
+                }
+            }
+            else if (value == "Lutris")
+            {
+                if (!EditableLinuxLaunchWrapper.Contains("lutris:"))
+                    EditableLinuxLaunchWrapper = "lutris lutris:rungame/GAME_SLUG_HERE";
+            }
+            else if (value == "Bottles")
+            {
+                if (!EditableLinuxLaunchWrapper.Contains("bottles-cli"))
+                    EditableLinuxLaunchWrapper = "bottles-cli run -b \"BOTTLE_NAME\" -p \"PROGRAM_NAME\"";
+            }
+        }
+
+        [RelayCommand]
+        private async Task BrowseForPrefixAsync()
+        {
+            var mainWindow = Avalonia.Application.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop
+               ? desktop.MainWindow
+               : null;
+
+            if (mainWindow == null) return;
+
+            var topLevel = TopLevel.GetTopLevel(mainWindow);
+            if (topLevel == null) return;
+
+            var folders = await topLevel.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+            {
+                Title = "Select Wine Prefix Folder",
+                AllowMultiple = false
+            });
+
+            if (folders.Count > 0)
+            {
+                EditablePrefix = folders[0].Path.LocalPath;
+            }
+        }
+
+
+        partial void OnEditableLinuxLaunchWrapperChanged(string value)
+        {
+            // If user types manually, switch dropdown to Custom unless it matches a known pure template
+            if (SelectedLauncher != "Custom")
+            {
+                // Simple heuristic: if they are typing, force Custom to avoid overwriting their work with template again
+                // But we must be careful not to trigger this when we programmatically set it.
+                // PropertyChanged is triggered by program set too.
+                // We'll rely on user explicit selection for templates. 
+                // If they edit the text, we flip to Custom.
+
+                // Actually, `OnSelectedLauncherChanged` sets `EditableLinuxLaunchWrapper`.
+                // If that triggers `OnEditableLinuxLaunchWrapperChanged`, we might flip back.
+                // We need a flag or check equality.
+
+                if (value == "wine" && SelectedLauncher == "System Wine") return;
+                // For complex templates, it's hard to match exactly.
+
+                // Better approach: Just let it be. If they edit, meaningful only if we track "Custom".
+                // Let's force "Custom" if they edit something that doesn't look like our standard auto-set.
+                // For now, let's mostly trust the dropdown.
+
+                // If they edit the wrapper and the dropdown says "System Wine" (which expects just "wine"), maybe switch to Custom.
+                if (SelectedLauncher == "System Wine" && value != "wine")
+                {
+                    SelectedLauncher = "Custom";
+                }
+            }
+        }
+
 
         // Read-only property for UI binding
         public bool IsLinux => System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Linux);
@@ -79,6 +187,32 @@ namespace SaveTracker.ViewModels
 
             // Trigger cloud check
             OnEditableGameNameChanged(game.Name);
+
+            // Populate Launchers
+            if (IsLinux)
+            {
+                var detected = LauncherDetector.GetAvailableLaunchers();
+                AvailableLaunchers.Clear();
+                foreach (var l in detected) AvailableLaunchers.Add(l);
+
+                // Try to deduce current selection
+                if (string.IsNullOrEmpty(EditableLinuxLaunchWrapper))
+                {
+                    // Default, maybe Wine if available, or Custom?
+                    // If empty, it uses standard detection in GameLauncher.cs.
+                    // We'll leave it as "Custom" or maybe "Default" if we want to be explicit.
+                    // But "Custom" is fine.
+                    SelectedLauncher = "Custom";
+                }
+                else
+                {
+                    if (EditableLinuxLaunchWrapper == "wine") SelectedLauncher = "System Wine";
+                    else if (EditableLinuxLaunchWrapper.Contains("heroic://")) SelectedLauncher = "Heroic Games Launcher";
+                    else if (EditableLinuxLaunchWrapper.Contains("lutris:")) SelectedLauncher = "Lutris";
+                    else if (EditableLinuxLaunchWrapper.Contains("bottles-cli")) SelectedLauncher = "Bottles";
+                    else SelectedLauncher = "Custom";
+                }
+            }
         }
 
 
@@ -313,10 +447,7 @@ namespace SaveTracker.ViewModels
             try
             {
                 var game = SelectedGame.Game;
-                var data = await ConfigManagement.GetGameData(game);
-                EditableGameName = game.Name;
-                EditableExecutablePath = game.ExecutablePath;
-                EditablePrefix = data?.DetectedPrefix ?? "";
+
 
                 // Trigger cloud check for the new name
                 if (!string.IsNullOrEmpty(EditableGameName))

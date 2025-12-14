@@ -31,10 +31,10 @@ namespace SaveTracker.Resources.HELPERS
                 var info = System.Diagnostics.FileVersionInfo.GetVersionInfo(path);
 
                 // First, try embedded metadata
-                if (!string.IsNullOrWhiteSpace(info.FileDescription))
-                    return info.FileDescription;
-                if (!string.IsNullOrWhiteSpace(info.ProductName))
-                    return info.ProductName;
+                if (IsValidName(info.FileDescription))
+                    return info.FileDescription!;
+                if (IsValidName(info.ProductName))
+                    return info.ProductName!;
             }
             catch
             {
@@ -50,21 +50,45 @@ namespace SaveTracker.Resources.HELPERS
                     {
                         foreach (var table in peFile.Resources.VsVersionInfo.StringFileInfo.StringTable)
                         {
-                            if (!string.IsNullOrWhiteSpace(table.ProductName)) return table.ProductName;
-                            if (!string.IsNullOrWhiteSpace(table.FileDescription)) return table.FileDescription;
+                            if (IsValidName(table.ProductName)) return table.ProductName!;
+                            if (IsValidName(table.FileDescription)) return table.FileDescription!;
                         }
                     }
                 }
             }
             catch { }
 
-            // Fallback: filename
+            // Fallback: filename or parent folder
             string name = Path.GetFileNameWithoutExtension(path);
+            var parentDir = Path.GetDirectoryName(path);
+            var parentDirName = Path.GetFileName(parentDir);
 
-            // Optional: insert spaces for CamelCase / PascalCase
-            name = System.Text.RegularExpressions.Regex.Replace(name, "(\\B[A-Z])", " $1");
+            // If filename is generic or too short, and we have a parent directory name, use that.
+            // Generic names: game, launch, start, setup, app, client
+            var lowerName = name.ToLowerInvariant();
+            var genericNames = new HashSet<string> { "game", "launch", "launcher", "start", "setup", "app", "client", "main", "play" };
+
+            if (!string.IsNullOrWhiteSpace(parentDirName) &&
+                (name.Length <= 3 || genericNames.Contains(lowerName) || lowerName.StartsWith("re2"))) // Specific fix for this user's case + generic
+            {
+                name = parentDirName;
+            }
+            else
+            {
+                // Optional: insert spaces for CamelCase / PascalCase ONLY if we kept the filename
+                name = System.Text.RegularExpressions.Regex.Replace(name, "(\\B[A-Z])", " $1");
+            }
 
             return name;
+        }
+
+        private static bool IsValidName(string? name)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return false;
+            // Filter out garbage characters often found in Linux read of PE headers
+            // The user saw "" which is \uFFFD replacement char
+            if (name.Contains('\uFFFD') || name.All(c => !char.IsLetterOrDigit(c))) return false;
+            return true;
         }
         public static ListBoxItem CreateGame(Game game)
         {

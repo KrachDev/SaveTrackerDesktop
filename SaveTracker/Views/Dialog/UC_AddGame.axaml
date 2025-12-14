@@ -4,240 +4,168 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d" d:DesignWidth="600" d:DesignHeight="700"
         x:Class="SaveTracker.UC_AddGame"
-         xmlns:vm="clr-namespace:SaveTracker.Views.Dialog"
+        xmlns:vm="clr-namespace:SaveTracker.Views.Dialog"
         x:DataType="vm:UC_AddGame_ViewModel"
         Title="Add Game"
-        Width="600" Height="700"
-        MinWidth="500" MinHeight="600"
+        Width="800" Height="600"
+        MinWidth="700" MinHeight="500"
         Background="#1E1E1E"
         WindowStartupLocation="CenterOwner"
-        CanResize="False">
-       
+        CanResize="False"
+        SystemDecorations="Full">
 
-    <Grid RowDefinitions="Auto,*,Auto">
+    <Grid Margin="20" RowDefinitions="Auto,*,Auto">
         
-        <!-- Header -->
-        <Border Grid.Row="0" Background="#2D2D30" Padding="20,15">
-            <StackPanel>
-                <TextBlock Text="Add New Game" FontSize="20" FontWeight="Bold" Foreground="White"/>
-                <TextBlock Text="Select a game executable or choose from running processes" 
-                          FontSize="12" Foreground="#858585" Margin="0,5,0,0"/>
-            </StackPanel>
-        </Border>
+        <!-- Header (Clean Style) -->
+        <StackPanel Grid.Row="0" Margin="0,0,0,20">
+            <TextBlock Text="Add New Game" FontSize="24" FontWeight="Bold" Foreground="White"/>
+            <TextBlock Text="Select a game executable or choose from running processes" 
+                      FontSize="13" Foreground="#858585" Margin="0,5,0,0"/>
+        </StackPanel>
 
         <!-- Main Content -->
-        <ScrollViewer Grid.Row="1">
-            <StackPanel Margin="20,20,20,100" Spacing="20">
-
-                <!-- Game Selection Method -->
-                <Border Background="#252526" Padding="15" CornerRadius="6">
-                    <StackPanel Spacing="15">
-                        <TextBlock Text="Select Game Method" FontSize="14" FontWeight="SemiBold" Foreground="White"/>
-                        
-                        <!-- Browse for Executable -->
-                        <Button HorizontalAlignment="Stretch" 
-                                Click="OnBrowseExecutable"
-                                Padding="15"
-                                Background="#0E639C"
-                                Height="60">
-                            <StackPanel Orientation="Horizontal" Spacing="10">
-                                <TextBlock Text="📁" FontSize="24" VerticalAlignment="Center"/>
-                                <StackPanel VerticalAlignment="Center">
-                                    <TextBlock Text="Browse for Executable" FontWeight="SemiBold" Foreground="White"/>
-                                    <TextBlock Text="Select the game's .exe file from your computer" 
-                                             FontSize="11" Foreground="#CCCCCC"/>
-                                </StackPanel>
-                            </StackPanel>
-                        </Button>
-
+        <Border Grid.Row="1" Margin="0,0,0,20">
+            <Grid ColumnDefinitions="*,20,*">
+                
+                <!-- LEFT COLUMN: Selection & Details -->
+                <StackPanel Grid.Column="0" Spacing="20">
                     
-                    </StackPanel>
-                </Border>
-
-                <!-- Selected Game Info -->
-                <Border Background="#252526" Padding="15" CornerRadius="6">
-                    <StackPanel Spacing="12">
-                        <TextBlock Text="Selected Game" FontSize="14" FontWeight="SemiBold" Foreground="White"/>
-                        
-                        <StackPanel Spacing="8">
-                            <TextBlock Name="ExePathbox" Text="Executable Path:" Foreground="#858585" FontSize="12"/>
-                            <TextBox Text="{Binding NewGame.ExecutablePath}"
-                                     IsReadOnly="True" 
-                                     Background="#1E1E1E"
-                                     BorderBrush="#555555"
-                                     Foreground="#CCCCCC"
-                                     Padding="10"/>
-                        </StackPanel>
-
-                        <StackPanel Spacing="8">
-                            <TextBlock Text="Game Name:" Foreground="#858585" FontSize="12"/>
-                            <TextBox Text="{Binding NewGame.Name}"
-                                     Watermark="Enter game name or auto-detect" 
-                                     Background="#3F3F46"
-                                     BorderBrush="#555555"
-                                     Foreground="White"
-                                     Padding="10"/>
-                            <TextBlock Text="💡 Name will be auto-detected from executable" 
-                                     FontSize="11" Foreground="#858585"/>
-                        </StackPanel>
-                    </StackPanel>
-                </Border>
-
-                <!-- Running Processes Panel (Initially Collapsed) -->
-                <Border Background="#252526" Padding="15" CornerRadius="6" IsVisible="False">
-                    <StackPanel Spacing="12">
-                        <Grid ColumnDefinitions="*,Auto">
-                            <TextBlock Text="Running Processes" FontSize="14" FontWeight="SemiBold" Foreground="White"/>
-                            <Button Grid.Column="1" Content="🔄 Refresh" Padding="8,4" FontSize="11"/>
-                        </Grid>
-                        
-                        <TextBox Watermark="🔍 Search processes..." 
-                                 Background="#1E1E1E"
-                                 BorderBrush="#555555"
-                                 Padding="8"
-                                 Margin="0,5"/>
-
-                        <!-- Process List -->
-                        <Border Background="#1E1E1E" 
-                                BorderBrush="#3F3F46" 
-                                BorderThickness="1" 
-                                CornerRadius="4"
-                                Height="200">
-                            <ScrollViewer Padding="0,0,0,50">
-                                <StackPanel Margin="5" Spacing="2">
-                                    <!-- Sample Process Items -->
-                                    <Border Background="#252526" 
-                                            Padding="10,8" 
-                                            CornerRadius="4"
-                                            Cursor="Hand">
-                                        <Grid ColumnDefinitions="Auto,*,Auto">
-                                            <TextBlock Grid.Column="0" Text="🎮" FontSize="16" Margin="0,0,10,0"/>
-                                            <StackPanel Grid.Column="1">
-                                                <TextBlock Text="GodOfWar.exe" FontWeight="SemiBold" Foreground="White"/>
-                                                <TextBlock Text="C:\Games\GodOfWar\GodOfWar.exe" 
-                                                         FontSize="10" Foreground="#858585"/>
-                                            </StackPanel>
-                                            <TextBlock Grid.Column="2" Text="PID: 1234" 
-                                                     FontSize="10" Foreground="#858585" VerticalAlignment="Center"/>
-                                        </Grid>
-                                    </Border>
-
-                                    <Border Background="#252526" 
-                                            Padding="10,8" 
-                                            CornerRadius="4"
-                                            Cursor="Hand">
-                                        <Grid ColumnDefinitions="Auto,*,Auto">
-                                            <TextBlock Grid.Column="0" Text="🎮" FontSize="16" Margin="0,0,10,0"/>
-                                            <StackPanel Grid.Column="1">
-                                                <TextBlock Text="Cyberpunk2077.exe" FontWeight="SemiBold" Foreground="White"/>
-                                                <TextBlock Text="D:\SteamLibrary\Cyberpunk2077.exe" 
-                                                         FontSize="10" Foreground="#858585"/>
-                                            </StackPanel>
-                                            <TextBlock Grid.Column="2" Text="PID: 5678" 
-                                                     FontSize="10" Foreground="#858585" VerticalAlignment="Center"/>
-                                        </Grid>
-                                    </Border>
-
-                                    <Border Background="#252526" 
-                                            Padding="10,8" 
-                                            CornerRadius="4"
-                                            Cursor="Hand">
-                                        <Grid ColumnDefinitions="Auto,*,Auto">
-                                            <TextBlock Grid.Column="0" Text="🎮" FontSize="16" Margin="0,0,10,0"/>
-                                            <StackPanel Grid.Column="1">
-                                                <TextBlock Text="EldenRing.exe" FontWeight="SemiBold" Foreground="White"/>
-                                                <TextBlock Text="C:\Program Files\EldenRing.exe" 
-                                                         FontSize="10" Foreground="#858585"/>
-                                            </StackPanel>
-                                            <TextBlock Grid.Column="2" Text="PID: 9012" 
-                                                     FontSize="10" Foreground="#858585" VerticalAlignment="Center"/>
-                                        </Grid>
-                                    </Border>
+                    <!-- Game Selection Method -->
+                    <Border Background="#252526" Padding="15" CornerRadius="6">
+                        <StackPanel Spacing="15">
+                            <TextBlock Text="Select Game Method" FontSize="14" FontWeight="SemiBold" Foreground="White"/>
+                            
+                            <!-- Browse for Executable -->
+                            <Button HorizontalAlignment="Stretch" 
+                                    Click="OnBrowseExecutable"
+                                    Padding="15"
+                                    Background="#0E639C"
+                                    Height="60">
+                                <StackPanel Orientation="Horizontal" Spacing="10">
+                                    <TextBlock Text="📁" FontSize="24" VerticalAlignment="Center"/>
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock Text="Browse for Executable" FontWeight="SemiBold" Foreground="White"/>
+                                        <TextBlock Text="Select the game's .exe file" 
+                                                 FontSize="11" Foreground="#CCCCCC"/>
+                                    </StackPanel>
                                 </StackPanel>
-                            </ScrollViewer>
-                        </Border>
+                            </Button>
+                        </StackPanel>
+                    </Border>
 
-                        <TextBlock Text="💡 Tip: Launch your game first to see it in this list" 
-                                 FontSize="11" Foreground="#858585"/>
-                    </StackPanel>
-                </Border>
-
-                <!-- Tracking Options -->
-                <Border Background="#252526" Padding="15" CornerRadius="6">
-                    <StackPanel Spacing="12">
-                        <TextBlock Text="Initial Tracking Options" FontSize="14" FontWeight="SemiBold" Foreground="White"/>
-                        
-                        <CheckBox Content="Enable automatic tracking" IsChecked="True" Foreground="#CCCCCC"/>
-                        <CheckBox Content="Auto-detect save file locations" IsChecked="True" Foreground="#CCCCCC"/>
-                        <CheckBox Content="Track configuration files" IsChecked="True" Foreground="#CCCCCC"/>
-                        <CheckBox Content="Use global cloud provider settings" IsChecked="True" Foreground="#CCCCCC"/>
-                        
-                        <TextBlock Text="ℹ️ You can customize these settings later in the Configuration tab" 
-                                 FontSize="11" Foreground="#4EC9B0" TextWrapping="Wrap" Margin="0,5,0,0"/>
-                    </StackPanel>
-                </Border>
-
-                <!-- Advanced Options (Collapsible) -->
-                <Border Background="#252526" Padding="15" CornerRadius="6">
-                    <StackPanel Spacing="12">
-                        <Grid ColumnDefinitions="*,Auto">
-                            <TextBlock Text="Advanced Options" FontSize="14" FontWeight="SemiBold" Foreground="White"/>
-                            <TextBlock Grid.Column="1" Text="▼" FontSize="12" Foreground="#858585" Cursor="Hand"/>
-                        </Grid>
-                        
-                        <!-- Collapsed by default, shown when expanded -->
-                        <StackPanel Spacing="10" IsVisible="False">
-                            <StackPanel Spacing="5">
-                                <TextBlock Text="Custom icon (optional):" Foreground="#858585" FontSize="12"/>
-                                <Grid ColumnDefinitions="*,Auto">
-                                    <TextBox Watermark="Leave empty to auto-detect" 
-                                             Background="#1E1E1E"
-                                             BorderBrush="#555555"
-                                             Foreground="#CCCCCC"
-                                             Padding="8"/>
-                                    <Button Grid.Column="1" Content="Browse..." Margin="5,0,0,0" Padding="10,6"/>
-                                </Grid>
+                    <!-- Selected Game Info -->
+                    <Border Background="#252526" Padding="15" CornerRadius="6">
+                        <StackPanel Spacing="12">
+                            <TextBlock Text="Selected Game Details" FontSize="14" FontWeight="SemiBold" Foreground="White"/>
+                            
+                            <!-- Executable Path -->
+                            <StackPanel Spacing="8">
+                                <TextBlock Name="ExePathbox" Text="Executable Path:" Foreground="#858585" FontSize="12"/>
+                                <TextBox Text="{Binding ExecutablePath}"
+                                         IsReadOnly="True" 
+                                         Background="#1E1E1E"
+                                         BorderBrush="#555555"
+                                         Foreground="#CCCCCC"
+                                         Padding="10"/>
                             </StackPanel>
 
-                            <CheckBox Content="Track launcher process instead of game" Foreground="#CCCCCC"/>
-                            <CheckBox Content="Enable verbose logging for this game" Foreground="#CCCCCC"/>
+                            <!-- Game Name with Cloud Check -->
+                            <StackPanel Spacing="8">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Text="Game Name (Cloud ID):" Foreground="#858585" FontSize="12"/>
+                                    <TextBlock Text="{Binding CloudCheckStatus}"
+                                              Foreground="{Binding CloudCheckColor}"
+                                              FontSize="11"
+                                              FontWeight="Bold"
+                                              VerticalAlignment="Bottom"/>
+                                </Grid>
+                                
+                                <AutoCompleteBox Text="{Binding GameName}"
+                                                 ItemsSource="{Binding AvailableCloudGames}"
+                                                 FilterMode="Contains"
+                                                 Watermark="Enter game name to check cloud..."
+                                                 MinimumPrefixLength="1">
+                                    <AutoCompleteBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding}" Padding="8,4"/>
+                                        </DataTemplate>
+                                    </AutoCompleteBox.ItemTemplate>
+                                </AutoCompleteBox>
+                                
+                                <TextBlock Text="💡 Typing an existing cloud game name will link this game to those backups." 
+                                         FontSize="11" Foreground="#858585" FontStyle="Italic" TextWrapping="Wrap"/>
+                            </StackPanel>
                         </StackPanel>
-                    </StackPanel>
-                </Border>
+                    </Border>
+                </StackPanel>
 
-            </StackPanel>
-        </ScrollViewer>
+                <!-- RIGHT COLUMN: Options & Processes -->
+                <StackPanel Grid.Column="2" Spacing="20">
+                    
+                    <!-- Initial Metadata Alert -->
+                    <Border Background="#2D2D30" 
+                            BorderBrush="#E3A008" 
+                            BorderThickness="1" 
+                            CornerRadius="6" 
+                            Padding="12">
+                         <Grid ColumnDefinitions="Auto,*">
+                            <TextBlock Text="⚠️" FontSize="20" VerticalAlignment="Center" Margin="0,0,15,0"/>
+                            <StackPanel VerticalAlignment="Center" Spacing="4">
+                                <TextBlock Text="Important: Game Name Matters!" 
+                                           FontWeight="Bold" 
+                                           Foreground="#E3A008" 
+                                           FontSize="13"/>
+                                <TextBlock Text="This name acts as the UNIQUE ID for cloud backups. Use the same name across devices." 
+                                           FontSize="11" 
+                                           Foreground="#CCCCCC" 
+                                           TextWrapping="Wrap"/>
+                            </StackPanel>
+                         </Grid>
+                    </Border>
 
-        <!-- Bottom Action Buttons -->
-        <Border Grid.Row="2" Background="#252526" Padding="20,15" BorderBrush="#3F3F46" BorderThickness="0,1,0,0">
-            <Grid ColumnDefinitions="*,Auto,Auto">
-                <TextBlock Text="💡 Game will be added to your tracking list" 
-                          VerticalAlignment="Center" 
-                          FontSize="11" 
-                          Foreground="#858585"/>
-                
-                <Button Grid.Column="1"
-                        Name="CancelBTN"
-                        Click="CancelBTN_Click"
-                        Content="Cancel" 
-                        Padding="20,10" 
-                        Margin="0,0,10,0"
-                        Background="#3F3F46"
-                        Foreground="#CCCCCC"
-                        Width="100"/>
-                
-                <Button Grid.Column="2" 
-                        Name="AddGameBTN"
-                        Click="AddGameBTN_Click"
-                        Content="Add Game" 
-                        Padding="20,10"
-                        Background="#0E639C"
-                        Foreground="White"
-                        Width="120"
-                        FontWeight="SemiBold"
-                        IsEnabled="True"/>
+                    <!-- Tracking Options -->
+                    <Border Background="#252526" Padding="15" CornerRadius="6">
+                        <StackPanel Spacing="12">
+                            <TextBlock Text="Initial Tracking Options" FontSize="14" FontWeight="SemiBold" Foreground="White"/>
+                            
+                            <CheckBox Content="Enable automatic tracking" IsChecked="True" Foreground="#CCCCCC"/>
+                            <CheckBox Content="Auto-detect save file locations" IsChecked="True" Foreground="#CCCCCC"/>
+                            <CheckBox Content="Track configuration files" IsChecked="True" Foreground="#CCCCCC"/>
+                            <CheckBox Content="Use global cloud provider settings" IsChecked="True" Foreground="#CCCCCC"/>
+                        </StackPanel>
+                    </Border>
+                    
+                     <!-- Running Processes Panel (Placeholder) -->
+                    <Border Background="#252526" Padding="15" CornerRadius="6" IsVisible="True" Opacity="0.6">
+                         <StackPanel Spacing="10">
+                            <TextBlock Text="Running Processes" FontSize="14" FontWeight="SemiBold" Foreground="White"/>
+                            <TextBlock Text="Coming soon feature..." Foreground="#858585" FontStyle="Italic"/>
+                         </StackPanel>
+                    </Border>
+
+                </StackPanel>
             </Grid>
         </Border>
+
+
+        <!-- Bottom Action Buttons (Clean Footer) -->
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10">
+             <Button Name="CancelBTN"
+                    Click="CancelBTN_Click"
+                    Content="Cancel" 
+                    Padding="20,10"
+                    Background="#3F3F46"
+                    Foreground="#CCCCCC"/>
+            
+            <Button Name="AddGameBTN"
+                    Click="AddGameBTN_Click"
+                    Content="Add Game" 
+                    Padding="20,10"
+                    Background="#0E639C"
+                    Foreground="White"
+                    FontWeight="SemiBold"
+                    IsEnabled="True"/>
+        </StackPanel>
 
     </Grid>
 
@@ -266,16 +194,18 @@
             <Setter Property="CornerRadius" Value="4"/>
         </Style>
         
-        <Style Selector="CheckBox">
+        <!-- AutoCompleteBox Styling -->
+         <Style Selector="AutoCompleteBox">
+            <Setter Property="Background" Value="#3F3F46"/>
             <Setter Property="Foreground" Value="#CCCCCC"/>
-        </Style>
-
-        <Style Selector="Border.ProcessItem">
-            <Setter Property="Background" Value="#252526"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="BorderBrush" Value="#555555"/>
+            <Setter Property="Padding" Value="8"/>
             <Setter Property="CornerRadius" Value="4"/>
         </Style>
-        <Style Selector="Border.ProcessItem:pointerover">
-            <Setter Property="Background" Value="#2D2D30"/>
+        
+        <Style Selector="CheckBox">
+            <Setter Property="Foreground" Value="#CCCCCC"/>
         </Style>
     </Window.Styles>
 

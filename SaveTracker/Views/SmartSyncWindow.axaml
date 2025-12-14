@@ -241,22 +241,41 @@
         </TabControl>
 
         <!-- Action Buttons -->
-        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
-            <Button Content="Download Cloud Save" 
-                    Command="{Binding DownloadCloudSaveCommand}"
-                    IsEnabled="{Binding CanDownload}"
-                    Classes="action"
-                    Background="#0E7C0E"/>
+        <!-- Action Buttons -->
+        <StackPanel Grid.Row="2" Orientation="Vertical" HorizontalAlignment="Right" Margin="0,20,0,0">
             
-            <Button Content="Upload Local Save" 
-                    Command="{Binding UploadLocalSaveCommand}"
-                    IsEnabled="{Binding CanUpload}"
-                    Classes="action"
-                    Background="#0078D4"/>
-            
-            <Button Content="Cancel" 
-                    Click="CancelButton_Click"
-                    Classes="action"/>
+            <!-- Auto-Action Info -->
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" IsVisible="{Binding IsAutoActionPending}" Margin="0,0,0,10">
+                <TextBlock Text="{Binding AutoActionCountdown}" 
+                           FontSize="16" 
+                           FontWeight="Bold" 
+                           Foreground="#4CC2FF" 
+                           VerticalAlignment="Center" 
+                           Margin="0,0,15,0"/>
+                <Button Content="Stop Timer" 
+                        Command="{Binding StopAutoActionCommand}" 
+                        Classes="action"
+                        Padding="10,5"
+                        Background="#9E2B25"/>
+            </StackPanel>
+
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Content="Download Cloud Save" 
+                        Command="{Binding DownloadCloudSaveCommand}"
+                        IsEnabled="{Binding CanDownload}"
+                        Classes="action"
+                        Background="#0E7C0E"/>
+                
+                <Button Content="Upload Local Save" 
+                        Command="{Binding UploadLocalSaveCommand}"
+                        IsEnabled="{Binding CanUpload}"
+                        Classes="action"
+                        Background="#0078D4"/>
+                
+                <Button Content="Cancel" 
+                        Click="CancelButton_Click"
+                        Classes="action"/>
+            </StackPanel>
         </StackPanel>
 
         <!-- Loading Overlay -->
