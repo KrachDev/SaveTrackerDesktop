@@ -798,23 +798,35 @@
                                             </StackPanel>
 
                                             <StackPanel Spacing="5" IsVisible="{Binding IsLinux}">
-                                                <TextBlock Text="Launch Arguments (Linux)" Foreground="#CCCCCC"/>
-                                                <TextBox Text="{Binding EditableLinuxArguments}"
-                                                         Watermark="e.g. -skipintro"/>
-                                            </StackPanel>
-
-                                            <StackPanel Spacing="5" IsVisible="{Binding IsLinux}">
-                                                <TextBlock Text="Launcher Wrapper" Foreground="#CCCCCC"/>
+                                                <TextBlock Text="Launcher" Foreground="#CCCCCC"/>
+                                                <ComboBox ItemsSource="{Binding AvailableLaunchers}"
+                                                          SelectedItem="{Binding SelectedLauncher}"
+                                                          HorizontalAlignment="Stretch"/>
+                                                
+                                                <TextBlock Text="Launcher Wrapper (Advanced)" Foreground="#CCCCCC" Margin="0,10,0,0"/>
                                                 <TextBox Text="{Binding EditableLinuxLaunchWrapper}"
-                                                         Watermark="e.g. gamemoderun wine"
-                                                         ToolTip.Tip="Wraps execution: [Wrapper] [WrapperArgs] &quot;[Exe]&quot; [Args]"/>
+                                                         Watermark="e.g. wine, heavy-wrapper, gamemoderun %command%"/>
+                                                <TextBlock Text="Wrapper command. Use templates from dropdown." 
+                                                           FontSize="10" 
+                                                           Foreground="#858585"/>
+
+                                                <TextBlock Text="Linux Arguments" Foreground="#CCCCCC" Margin="0,5,0,0"/>
+                                                <TextBox Text="{Binding EditableLinuxArguments}"
+                                                         Watermark="e.g. MANGOHUD=1"/>
                                             </StackPanel>
 
                                             <StackPanel Spacing="5" IsVisible="{Binding IsLinux}">
                                                 <TextBlock Text="Wine Prefix" Foreground="#CCCCCC"/>
-                                                <TextBox Text="{Binding EditablePrefix}"
-                                                         Watermark="Auto-detected or custom..."
-                                                         ToolTip.Tip="Leave empty to auto-detect."/>
+                                                <Grid ColumnDefinitions="*,Auto">
+                                                    <TextBox Grid.Column="0" 
+                                                             Text="{Binding EditablePrefix}"
+                                                             Watermark="Auto-detected or custom..."
+                                                             ToolTip.Tip="Leave empty to auto-detect."
+                                                             Margin="0,0,10,0"/>
+                                                    <Button Grid.Column="1"
+                                                            Command="{Binding BrowseForPrefixCommand}"
+                                                            Content="📂"/>
+                                                </Grid>
                                             </StackPanel>
                                         </StackPanel>
                                     </Border>

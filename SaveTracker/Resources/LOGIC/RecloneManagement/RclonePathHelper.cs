@@ -32,5 +32,13 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
         /// Gets the legacy config path (for migration)
         /// </summary>
         public static string LegacyConfigPath => Path.Combine(ToolsPath, "rclone.conf");
+
+        public static string GetRemotePath(CloudProvider provider)
+        {
+            var helper = new CloudProviderHelper();
+            string configName = helper.GetProviderConfigName(provider);
+            return $"{configName}:SaveTracker";
+        }
     }
 }
+

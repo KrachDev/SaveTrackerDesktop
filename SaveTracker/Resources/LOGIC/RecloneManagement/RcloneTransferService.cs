@@ -387,5 +387,56 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                 return new List<string>();
             }
         }
+        public async Task<List<string>> ListCloudDirectories(string remotePath, CloudProvider provider)
+        {
+            try
+            {
+                string configPath = RclonePathHelper.GetConfigPath(provider);
+                // "lsd" lists only directories
+                var result = await _executor.ExecuteRcloneCommand(
+                    $"lsd \"{remotePath}\" --config \"{configPath}\"",
+                    TimeSpan.FromSeconds(30),
+                    hideWindow: true
+                );
+
+                if (result.Success && !string.IsNullOrWhiteSpace(result.Output))
+                {
+                    var dirs = new List<string>();
+                    var lines = result.Output.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                    foreach (var line in lines)
+                    {
+                        // Output format: "          -1 2023-10-27 12:00:00        -1 FolderName"
+                        // lsd output usually ends with the folder name
+                        // We need to parse the last part
+                        var parts = line.Trim().Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                        if (parts.Length > 0)
+                        {
+                            // The folder name is the last part, but it might contain spaces, so we need to be careful with Split.
+                            // simpler approach: look for the last index of "-1 " or similar, or just take substring.
+                            // Standard lsd output: <size> <date> <time> <count> <name>
+                            // Example:           -1 2025-12-14 14:00:00        -1 Game Name
+                            // The first 4 columns are: size(-1), date, time, count(-1)
+
+                            // Let's try to match 4 columns then the rest is name
+                            if (parts.Length >= 5)
+                            {
+                                // Reconstruct name from index 4 onwards
+                                string name = string.Join(" ", parts.Skip(4));
+                                dirs.Add(name);
+                            }
+                        }
+                    }
+                    return dirs;
+                }
+
+                return new List<string>();
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteException(ex, "Failed to list cloud directories");
+                return new List<string>();
+            }
+        }
     }
 }
+

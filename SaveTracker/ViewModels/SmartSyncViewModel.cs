@@ -110,10 +110,11 @@ namespace SaveTracker.ViewModels
         public ObservableCollection<FileComparisonItem> FileComparisonList { get; } = new();
         public ObservableCollection<string> OperationLog { get; } = new();
 
-        public SmartSyncViewModel(Game game, SmartSyncMode mode)
+        public SmartSyncViewModel(Game game, SmartSyncMode mode, SmartSyncService.ProgressComparison? preCalculated = null)
         {
             _game = game;
             _mode = mode;
+            _comparison = preCalculated;
 
             GameName = game.Name;
 
@@ -164,7 +165,10 @@ namespace SaveTracker.ViewModels
                         _cachedCloudData = await DownloadCloudChecksumOnce(provider);
 
                         // comparison logic - now uses cached data
-                        _comparison = await smartSync.CompareProgressAsync(_game, TimeSpan.Zero, provider);
+                        if (_comparison == null)
+                        {
+                            _comparison = await smartSync.CompareProgressAsync(_game, TimeSpan.Zero, provider, _cachedCloudData);
+                        }
 
                         await UpdateComparisonUIAsync(_comparison);
 
@@ -179,11 +183,10 @@ namespace SaveTracker.ViewModels
 
                 await Dispatcher.UIThread.InvokeAsync(() => CalculateSuggestion());
 
-                // Auto-start upload if in GameExit mode
-                if (_mode == SmartSyncMode.GameExit && CanUpload)
+                // Auto-Decision with 5s Timer found in InitializeAsync
+                if (_mode == SmartSyncMode.GameExit || _mode == SmartSyncMode.GameLaunch)
                 {
-                    await Dispatcher.UIThread.InvokeAsync(() => SelectedTabIndex = 2); // Switch to Progress tab
-                    _ = UploadLocalSaveAsync(); // Fire and forget
+                    StartAutoActionTimer();
                 }
             }
             catch (Exception ex)
@@ -398,6 +401,7 @@ namespace SaveTracker.ViewModels
         [RelayCommand]
         private async Task DownloadCloudSaveAsync()
         {
+            StopAutoAction(); // Cancels timer if running
             try
             {
                 await Dispatcher.UIThread.InvokeAsync(() =>
@@ -546,6 +550,7 @@ namespace SaveTracker.ViewModels
         [RelayCommand]
         private async Task UploadLocalSaveAsync()
         {
+            StopAutoAction(); // Cancels timer if running
             try
             {
                 await Dispatcher.UIThread.InvokeAsync(() =>
@@ -674,6 +679,31 @@ namespace SaveTracker.ViewModels
 
                         await rcloneOps.ProcessBatch(trackedFiles, remotePath, stats, _game, config.CloudConfig.Provider, progress);
 
+                        // Explicitly upload checksum file
+                        await Dispatcher.UIThread.InvokeAsync(() =>
+                        {
+                            OperationLog.Add($"[{DateTime.Now:HH:mm:ss}] Uploading checksum file...");
+                            CurrentFile = ".savetracker_checksums.json";
+                            FileProgress = "";
+                        });
+
+                        string checksumFile = checksumService.GetChecksumFilePath(_game.InstallDirectory);
+                        if (File.Exists(checksumFile))
+                        {
+                            await rcloneOps.ProcessFile(
+                                checksumFile,
+                                remotePath,
+                                stats,
+                                _game,
+                                config.CloudConfig.Provider,
+                                true // Force upload
+                            );
+                            await Dispatcher.UIThread.InvokeAsync(() =>
+                           {
+                               OperationLog.Add($"[{DateTime.Now:HH:mm:ss}] ✓ Checksum file uploaded");
+                           });
+                        }
+
                         await Dispatcher.UIThread.InvokeAsync(() =>
                         {
                             if (stats.FailedCount == 0)
@@ -751,6 +781,76 @@ namespace SaveTracker.ViewModels
             var invalidChars = System.IO.Path.GetInvalidFileNameChars()
                 .Concat(new[] { '/', '\\', ':', '*', '?', '"', '<', '>', '|' });
             return invalidChars.Aggregate(gameName, (current, c) => current.Replace(c, '_')).Trim();
+        }
+
+        // Auto-Action Logic
+        [ObservableProperty]
+        private string _autoActionCountdown = "";
+
+        [ObservableProperty]
+        private bool _isAutoActionPending;
+
+        [ObservableProperty]
+        private bool _isAutoActionPaused;
+
+        private DispatcherTimer? _autoActionTimer;
+        private int _secondsRemaining = 5;
+
+        private void StartAutoActionTimer()
+        {
+            if (SuggestedAction == "Skip") return;
+
+            IsAutoActionPending = true;
+            _secondsRemaining = 5;
+            UpdateCountdownText();
+
+            _autoActionTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromSeconds(1)
+            };
+            _autoActionTimer.Tick += AutoActionTimer_Tick;
+            _autoActionTimer.Start();
+        }
+
+        private void UpdateCountdownText()
+        {
+            if (_secondsRemaining > 0)
+                AutoActionCountdown = $"Auto-{SuggestedAction.ToLower()} in {_secondsRemaining}s...";
+            else
+                AutoActionCountdown = "Starting...";
+        }
+
+        private async void AutoActionTimer_Tick(object? sender, EventArgs e)
+        {
+            if (IsAutoActionPaused) return;
+
+            _secondsRemaining--;
+            UpdateCountdownText();
+
+            if (_secondsRemaining <= 0)
+            {
+                _autoActionTimer?.Stop();
+                IsAutoActionPending = false;
+
+                // Execute Action
+                if (SuggestedAction == "Download")
+                {
+                    await DownloadCloudSaveAsync();
+                }
+                else if (SuggestedAction == "Upload")
+                {
+                    await UploadLocalSaveAsync();
+                }
+            }
+        }
+
+        [RelayCommand]
+        private void StopAutoAction()
+        {
+            _autoActionTimer?.Stop();
+            IsAutoActionPending = false;
+            IsAutoActionPaused = true;
+            AutoActionCountdown = "Auto-action cancelled";
         }
 
         private static string GetProviderConfigName(CloudProvider provider)

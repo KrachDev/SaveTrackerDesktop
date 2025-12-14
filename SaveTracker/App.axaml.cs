@@ -45,7 +45,16 @@ namespace SaveTracker
             if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
             {
                 // Load Config
-                var config = ConfigManagement.LoadConfigAsync().GetAwaiter().GetResult();
+                Config config;
+                try
+                {
+                    config = ConfigManagement.LoadConfigAsync().GetAwaiter().GetResult();
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[ERROR] Failed to load config on startup: {ex.Message}");
+                    config = new Config();
+                }
 
                 // Apply Debug Console Setting
                 Console.WriteLine($"[DEBUG] Loaded Config ShowDebugConsole: {config.ShowDebugConsole}");

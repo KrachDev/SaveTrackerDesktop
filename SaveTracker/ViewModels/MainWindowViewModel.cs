@@ -265,6 +265,10 @@ namespace SaveTracker.ViewModels
                 {
                     _ = CheckForUpdatesAsync();
                 }
+
+                // Update Cloud Game Cache in background
+                _ = UpdateCloudGameCacheAsync();
+
             }
             catch (Exception ex)
             {
@@ -821,7 +825,7 @@ namespace SaveTracker.ViewModels
                         {
                             DebugConsole.WriteInfo($"Smart Sync: Cloud save is newer ({comparison.Difference}). Opening Smart Sync window...");
 
-                            var vm = new SmartSyncViewModel(game, SmartSyncMode.Launch);
+                            var vm = new SmartSyncViewModel(game, SmartSyncMode.GameLaunch, comparison);
                             if (OnSmartSyncRequested != null)
                             {
                                 await OnSmartSyncRequested.Invoke(vm);
@@ -978,14 +982,29 @@ namespace SaveTracker.ViewModels
                 await ConfigManagement.SaveGameAsync(game);
 
                 // Smart Sync Check
+                // Smart Sync Check
                 var gameData = await ConfigManagement.GetGameData(game);
                 if (gameData?.EnableSmartSync ?? true)
                 {
-                    DebugConsole.WriteInfo("Opening Smart Sync window (Exit Mode)...");
-                    var vm = new SmartSyncViewModel(game, SmartSyncMode.GameExit);
-                    if (OnSmartSyncRequested != null)
+                    DebugConsole.WriteInfo("Checking Smart Sync status before opening window...");
+                    var smartSync = new SmartSyncService();
+                    var provider = await smartSync.GetEffectiveProvider(game);
+
+                    // Hidden check with 30s threshold
+                    var comparison = await smartSync.CompareProgressAsync(game, TimeSpan.FromSeconds(30), provider);
+
+                    if (comparison.Status == SmartSyncService.ProgressStatus.Similar)
                     {
-                        await OnSmartSyncRequested.Invoke(vm);
+                        DebugConsole.WriteSuccess("Smart Sync: already synced. Skipping window.");
+                    }
+                    else
+                    {
+                        DebugConsole.WriteInfo($"Smart Sync Status: {comparison.Status}. Opening window...");
+                        var vm = new SmartSyncViewModel(game, SmartSyncMode.GameExit, comparison);
+                        if (OnSmartSyncRequested != null)
+                        {
+                            await OnSmartSyncRequested.Invoke(vm);
+                        }
                     }
                 }
                 else
@@ -2124,5 +2143,48 @@ namespace SaveTracker.ViewModels
         }
 
         #endregion
+        private async Task UpdateCloudGameCacheAsync()
+        {
+            try
+            {
+                DebugConsole.WriteInfo("Starting background cloud game cache update...");
+                // Check if Rclone is ready
+                var rcloneInstaller = new RcloneInstaller();
+                var config = await ConfigManagement.LoadConfigAsync();
+
+                CloudProvider provider = CloudProvider.GoogleDrive;
+                if (config?.CloudConfig != null)
+                {
+                    provider = config.CloudConfig.Provider;
+                }
+
+                var checkConfig = new CloudConfig { Provider = provider };
+
+                if (await rcloneInstaller.RcloneCheckAsync(provider))
+                {
+                    // Fetch list
+                    var games = await _rcloneFileOperations.ListCloudGameFolders(provider);
+                    if (games != null && games.Count > 0)
+                    {
+                        DebugConsole.WriteSuccess($"Cloud cache updated: Found {games.Count} games.");
+                        await ConfigManagement.SaveCloudGamesAsync(games);
+                    }
+                    else
+                    {
+                        DebugConsole.WriteInfo("Cloud cache update: No games found or empty list.");
+                    }
+                }
+                else
+                {
+                    DebugConsole.WriteInfo("Skipping cloud cache update: Rclone not configured.");
+                }
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteException(ex, "Failed to update cloud game cache");
+            }
+        }
+
     }
 }
+

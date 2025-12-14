@@ -41,7 +41,16 @@ namespace SaveTracker.Views
         protected override async void OnOpened(EventArgs e)
         {
             base.OnOpened(e);
-            DebugConsole.WriteInfo("MainWindow OnOpened fired.");
+
+            // Force window visibility on startup
+            if (WindowState == WindowState.Minimized)
+            {
+                WindowState = WindowState.Normal;
+            }
+            this.Show();
+            this.Activate();
+
+            DebugConsole.WriteInfo("MainWindow OnOpened fired - Forced Visibility.");
 
             bool isAdmin = IsAdministrator();
             DebugConsole.WriteInfo($"IsAdministrator: {isAdmin}");

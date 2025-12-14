@@ -6,11 +6,6 @@ namespace SaveTracker.Models
     public enum SmartSyncMode
     {
         /// <summary>
-        /// Shown before launching a game
-        /// </summary>
-        Launch,
-
-        /// <summary>
         /// Shown when user clicks "Sync Now" button
         /// </summary>
         ManualSync,
@@ -18,6 +13,11 @@ namespace SaveTracker.Models
         /// <summary>
         /// Shown after game exits with auto-upload
         /// </summary>
-        GameExit
+        GameExit,
+
+        /// <summary>
+        /// Shown before game launch
+        /// </summary>
+        GameLaunch
     }
 }

@@ -1,26 +1,172 @@
-﻿using System.ComponentModel;
-using System.Runtime.CompilerServices;
+﻿using CommunityToolkit.Mvvm.ComponentModel;
+using SaveTracker.Resources.HELPERS;
+using SaveTracker.Resources.Logic;
+using SaveTracker.Resources.Logic.RecloneManagement;
+using SaveTracker.Resources.SAVE_SYSTEM;
+using System;
+using System.Collections.ObjectModel;
+using System.IO;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace SaveTracker.Views.Dialog
 {
-    public class UC_AddGame_ViewModel : INotifyPropertyChanged
+    public partial class UC_AddGame_ViewModel : ObservableObject
     {
+        [ObservableProperty]
         private Game _newGame = new Game();
-        public Game NewGame
+
+        // Cloud Verification Properties
+        [ObservableProperty]
+        private string _cloudCheckStatus = "";
+
+        [ObservableProperty]
+        private string _cloudCheckColor = "#858585"; // Default Gray
+
+        [ObservableProperty]
+        private ObservableCollection<string> _availableCloudGames = new();
+
+        private CancellationTokenSource? _cloudCheckCts;
+        private readonly RcloneExecutor _rcloneExecutorInternal = new RcloneExecutor();
+        private readonly CloudProviderHelper _providerHelper = new CloudProviderHelper();
+
+        public UC_AddGame_ViewModel()
         {
-            get => _newGame;
-            set
+            // Initialize suggestions in background
+            _ = LoadCloudGameSuggestionsAsync();
+        }
+
+        // Hook into name changes to trigger cloud check
+        partial void OnNewGameChanged(Game value)
+        {
+            // If the whole game object changes, we might need to verify the name if it's set
+            if (!string.IsNullOrEmpty(value.Name))
             {
-                _newGame = value;
-                OnPropertyChanged();
+                TriggerGameNameCheck(value.Name);
             }
         }
 
-        public event PropertyChangedEventHandler? PropertyChanged;
+        // We can't easily hook into properties of the nested NewGame object via ObservableProperty
+        // So we will modify the UI to bind to a proxy property or handle the text changed event.
+        // For simplicity in this refactor, I'll add a method that the View calls, or better, 
+        // expose the Name as a direct property here that syncs with NewGame.Name.
 
-        protected void OnPropertyChanged([CallerMemberName] string? propertyName = null)
+        [ObservableProperty]
+        private string _gameName = "";
+
+        [ObservableProperty]
+        private string _executablePath = "";
+
+        [ObservableProperty]
+        private string _installDirectory = "";
+
+        partial void OnGameNameChanged(string value)
         {
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+            NewGame.Name = value;
+            TriggerGameNameCheck(value);
+        }
+
+        partial void OnExecutablePathChanged(string value)
+        {
+            NewGame.ExecutablePath = value;
+        }
+
+        partial void OnInstallDirectoryChanged(string value)
+        {
+            NewGame.InstallDirectory = value;
+        }
+
+        // Method to update generic properties from external (e.g. file picker)
+        public void UpdateGameInfo(string path, string dir, string name)
+        {
+            ExecutablePath = path;
+            InstallDirectory = dir;
+            GameName = name; // This triggers verification
+        }
+
+        private void TriggerGameNameCheck(string name)
+        {
+            _cloudCheckCts?.Cancel();
+            _cloudCheckCts = new CancellationTokenSource();
+            var token = _cloudCheckCts.Token;
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await Task.Delay(500, token); // Debounce
+                    if (token.IsCancellationRequested) return;
+                    await CheckCloudGameExistence(name);
+                }
+                catch (TaskCanceledException) { }
+            }, token);
+        }
+
+        private Task CheckCloudGameExistence(string gameName)
+        {
+            if (string.IsNullOrWhiteSpace(gameName))
+            {
+                UpdateStatus("", "#858585");
+                return Task.CompletedTask;
+            }
+
+            try
+            {
+                // Instant check against local cache
+                string sanitizedName = SanitizeGameNameForCheck(gameName);
+
+                // Case-insensitive check
+                bool exists = AvailableCloudGames.Any(g => g.Equals(gameName, StringComparison.OrdinalIgnoreCase)
+                                                        || g.Equals(sanitizedName, StringComparison.OrdinalIgnoreCase));
+
+                if (exists)
+                    UpdateStatus("✓ Found in Cloud (Will Sync)", "#4CC9B0"); // Green-ish
+                else
+                    UpdateStatus("New to Cloud", "#858585"); // Gray
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteException(ex, "Cloud check error");
+                UpdateStatus("Error", "#C42B1C");
+            }
+            return Task.CompletedTask;
+        }
+
+
+        private void UpdateStatus(string text, string color)
+        {
+            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            {
+                CloudCheckStatus = text;
+                CloudCheckColor = color;
+            });
+        }
+
+        private async Task LoadCloudGameSuggestionsAsync()
+        {
+            try
+            {
+                // Load from local cache (FAST)
+                var cachedGames = await ConfigManagement.LoadCloudGamesAsync();
+
+                Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                {
+                    AvailableCloudGames.Clear();
+                    foreach (var g in cachedGames) AvailableCloudGames.Add(g);
+                });
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteException(ex, "Failed to load cloud suggestions from cache");
+            }
+        }
+
+        private static string SanitizeGameNameForCheck(string gameName)
+        {
+            if (string.IsNullOrWhiteSpace(gameName)) return "UnknownGame";
+            var invalidChars = Path.GetInvalidFileNameChars().Concat(new[] { '/', '\\', ':', '*', '?', '"', '<', '>', '|' });
+            return invalidChars.Aggregate(gameName, (current, c) => current.Replace(c, '_')).Trim();
         }
     }
 }

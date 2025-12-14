@@ -51,10 +51,12 @@ namespace SaveTracker.Resources.Logic
         /// <summary>
         /// Compare local and cloud PlayTime to determine which is ahead
         /// </summary>
+
         public async Task<ProgressComparison> CompareProgressAsync(
             Game game,
             TimeSpan threshold,
-            CloudProvider? provider = null)
+            CloudProvider? provider = null,
+            GameUploadData? cachedCloudData = null)
         {
             try
             {
@@ -62,7 +64,7 @@ namespace SaveTracker.Resources.Logic
                 var localPlayTime = await GetLocalPlayTimeAsync(game);
 
                 // Get cloud PlayTime
-                var cloudPlayTime = await GetCloudPlayTimeAsync(game, provider);
+                var cloudPlayTime = await GetCloudPlayTimeAsync(game, provider, cachedCloudData);
 
                 // Cloud doesn't exist
                 if (cloudPlayTime == null)
@@ -194,10 +196,16 @@ namespace SaveTracker.Resources.Logic
         /// <summary>
         /// Download and read cloud checksum file to get PlayTime
         /// </summary>
-        private async Task<TimeSpan?> GetCloudPlayTimeAsync(Game game, CloudProvider? provider = null)
+        private async Task<TimeSpan?> GetCloudPlayTimeAsync(Game game, CloudProvider? provider = null, GameUploadData? cachedCloudData = null)
         {
             try
             {
+                if (cachedCloudData != null)
+                {
+                    DebugConsole.WriteInfo($"Using cached cloud data. PlayTime: {FormatTimeSpan(cachedCloudData.PlayTime)}");
+                    return cachedCloudData.PlayTime;
+                }
+
                 var effectiveProvider = provider ?? await GetEffectiveProvider(game);
                 var cloudProviderHelper = new CloudProviderHelper();
                 var remoteName = cloudProviderHelper.GetProviderConfigName(effectiveProvider);
