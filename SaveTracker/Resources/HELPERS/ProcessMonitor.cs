@@ -17,7 +17,7 @@ namespace SaveTracker.Resources.HELPERS
         private readonly string _installDirectory;
         // Replace ConcurrentHashSet with ConcurrentDictionary
         private readonly ConcurrentDictionary<int, byte> _trackedProcessIds = new();
-        private readonly ReaderWriterLockSlim _lock = new ReaderWriterLockSlim();
+        private readonly object _lock = new object();
 
 
         public ProcessMonitor(string installDirectory)
@@ -360,7 +360,6 @@ namespace SaveTracker.Resources.HELPERS
             {
                 _trackedProcessIds.Clear();
             }
-            _lock?.Dispose();
         }
     }
 }

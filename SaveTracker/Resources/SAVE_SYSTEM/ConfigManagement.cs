@@ -313,12 +313,25 @@ namespace SaveTracker.Resources.SAVE_SYSTEM
             {
                 if (!File.Exists(CONFIG_PATH))
                 {
+                    DebugConsole.WriteWarning("[PERSISTENCE] Config file not found, returning default.");
                     return new Config();
                 }
 
                 var json = await File.ReadAllTextAsync(CONFIG_PATH).ConfigureAwait(false);
+                // DebugConsole.WriteDebug($"[PERSISTENCE] Read JSON: {json}"); // Too verbose maybe?
+
                 var config = JsonSerializer.Deserialize<Config>(json, JsonHelper.DefaultCaseInsensitive);
 
+                if (config?.CloudConfig != null)
+                {
+                    DebugConsole.WriteDebug($"[PERSISTENCE] Loaded Config. Provider: {config.CloudConfig.Provider} ({(int)config.CloudConfig.Provider})");
+                }
+                else
+                {
+                    DebugConsole.WriteWarning("[PERSISTENCE] Loaded Config but CloudConfig is null/default.");
+                }
+
+                // Removed forced TrackReads enable as per user request
                 return config ?? new Config();
             }
             catch (Exception ex)
@@ -348,6 +361,10 @@ namespace SaveTracker.Resources.SAVE_SYSTEM
             try
             {
                 var json = JsonSerializer.Serialize(config, JsonHelper.DefaultIndented);
+
+                // DEBUG LOGGING FOR PERSISTENCE
+                DebugConsole.WriteDebug($"[PERSISTENCE] Saving Config. Provider: {config.CloudConfig.Provider} ({(int)config.CloudConfig.Provider})");
+                DebugConsole.WriteDebug($"[PERSISTENCE] JSON Content: {json}");
 
                 await File.WriteAllTextAsync(CONFIG_PATH, json);
             }
@@ -480,7 +497,7 @@ public class Config
 {
     public bool EnableAutomaticTracking { get; set; } = true;
     public bool TrackWrite { get; set; } = true;
-    public bool TrackReads { get; set; } = false;
+    public bool TrackReads { get; set; } = false; // Reverted to false
     public bool Auto_Upload { get; set; } = true;
     public bool StartMinimized { get; set; } = false;
     public bool ShowDebugConsole { get; set; } = false;

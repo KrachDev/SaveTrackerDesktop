@@ -878,6 +878,9 @@ namespace SaveTracker.ViewModels
                 // NOTE: Game is already launched via GameLauncher above.
                 // We just need to start the tracker now.
 
+                // Prevent GameWatcher from trying to auto-track this game
+                _gameProcessWatcher?.MarkGameAsTracked(game.Name);
+
                 _trackLogic = new SaveFileTrackerManager();
                 _trackingCancellation = new CancellationTokenSource();
 
@@ -888,15 +891,41 @@ namespace SaveTracker.ViewModels
                 // We don't await this so UI remains responsive
                 _trackingTask = Task.Run(async () =>
                 {
-                    await _trackLogic.Track(game);
+                    try
+                    {
+                        await _trackLogic.Track(game);
+                    }
+                    catch (Exception ex)
+                    {
+                        DebugConsole.WriteException(ex, "Tracking task failed in Task.Run");
+                        throw; // Propagate to continuation
+                    }
                 }, _trackingCancellation.Token).ContinueWith(async t =>
                 {
-                    // Cleanup when tracking finishes (game exited)
-                    await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                    if (t.IsFaulted)
                     {
-                        IsLaunchEnabled = true;
-                        SyncStatusText = "Idle";
-                        _gameProcessWatcher?.UnmarkGame(game.Name);
+                        var ex = t.Exception?.InnerException ?? t.Exception;
+                        DebugConsole.WriteException(ex!, "Tracking Background Task Crashed");
+                    }
+
+                    // Cleanup and trigger post-game logic (Upload/Smart Sync)
+                    await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(async () =>
+                    {
+                        try
+                        {
+                            // Safely trigger exit logic
+                            // Pass null process (unused anyway) and the specific game instance
+                            await OnGameExitedAsync(null!, game);
+                        }
+                        catch (Exception exitEx)
+                        {
+                            DebugConsole.WriteException(exitEx, "Failed to execute post-game exit logic");
+                        }
+                        finally
+                        {
+                            IsLaunchEnabled = true;
+                            SyncStatusText = "Idle";
+                        }
                     });
                 });
             }
@@ -949,7 +978,7 @@ namespace SaveTracker.ViewModels
             }
         }
 
-        private async Task OnGameExitedAsync(Process process)
+        private async Task OnGameExitedAsync(Process? process, Game? matchingGame = null)
         {
             if (_skipNextExitUpload)
             {
@@ -957,7 +986,7 @@ namespace SaveTracker.ViewModels
                 return;
             }
 
-            var game = SelectedGame?.Game;
+            var game = matchingGame ?? SelectedGame?.Game;
             try
             {
                 if (game == null) return;
@@ -997,6 +1026,25 @@ namespace SaveTracker.ViewModels
                     {
                         DebugConsole.WriteSuccess("Smart Sync: already synced. Skipping window.");
                     }
+                    else if ((comparison.Status == SmartSyncService.ProgressStatus.LocalAhead ||
+                              comparison.Status == SmartSyncService.ProgressStatus.CloudNotFound) &&
+                             (await ConfigManagement.LoadConfigAsync())?.Auto_Upload == true)
+                    {
+                        // AUTO-UPLOAD: If local is newer or cloud doesn't exist, and Auto-Upload is ON, just upload!
+                        DebugConsole.WriteInfo($"Smart Sync Status: {comparison.Status}. Auto-Upload enabled -> Uploading...");
+
+                        // We need the file list. The tracker logic has resolved it.
+                        // But _trackLogic is accessible here.
+                        var filesToUpload = _trackLogic?.GetUploadList();
+                        if (filesToUpload != null && filesToUpload.Count > 0)
+                        {
+                            await UploadFilesAsync(filesToUpload, game);
+                        }
+                        else
+                        {
+                            DebugConsole.WriteWarning("Auto-Upload requested but no files in upload list.");
+                        }
+                    }
                     else
                     {
                         DebugConsole.WriteInfo($"Smart Sync Status: {comparison.Status}. Opening window...");
@@ -1021,9 +1069,9 @@ namespace SaveTracker.ViewModels
                 _trackingCancellation?.Dispose();
                 _trackingCancellation = null;
 
-                if (SelectedGame?.Game != null)
+                if (game != null)
                 {
-                    _gameProcessWatcher?.UnmarkGame(SelectedGame.Game.Name);
+                    _gameProcessWatcher?.UnmarkGame(game.Name);
                 }
 
                 if (game != null)
@@ -1843,7 +1891,7 @@ namespace SaveTracker.ViewModels
                         {
                             try
                             {
-                                await OnGameExitedAsync(process);
+                                await OnGameExitedAsync(process, game);
                             }
                             catch (Exception ex)
                             {
@@ -1860,7 +1908,7 @@ namespace SaveTracker.ViewModels
 
                         if (process.HasExited)
                         {
-                            await OnGameExitedAsync(process);
+                            await OnGameExitedAsync(process, game);
                             IsLaunchEnabled = true;
                             SyncStatusText = "Idle";
                             _gameProcessWatcher?.UnmarkGame(game.Name);

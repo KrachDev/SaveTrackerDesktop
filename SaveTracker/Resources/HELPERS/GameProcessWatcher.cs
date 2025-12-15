@@ -16,7 +16,7 @@ namespace SaveTracker.Resources.HELPERS
     public class GameProcessWatcher : IDisposable
     {
         private List<Game> _trackedGames = new();
-        private readonly HashSet<string> _currentlyTrackedGames = new();
+        private readonly HashSet<string> _currentlyTrackedGames = new(StringComparer.OrdinalIgnoreCase);
         private CancellationTokenSource? _cancellationTokenSource;
         private Task? _watcherTask;
         private readonly int _scanIntervalMs;

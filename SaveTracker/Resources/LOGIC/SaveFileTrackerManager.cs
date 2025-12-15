@@ -30,6 +30,7 @@ namespace SaveTracker.Resources.LOGIC
         // Session state
         private TrackingSession _currentSession;
         private List<string> _lastSessionUploadList;
+        private static readonly SemaphoreSlim _trackingLock = new SemaphoreSlim(1, 1);
 
         public SaveFileTrackerManager()
         {
@@ -44,52 +45,67 @@ namespace SaveTracker.Resources.LOGIC
             DebugConsole.WriteLine("== SaveTracker DebugConsole Started ==");
             var gamedata = ConfigManagement.GetGameData(gameArg);
             var StartDate = DateTime.Now;
-            // Check if already tracking
-            if (_currentSession != null && _currentSession.IsTracking)
+            if (!await _trackingLock.WaitAsync(0))
             {
-                DebugConsole.WriteLine("Already tracking.");
+                DebugConsole.WriteWarning("Tracking request ignored: Another tracking session is initializing or active.");
                 return;
             }
 
-            // Clean up any existing ETW sessions
-            CleanupExistingEtwSessions();
-
-            // Initialize new tracking session
-            _currentSession = new TrackingSession(gameArg, probeForPrefix);
-
             try
             {
-                // Validate and initialize
-                if (!await _currentSession.Initialize())
+                // Check if already tracking (double check inside lock, though sempahore handles it)
+                if (_currentSession != null && _currentSession.IsTracking)
+                {
+                    DebugConsole.WriteLine("Already tracking.");
+                    _trackingLock.Release();
                     return;
+                }
 
-                // Start tracking
-                await _currentSession.StartTracking();
+                // Clean up any existing ETW sessions
+                CleanupExistingEtwSessions();
 
-                // Wait for completion
-                await _currentSession.WaitForCompletion();
+                // Initialize new tracking session
+                _currentSession = new TrackingSession(gameArg, probeForPrefix);
 
-                // Display results
-                var uploadFiles = _currentSession.GetUploadList();
-                _lastSessionUploadList = uploadFiles; // Cache for external access
-                DisplayResults(uploadFiles);
-            }
-            catch (UnauthorizedAccessException)
-            {
-                DebugConsole.WriteLine("Access denied. Run as Admin.");
+                try
+                {
+                    // Validate and initialize
+                    if (!await _currentSession.Initialize())
+                        return;
 
-            }
-            catch (Exception ex)
-            {
-                DebugConsole.WriteLine($"[ERROR] Tracking failed: {ex.Message}");
-                DebugConsole.WriteException(ex, "Tracking Exception");
+                    // Start tracking
+                    await _currentSession.StartTracking();
+
+                    // Wait for completion
+                    await _currentSession.WaitForCompletion();
+
+                    // Display results
+                    var uploadFiles = _currentSession.GetUploadList();
+                    _lastSessionUploadList = uploadFiles; // Cache for external access
+                    DisplayResults(uploadFiles);
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    DebugConsole.WriteLine("Access denied. Run as Admin.");
+
+                }
+                catch (Exception ex)
+                {
+                    DebugConsole.WriteLine($"[ERROR] Tracking failed: {ex.Message}");
+                    DebugConsole.WriteException(ex, "Tracking Exception");
+                }
+                finally
+                {
+                    _currentSession?.Dispose();
+                    _currentSession = null;
+                }
             }
             finally
             {
-                _currentSession?.Dispose();
-                _currentSession = null;
+                _trackingLock.Release();
             }
         }
+
 
         /// <summary>
         /// Clean up any orphaned ETW sessions
@@ -369,6 +385,67 @@ namespace SaveTracker.Resources.LOGIC
                 {
                     DebugConsole.WriteSuccess("ETW tracking started successfully");
                 }
+
+                // PERFORM INITIAL SCAN
+                // This ensures we track existing files even if no IO happens during this session
+                DebugConsole.WriteInfo($"[DEBUG] Checking directory for initial scan: '{_game.InstallDirectory}' Exists: {Directory.Exists(_game.InstallDirectory)}");
+                // LOAD PREVIOUSLY TRACKED FILES
+                // This is critical if TrackReads is disabled and files are outside InstallDirectory
+                try
+                {
+                    DebugConsole.WriteInfo("Loading previously tracked files from checksums...");
+                    var checksumService = new SaveTracker.Resources.Logic.RecloneManagement.ChecksumService();
+                    var checksumData = await checksumService.LoadChecksumData(_game.InstallDirectory);
+
+                    if (checksumData != null && checksumData.Files != null)
+                    {
+                        int restoredCount = 0;
+                        foreach (var fileRecord in checksumData.Files)
+                        {
+                            // Reconstruct absolute path
+                            // Helper method needed? checksumData stores relative/contracted paths
+                            string fullPath = SaveTracker.Resources.Logic.RecloneManagement.RcloneFileOperations.ExpandStoredPath(fileRecord.Key, _game.InstallDirectory);
+
+                            if (!string.IsNullOrEmpty(fullPath) && File.Exists(fullPath))
+                            {
+                                HandleFileAccess(fullPath); // Thread-safe adds to _trackedFiles
+                                restoredCount++;
+                            }
+                        }
+                        DebugConsole.WriteSuccess($"Restored {restoredCount} previously tracked files.");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    DebugConsole.WriteWarning($"Failed to load previous files: {ex.Message}");
+                }
+
+                if (Directory.Exists(_game.InstallDirectory))
+                {
+                    DebugConsole.WriteInfo($"Performing initial scan of {_game.InstallDirectory}...");
+                    await Task.Run(() =>
+                    {
+                        try
+                        {
+                            var files = Directory.GetFiles(_game.InstallDirectory, "*", SearchOption.AllDirectories);
+                            int count = 0;
+                            foreach (var file in files)
+                            {
+                                HandleFileAccess(file);
+                                count++;
+                            }
+                            DebugConsole.WriteInfo($"Initial scan complete. Processed {count} files.");
+                        }
+                        catch (Exception ex)
+                        {
+                            DebugConsole.WriteWarning($"Initial scan failed: {ex.Message}");
+                        }
+                    });
+                }
+                else
+                {
+                    DebugConsole.WriteWarning($"Directory not found for initial scan: '{_game.InstallDirectory}'");
+                }
             }
             catch (Exception ex)
             {
@@ -435,7 +512,7 @@ namespace SaveTracker.Resources.LOGIC
                     }
                     catch (Exception ex)
                     {
-                        // Silently ignore individual file tracking errors
+                        DebugConsole.WriteWarning($"ETW Write Error: {ex.Message}");
                     }
                 };
             }
@@ -457,7 +534,7 @@ namespace SaveTracker.Resources.LOGIC
                     }
                     catch (Exception ex)
                     {
-                        // Silently ignore individual file tracking errors
+                        DebugConsole.WriteWarning($"ETW Read Error: {ex.Message}");
                     }
                 };
             }
@@ -714,6 +791,7 @@ namespace SaveTracker.Resources.LOGIC
             }
             finally
             {
+                DebugConsole.WriteLine("Analyzing session data..."); // Feedback for user
                 await StopAsync();
             }
 
@@ -734,19 +812,26 @@ namespace SaveTracker.Resources.LOGIC
             _isTracking = false;
 
             // CRITICAL: Await PlayTime commit to prevent race condition with Smart Sync
-            if (!_playtimeCommitted && _trackingStartUtc != DateTime.MinValue)
+            try
             {
-                _playtimeCommitted = true; // ensure we only add once per session
-                var sessionEndUtc = _processExitUtc != DateTime.MinValue ? _processExitUtc : DateTime.UtcNow;
-                var sessionDuration = sessionEndUtc - _trackingStartUtc;
-                if (sessionDuration < TimeSpan.Zero)
+                if (!_playtimeCommitted && _trackingStartUtc != DateTime.MinValue)
                 {
-                    sessionDuration = TimeSpan.Zero;
+                    _playtimeCommitted = true; // ensure we only add once per session
+                    var sessionEndUtc = _processExitUtc != DateTime.MinValue ? _processExitUtc : DateTime.UtcNow;
+                    var sessionDuration = sessionEndUtc - _trackingStartUtc;
+                    if (sessionDuration < TimeSpan.Zero)
+                    {
+                        sessionDuration = TimeSpan.Zero;
+                    }
+                    if (sessionDuration > TimeSpan.Zero)
+                    {
+                        await UpdatePlayTimeAsync(sessionDuration);
+                    }
                 }
-                if (sessionDuration > TimeSpan.Zero)
-                {
-                    await UpdatePlayTimeAsync(sessionDuration);
-                }
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteError($"Failed to update PlayTime during stop: {ex.Message}");
             }
 
             // Cancel all background tasks
@@ -804,13 +889,19 @@ namespace SaveTracker.Resources.LOGIC
 
                 var oldPlayTime = data.PlayTime;
                 data.PlayTime += sessionDuration;
-                await ConfigManagement.SaveGameData(_game, data);
+                // REMOVED: Unsafe direct write that conflicts with ChecksumService
+                // await ConfigManagement.SaveGameData(_game, data);
 
-                // 2. CRITICAL: Also update checksums.json in game install directory
+                // 2. CRITICAL: Update checksums.json in game install directory
                 // This is what Smart Sync reads via SmartSyncService.GetLocalPlayTimeAsync()!
+                // We perform the PlayTime update HERE safely using the service lock.
                 var checksumService = new SaveTracker.Resources.Logic.RecloneManagement.ChecksumService();
+
+                // Load existing data safely
                 var checksumData = await checksumService.LoadChecksumData(_game.InstallDirectory);
-                checksumData.PlayTime = data.PlayTime; // Set to total, not increment
+
+                // Update PlayTime
+                checksumData.PlayTime = data.PlayTime; // Set to total
                 checksumData.LastUpdated = DateTime.Now;
 
                 // 3. Add tracked files to checksum data so they appear in Smart Sync
@@ -831,7 +922,7 @@ namespace SaveTracker.Resources.LOGIC
 
                         // Contract the path to portable format
                         string portablePath = PathContractor.ContractPath(filePath, _game.InstallDirectory);
-                        
+
                         // Skip if already exists
                         if (checksumData.Files.ContainsKey(portablePath))
                         {
@@ -996,6 +1087,6 @@ namespace SaveTracker.Resources.LOGIC
 
         private const string ETW_SESSION_NAME = "SaveTrackerSession";
         private const int DIRECTORY_SCAN_INTERVAL_MS = 5 * 60 * 1000;
-        private const int PROCESS_SHUTDOWN_GRACE_PERIOD_MS = 5000;
+        private const int PROCESS_SHUTDOWN_GRACE_PERIOD_MS = 1000;
     }
 }

@@ -155,9 +155,19 @@ namespace SaveTracker.Resources.HELPERS
 
         private static bool IsObviousSystemFile(string fileName)
         {
-            // Files starting with ~ or . are usually temp/hidden
-            if (fileName.StartsWith("~") || fileName.StartsWith("."))
+            // Only filter specific system files/folders
+            // We allow files starting with "." now (like .savetracker_checksums.json is handled elsewhere, but game saves might be .save)
+            if (fileName.Equals("desktop.ini", StringComparison.OrdinalIgnoreCase) ||
+                fileName.Equals("Thumbs.db", StringComparison.OrdinalIgnoreCase) ||
+                fileName.Equals(".DS_Store", StringComparison.OrdinalIgnoreCase))
                 return true;
+
+            // Don't filter "~" temp files unless we are sure. But usually games don't use them for persistent saves.
+            // Let's keep "~" filter but remove "." filter.
+            // Lock files (Word/Office) usually start with ~$
+            if (fileName.StartsWith("~$"))
+                return true;
+
             return false;
         }
 

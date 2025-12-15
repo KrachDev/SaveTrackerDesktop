@@ -12,8 +12,8 @@
         Background="#1E1E1E">
 
     <Grid RowDefinitions="*,Auto">
-        <Border Grid.Row="0" Background="#1E1E1E" BorderThickness="0" Padding="10">
-            <ScrollViewer Name="LogScrollViewer" Padding="0,0,0,50">
+        <Border Grid.Row="0" Background="#1E1E1E" BorderThickness="0">
+            <ScrollViewer Name="LogScrollViewer" Padding="0,0,0,50" HorizontalScrollBarVisibility="Disabled">
                 <Grid>
                     <!-- Presentation Mode: Colored, per-line selection -->
                     <ItemsControl ItemsSource="{Binding LogMessages}" IsVisible="{Binding IsPresentationMode}">
