@@ -241,9 +241,9 @@ namespace SaveTracker.ViewModels
                 if (config?.CloudConfig != null)
                 {
                     var rcloneOps = new RcloneFileOperations(_game);
-                    var remoteName = GetProviderConfigName(provider);
-                    var sanitizedGameName = SanitizeGameName(_game.Name);
-                    var remotePath = $"{remoteName}:{SaveFileUploadManager.RemoteBaseFolder}/{sanitizedGameName}";
+
+                    // Use helper to get correct path for active profile
+                    var remotePath = await rcloneOps.GetRemotePathAsync(provider, _game);
 
                     string gameDirectory = _game.InstallDirectory;
                     string checksumLocalFullPath = Path.Combine(gameDirectory, SaveFileUploadManager.ChecksumFilename);
@@ -447,9 +447,20 @@ namespace SaveTracker.ViewModels
                             return;
                         }
 
-                        var remoteName = GetProviderConfigName(config.CloudConfig.Provider);
-                        var sanitizedGameName = SanitizeGameName(_game.Name);
-                        var remotePath = $"{remoteName}:{SaveFileUploadManager.RemoteBaseFolder}/{sanitizedGameName}";
+                        var remotePath = await rcloneOps.GetRemotePathAsync(config.CloudConfig.Provider, _game);
+
+                        // Added Check for existence before download
+                        if (!await rcloneOps.CheckCloudSaveExistsAsync(remotePath, config.CloudConfig.Provider))
+                        {
+                            await Dispatcher.UIThread.InvokeAsync(() =>
+                           {
+                               OperationLog.Add($"[{DateTime.Now:HH:mm:ss}] ⚠️ No cloud save found for this profile.");
+                               DebugConsole.WriteWarning("No cloud save found - aborting download");
+                               CanDownload = false; // Disable button
+                               CurrentOperation = "Failed: No Cloud Save";
+                           });
+                            return;
+                        }
 
                         await Dispatcher.UIThread.InvokeAsync(() =>
                         {
@@ -677,7 +688,26 @@ namespace SaveTracker.ViewModels
                             });
                         });
 
-                        await rcloneOps.ProcessBatch(trackedFiles, remotePath, stats, _game, config.CloudConfig.Provider, progress);
+
+                        // Determine if we should force upload (e.g. if cloud is missing)
+                        bool forceUpload = _comparison?.Status == SmartSyncService.ProgressStatus.CloudNotFound;
+                        if (forceUpload)
+                        {
+                            await Dispatcher.UIThread.InvokeAsync(() =>
+                            {
+                                OperationLog.Add($"[{DateTime.Now:HH:mm:ss}] Cloud save not found - forcing upload of all files.");
+                            });
+                        }
+
+                        await rcloneOps.ProcessBatch(
+                            trackedFiles,
+                            remotePath,
+                            stats,
+                            _game,
+                            config.CloudConfig.Provider,
+                            progress,
+                            forceUpload
+                        );
 
                         // Explicitly upload checksum file
                         await Dispatcher.UIThread.InvokeAsync(() =>

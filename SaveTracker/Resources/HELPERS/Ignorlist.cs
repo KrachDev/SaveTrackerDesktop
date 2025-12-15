@@ -18,8 +18,6 @@ namespace SaveTracker.Resources.HELPERS
         ) {
             // System and program directories
             @"C:\Windows",
-            @"C:\Program Files",
-            @"C:\Program Files (x86)",
             @"C:\ProgramData",
             @"C:\System Volume Information",
             @"C:\$Recycle.Bin",

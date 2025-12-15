@@ -43,7 +43,8 @@ namespace SaveTracker.Resources.Logic
             List<string> saveFiles,
             Game game,
             CloudProvider provider,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            bool force = false)
         {
             var context = new UploadContext(saveFiles, game, provider);
 
@@ -56,7 +57,7 @@ namespace SaveTracker.Resources.Logic
                 };
             }
 
-            return await ExecuteUploadAsync(context, cancellationToken);
+            return await ExecuteUploadAsync(context, cancellationToken, force);
         }
 
         #region Validation
@@ -122,10 +123,11 @@ namespace SaveTracker.Resources.Logic
 
         private async Task<UploadResult> ExecuteUploadAsync(
             UploadContext context,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            bool force = false)
         {
             var session = new UploadSession(context, _cloudProviderHelper);
-            session.Initialize();
+            await session.InitializeAsync();
 
             var fileManager = new UploadFileManager(context.SaveFiles);
             var checksumManager = new ChecksumFileManager(context.Game);
@@ -148,7 +150,8 @@ namespace SaveTracker.Resources.Logic
                     session,
                     fileManager,
                     checksumManager,
-                    cancellationToken
+                    cancellationToken,
+                    force
                 );
 
                 session.Complete();
@@ -188,7 +191,8 @@ namespace SaveTracker.Resources.Logic
             UploadSession session,
             UploadFileManager fileManager,
             ChecksumFileManager checksumManager,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            bool force = false)
         {
             DebugConsole.WriteInfo("DEBUG: ENTERING PerformUploadAsync");
 
@@ -197,7 +201,8 @@ namespace SaveTracker.Resources.Logic
             await UploadSaveFilesAsync(
                 session,
                 fileManager.ValidFiles,
-                cancellationToken
+                cancellationToken,
+                force
             );
 
             // Phase 2: Upload checksum file
@@ -217,7 +222,8 @@ namespace SaveTracker.Resources.Logic
         private async Task UploadSaveFilesAsync(
             UploadSession session,
             List<string> validFiles,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            bool force = false)
         {
             DebugConsole.WriteInfo($"DEBUG: UploadSaveFilesAsync with {validFiles.Count} files");
             ReportProgress(new UploadProgressInfo
@@ -235,7 +241,9 @@ namespace SaveTracker.Resources.Logic
                     session.RemoteBasePath,
                     session.Stats,
                     session.Context.Game,
-                    session.Context.Provider
+                    session.Context.Provider,
+                    null,
+                    force
                 );
                 DebugConsole.WriteInfo("DEBUG: ProcessBatch returned");
             }
@@ -402,7 +410,7 @@ namespace SaveTracker.Resources.Logic
             _cloudHelper = cloudHelper;
         }
 
-        public void Initialize()
+        public async Task InitializeAsync()
         {
             StartTime = DateTime.Now;
             DisplayName = Context.Game.Name;
@@ -411,7 +419,24 @@ namespace SaveTracker.Resources.Logic
 
             // Get the remote name from cloud provider (e.g., "gdrive:", "box:", "onedrive:")
             string remoteName = _cloudHelper.GetProviderConfigName(Context.Provider);
-            RemoteBasePath = $"{remoteName}:{SaveFileUploadManager.RemoteBaseFolder}/{sanitizedName}";
+            string basePath = $"{remoteName}:{SaveFileUploadManager.RemoteBaseFolder}/{sanitizedName}";
+
+            // Handle Profiles
+            if (!string.IsNullOrEmpty(Context.Game.ActiveProfileId))
+            {
+                var config = await ConfigManagement.LoadConfigAsync();
+                var profile = config.Profiles.FirstOrDefault(p => p.Id == Context.Game.ActiveProfileId);
+
+                // If found and NOT default
+                if (profile != null && !profile.IsDefault)
+                {
+                    string profileFolder = SanitizeGameName(profile.Name); // Sanitize profile name too
+                    basePath = $"{basePath}/Additional Profiles/{profileFolder}";
+                    DebugConsole.WriteInfo($"[Profile Cloud] Uploading to profile path: {profileFolder}");
+                }
+            }
+
+            RemoteBasePath = basePath;
         }
 
         public void Complete()
@@ -422,7 +447,7 @@ namespace SaveTracker.Resources.Logic
         private static string SanitizeGameName(string gameName)
         {
             if (string.IsNullOrWhiteSpace(gameName))
-                return "UnknownGame";
+                return "Unknown";
 
             var invalidChars = Path.GetInvalidFileNameChars()
                 .Concat(new[] { '/', '\\', ':', '*', '?', '"', '<', '>', '|' });

@@ -241,7 +241,8 @@ namespace SaveTracker.ViewModels
 
                 var result = await _rcloneExecutorInternal.ExecuteRcloneCommand(
                     $"lsd \"{remotePath}\" --config \"{configPath}\" " + RcloneExecutor.GetPerformanceFlags(),
-                    TimeSpan.FromSeconds(15)
+                    TimeSpan.FromSeconds(15),
+                    allowedExitCodes: new[] { 3 }
                 );
 
                 if (result.Success)
@@ -346,7 +347,8 @@ namespace SaveTracker.ViewModels
                 // We use lsd to list directories in the root
                 var result = await _rcloneExecutorInternal.ExecuteRcloneCommand(
                     $"lsd \"{remotePath}\" --config \"{configPath}\" " + RcloneExecutor.GetPerformanceFlags(),
-                    TimeSpan.FromSeconds(10)
+                    TimeSpan.FromSeconds(10),
+                    allowedExitCodes: new[] { 3 }
                 );
 
                 if (result.Success)

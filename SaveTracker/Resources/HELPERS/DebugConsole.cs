@@ -1,28 +1,19 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Runtime.InteropServices;
-using System.Text;
-using System.Threading.Tasks;
-
-// Define default LogMessage class here if not accessible, but it is in Views namespace.
-// Using string hex codes for colors to pass to View.
 
 namespace SaveTracker.Resources.HELPERS
 {
     public static class DebugConsole
     {
-        private static bool _isEnabled;
-        private static SaveTracker.Views.DebugConsoleWindow? _consoleWindow;
+        private static bool _isEnabled = true;
 
-        // Constants for colors
+        // Constants for colors (kept for mapped logic if needed in future, but mapping to ConsoleColor now)
         private const string COLOR_DEFAULT = "#D4D4D4";
-        private const string COLOR_INFO = "#4EC9B0"; // VS Cyan
-        private const string COLOR_WARNING = "#DCDCAA"; // VS Yellow
-        private const string COLOR_ERROR = "#F44747"; // VS Red
-        private const string COLOR_SUCCESS = "#6A9955"; // VS Green
-        private const string COLOR_DEBUG = "#808080"; // Gray
+        private const string COLOR_INFO = "#4EC9B0";
+        private const string COLOR_WARNING = "#DCDCAA";
+        private const string COLOR_ERROR = "#F44747";
+        private const string COLOR_SUCCESS = "#6A9955";
+        private const string COLOR_DEBUG = "#808080";
 
         /// <summary>
         /// Enable or disable console debugging
@@ -30,15 +21,6 @@ namespace SaveTracker.Resources.HELPERS
         public static void Enable(bool enable = true)
         {
             _isEnabled = enable;
-
-            if (enable)
-            {
-                ShowConsole();
-            }
-            else
-            {
-                HideConsole();
-            }
         }
 
         /// <summary>
@@ -47,58 +29,27 @@ namespace SaveTracker.Resources.HELPERS
         public static bool IsEnabled => _isEnabled;
 
         /// <summary>
-        /// Show the console window
+        /// Show the console window (No-op in native console mode)
         /// </summary>
         public static void ShowConsole()
         {
-            Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
-            {
-                if (_consoleWindow == null)
-                {
-                    _consoleWindow = new SaveTracker.Views.DebugConsoleWindow();
-                }
-                try
-                {
-                    _consoleWindow.Show();
-                    _consoleWindow.Activate();
-                }
-                catch
-                {
-                    // If window was closed externally, recreate it
-                    _consoleWindow = new SaveTracker.Views.DebugConsoleWindow();
-                    _consoleWindow.Show();
-                }
-            });
-
-            if (!_isEnabled) _isEnabled = true;
-
-            // Only write header if we haven't already
-            // Actually, WriteHeader is safe to call multiple times if we cleared, but maybe just on init
-            // Let's write it if window is fresh? No easy way to know. 
-            // Stick to simplistic logic.
+            // No-op: App is now a Console App, so console is always there.
         }
 
         /// <summary>
-        /// Hide the console window
+        /// Hide the console window (No-op in native console mode)
         /// </summary>
         public static void HideConsole()
         {
-            Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
-            {
-                _consoleWindow?.Hide();
-            });
+            // No-op
         }
 
         /// <summary>
-        /// Close and free the console
+        /// Close and free the console (No-op)
         /// </summary>
         public static void CloseConsole()
         {
-            Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
-            {
-                _consoleWindow?.Close();
-                _consoleWindow = null;
-            });
+            // No-op
         }
 
         /// <summary>
@@ -107,63 +58,55 @@ namespace SaveTracker.Resources.HELPERS
         public static void WriteLine(string message = "", string title = "DATA")
         {
             if (!_isEnabled) return;
-            Log(message, title, COLOR_DEFAULT);
+            Log(message, title, ConsoleColor.Gray);
         }
 
         /// <summary>
-        /// Internal log method to handle timestamp and dispatch
+        /// Internal log method to handle timestamp and colors
         /// </summary>
-        private static void Log(string message, string title, string colorHex)
+        private static void Log(string message, string title, ConsoleColor color)
         {
             if (!_isEnabled) return;
             try
             {
                 string timestamp = DateTime.Now.ToString("HH:mm:ss.fff");
-                string logMsg = $"[{timestamp} | {title}] {message}";
 
-                // Print to stdout for debugging the debugger (or if run from terminal)
-                Console.WriteLine(logMsg);
+                // Write Timestamp and Title in default/darker color
+                Console.ForegroundColor = ConsoleColor.DarkGray;
+                Console.Write($"[{timestamp} | {title}] ");
 
-                Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
-                {
-                    if (_consoleWindow != null)
-                    {
-                        try
-                        {
-                            _consoleWindow.AppendLog(logMsg, colorHex);
-                        }
-                        catch
-                        {
-                            // If window is closed/disposed, we might fail.
-                        }
-                    }
-                });
+                // Write Message in specific color
+                Console.ForegroundColor = color;
+                Console.WriteLine(message);
+
+                // Reset
+                Console.ResetColor();
             }
             catch { }
         }
 
         /// <summary>
-        /// Write an info message with INFO prefix
+        /// Write an info message
         /// </summary>
         public static void WriteInfo(string message, string title = "INFO")
         {
-            Log(message, title, COLOR_INFO);
+            Log(message, title, ConsoleColor.Cyan);
         }
 
         /// <summary>
-        /// Write a warning message with WARNING prefix
+        /// Write a warning message
         /// </summary>
         public static void WriteWarning(string message, string title = "WARNING")
         {
-            Log(message, title, COLOR_WARNING);
+            Log(message, title, ConsoleColor.Yellow);
         }
 
         /// <summary>
-        /// Write an error message with ERROR prefix
+        /// Write an error message
         /// </summary>
         public static void WriteError(string message, string title = "ERROR")
         {
-            Log(message, title, COLOR_ERROR);
+            Log(message, title, ConsoleColor.Red);
         }
 
         /// <summary>
@@ -173,23 +116,23 @@ namespace SaveTracker.Resources.HELPERS
         {
             if (!_isEnabled) return;
             string msg = $"{(!string.IsNullOrEmpty(context) ? $"{context}: " : "")}{ex.Message}\n[STACK TRACE] {ex.StackTrace}";
-            Log(msg, "EXCEPTION", COLOR_ERROR);
+            Log(msg, "EXCEPTION", ConsoleColor.Red);
         }
 
         /// <summary>
-        /// Write a success message with SUCCESS prefix
+        /// Write a success message
         /// </summary>
         public static void WriteSuccess(string message, string title = "SUCCESS")
         {
-            Log(message, title, COLOR_SUCCESS);
+            Log(message, title, ConsoleColor.Green);
         }
 
         /// <summary>
-        /// Write a debug message with DEBUG prefix
+        /// Write a debug message
         /// </summary>
         public static void WriteDebug(string message, string title = "DEBUG")
         {
-            Log(message, title, COLOR_DEBUG);
+            Log(message, title, ConsoleColor.DarkGray);
         }
 
         /// <summary>
@@ -197,8 +140,8 @@ namespace SaveTracker.Resources.HELPERS
         /// </summary>
         public static void WriteSeparator(char character = '=', int length = 50)
         {
-            string line = new string(character, length);
-            Log(line, "---", COLOR_DEFAULT);
+            if (!_isEnabled) return;
+            Console.WriteLine(new string(character, length));
         }
 
         /// <summary>
@@ -207,9 +150,8 @@ namespace SaveTracker.Resources.HELPERS
         public static void WriteSection(string title)
         {
             if (!_isEnabled) return;
-            // WriteLine(); // Blank line
             WriteSeparator('=', 60);
-            Log($"  {title.ToUpper()}", "SECTION", COLOR_INFO);
+            Log($"  {title.ToUpper()}", "SECTION", ConsoleColor.Cyan);
             WriteSeparator('=', 60);
         }
 
@@ -219,11 +161,11 @@ namespace SaveTracker.Resources.HELPERS
         public static void Clear()
         {
             if (!_isEnabled) return;
-
-            Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+            try
             {
-                _consoleWindow?.ClearLog();
-            });
+                Console.Clear();
+            }
+            catch { } // Can fail if piped
             WriteHeader();
         }
 
@@ -233,8 +175,8 @@ namespace SaveTracker.Resources.HELPERS
         private static void WriteHeader()
         {
             WriteSeparator('=', 60);
-            Log("  SAVETRACKER DEBUG CONSOLE", "INIT", COLOR_INFO);
-            Log($"  Started: {DateTime.Now:yyyy-MM-dd HH:mm:ss}", "INIT", COLOR_INFO);
+            Log("  SAVETRACKER DEBUG CONSOLE", "INIT", ConsoleColor.Cyan);
+            Log($"  Started: {DateTime.Now:yyyy-MM-dd HH:mm:ss}", "INIT", ConsoleColor.Cyan);
             WriteSeparator('=', 60);
         }
 

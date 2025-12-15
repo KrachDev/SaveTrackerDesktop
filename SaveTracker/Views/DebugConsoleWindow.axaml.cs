@@ -114,10 +114,13 @@ namespace SaveTracker.Views
                     _logBuilder.AppendLine(message);
                     LogText = _logBuilder.ToString();
 
-                    // Auto-scroll only if enabled
+                    // Auto-scroll with delay to ensure content is rendered
                     if (IsAutoScrollEnabled && _scrollViewer != null)
                     {
-                        _scrollViewer.ScrollToEnd();
+                        Dispatcher.UIThread.Post(() =>
+                        {
+                            _scrollViewer?.ScrollToEnd();
+                        }, DispatcherPriority.Background);
                     }
                 }
                 catch
@@ -155,6 +158,16 @@ namespace SaveTracker.Views
         {
             base.OnApplyTemplate(e);
             _scrollViewer = this.FindControl<ScrollViewer>("LogScrollViewer");
+        }
+
+        protected override void OnOpened(EventArgs e)
+        {
+            base.OnOpened(e);
+            // Ensure ScrollViewer is found when window opens
+            if (_scrollViewer == null)
+            {
+                _scrollViewer = this.FindControl<ScrollViewer>("LogScrollViewer");
+            }
         }
     }
 }

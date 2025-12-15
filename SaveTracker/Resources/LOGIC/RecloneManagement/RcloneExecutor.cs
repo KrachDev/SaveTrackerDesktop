@@ -93,7 +93,6 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                 }
 
                 // Log error only if it's a "real" failure (not in allowed list)
-                // Log error only if it's a "real" failure (not in allowed list)
                 if (!result.Success && !string.IsNullOrEmpty(result.Error))
                 {
                     DebugConsole.WriteWarning($"Process failed with exit code {result.ExitCode}");

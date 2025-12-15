@@ -28,6 +28,43 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             _currentGame = currentGame;
         }
 
+        public async Task<string> GetRemotePathAsync(CloudProvider provider, Game game = null)
+        {
+            game = game ?? _currentGame;
+            if (game == null) throw new ArgumentNullException(nameof(game));
+
+            var config = await ConfigManagement.LoadConfigAsync();
+            var cloudHelper = new CloudProviderHelper(); // Instantiating here or pass as dependency? 
+                                                         // RcloneFileOperations typically doesn't use CloudProviderHelper directly in existing code? 
+                                                         // It gets config path from RclonePathHelper.
+                                                         // But we need the "gdrive:" prefix.
+                                                         // CloudProviderHelper.GetProviderConfigName is what we need. 
+                                                         // It is in SaveTracker.Resources.HELPERS.
+                                                         // Let's use simple instantiation or static helper if available. 
+                                                         // SaveTracker.Resources.HELPERS.CloudProviderHelper
+
+            string remoteName = new CloudProviderHelper().GetProviderConfigName(provider);
+            string sanitizedGameName = SanitizeName(game.Name);
+            string basePath = $"{remoteName}:{SaveTracker.Resources.Logic.SaveFileUploadManager.RemoteBaseFolder}/{sanitizedGameName}";
+
+            if (!string.IsNullOrEmpty(game.ActiveProfileId))
+            {
+                var profile = config.Profiles.FirstOrDefault(p => p.Id == game.ActiveProfileId);
+                if (profile != null && !profile.IsDefault)
+                {
+                    string profileFolder = SanitizeName(profile.Name);
+                    basePath = $"{basePath}/Additional Profiles/{profileFolder}";
+                }
+            }
+            return basePath;
+        }
+
+        private static string SanitizeName(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return "Unknown";
+            return string.Join("_", name.Split(Path.GetInvalidFileNameChars().Concat(new[] { '/', '\\', ':', '*', '?', '"', '<', '>', '|' }).ToArray())).Trim();
+        }
+
         private async Task<CloudProvider> GetEffectiveProvider(Game game)
         {
             if (game == null) return CloudProvider.GoogleDrive;
@@ -186,7 +223,8 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             UploadStats stats,
             Game game = null,
             CloudProvider? provider = null,
-            IProgress<double>? progress = null)
+            IProgress<double>? progress = null,
+            bool force = false)
         {
             // Use provided game or fall back to constructor game
             game = game ?? _currentGame;
@@ -259,7 +297,11 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                 {
                     // Note: ShouldUploadFileWithChecksum is async, but Parallel.ForEach needs sync
                     // We'll use Task.Run().GetAwaiter().GetResult() for CPU-bound work
-                    bool needsUpload = ShouldUploadFileWithChecksum(filePath, gameDirectory).GetAwaiter().GetResult();
+                    bool needsUpload = force;
+                    if (!force)
+                    {
+                        needsUpload = ShouldUploadFileWithChecksum(filePath, gameDirectory).GetAwaiter().GetResult();
+                    }
 
                     if (needsUpload)
                     {

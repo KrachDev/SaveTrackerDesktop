@@ -412,6 +412,13 @@ namespace SaveTracker.Resources.SAVE_SYSTEM
 
 }
 
+public class Profile
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString();
+    public string Name { get; set; } = "Default";
+    public bool IsDefault { get; set; } = false;
+}
+
 public class Game : INotifyPropertyChanged
 {
     private string _name = "";
@@ -478,6 +485,14 @@ public class Game : INotifyPropertyChanged
         set { _linuxLaunchWrapper = value; OnPropertyChanged(); }
     }
 
+    // Default to handling "Default" profile implicitly if null
+    private string _activeProfileId = null;
+    public string ActiveProfileId
+    {
+        get => _activeProfileId;
+        set { _activeProfileId = value; OnPropertyChanged(); }
+    }
+
 
     public string GetGameDataFile()
     {
@@ -520,8 +535,10 @@ public class Config
     public DateTime? LastAnalyticsUpload { get; set; } = null;
 
     public CloudConfig CloudConfig { get; set; } = new CloudConfig();
-}
 
+    // Global list of available profiles
+    public List<Profile> Profiles { get; set; } = new List<Profile>();
+}
 
 public class CloudConfig
 {

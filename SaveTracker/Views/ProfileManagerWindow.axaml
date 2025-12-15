@@ -1,0 +1,108 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="using:SaveTracker.ViewModels"
+        mc:Ignorable="d" d:DesignWidth="400" d:DesignHeight="500"
+        x:Class="SaveTracker.Views.ProfileManagerWindow"
+        x:DataType="vm:ProfileManagerViewModel"
+        Title="Profile Manager"
+        Width="400" Height="500"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        Background="#1E1E1E">
+
+    <Window.Styles>
+        <Style Selector="Button">
+            <Setter Property="Background" Value="#3F3F46"/>
+            <Setter Property="Foreground" Value="#CCCCCC"/>
+            <Setter Property="Padding" Value="10,6"/>
+            <Setter Property="CornerRadius" Value="4"/>
+        </Style>
+        <Style Selector="TextBox">
+            <Setter Property="Background" Value="#3F3F46"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="BorderBrush" Value="#555555"/>
+        </Style>
+    </Window.Styles>
+
+    <Grid RowDefinitions="Auto,*,Auto" Margin="20">
+        
+        <!-- Header -->
+        <StackPanel Grid.Row="0" Spacing="5" Margin="0,0,0,15">
+            <TextBlock Text="Current Active Profile:" Foreground="#858585" FontSize="12"/>
+            <TextBlock Text="{Binding ActiveProfileName}" 
+                       Foreground="#4EC9B0" 
+                       FontSize="24" 
+                       FontWeight="Bold"/>
+            <TextBlock Text="Switching profiles will swap your local save files." 
+                       Foreground="#858585" 
+                       FontSize="11" 
+                       TextWrapping="Wrap"/>
+        </StackPanel>
+
+        <!-- Profile List -->
+        <Border Grid.Row="1" 
+                Background="#252526" 
+                BorderBrush="#3F3F46" 
+                BorderThickness="1" 
+                CornerRadius="4" 
+                Margin="0,0,0,15">
+            <ListBox ItemsSource="{Binding Profiles}" 
+                     SelectedItem="{Binding SelectedProfile}"
+                     Background="Transparent">
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <Grid ColumnDefinitions="*,Auto">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <TextBlock Text="👤" VerticalAlignment="Center"/>
+                                <TextBlock Text="{Binding Name}" 
+                                           VerticalAlignment="Center" 
+                                           Foreground="White"
+                                           FontWeight="SemiBold"/>
+                            </StackPanel>
+                            
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="5">
+                                <Border Background="#0E639C" 
+                                        CornerRadius="3" 
+                                        Padding="6,2" 
+                                        IsVisible="{Binding IsDefault}">
+                                    <TextBlock Text="Default" FontSize="10" Foreground="White"/>
+                                </Border>
+                            </StackPanel>
+                        </Grid>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+        </Border>
+
+        <!-- Actions -->
+        <StackPanel Grid.Row="2" Spacing="10">
+            
+            <!-- Add New -->
+            <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,10">
+                <TextBox Text="{Binding NewProfileName}" 
+                         Watermark="New Profile Name..."
+                         Margin="0,0,10,0"/>
+                <Button Grid.Column="1" 
+                        Content="➕ Create" 
+                        Command="{Binding CreateProfileCommand}"/>
+            </Grid>
+
+            <!-- Buttons -->
+            <Button Command="{Binding SwitchProfileCommand}" 
+                    Content="✅ Switch to Selected Profile" 
+                    HorizontalAlignment="Stretch"
+                    Background="#16825D"
+                    Foreground="White"
+                    FontWeight="Bold"/>
+                    
+            <Button Command="{Binding DeleteProfileCommand}" 
+                    Content="🗑️ Delete Selected Profile" 
+                    HorizontalAlignment="Stretch"
+                    Background="#C42B1C"
+                    Foreground="White"/>
+        </StackPanel>
+    </Grid>
+</Window>

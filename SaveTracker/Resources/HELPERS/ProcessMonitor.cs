@@ -45,12 +45,44 @@ namespace SaveTracker.Resources.HELPERS
         }
 
         /// <summary>
+        /// Explicitly adds a PID to tracking, bypassing parent/directory checks.
+        /// Used for external tools like Steam.
+        /// </summary>
+        public void AddExplicitlyTrackedPid(int processId)
+        {
+            lock (_lock)
+            {
+                if (_trackedProcessIds.TryAdd(processId, 0))
+                {
+                    DebugConsole.WriteLine($"[ProcessMonitor] Explicitly tracking external PID {processId}");
+                }
+            }
+        }
+
+        /// <summary>
         /// Handles a new process being started
         /// </summary>
-        public void HandleNewProcess(int processId)
+        /// <summary>
+        /// Handles a new process being started
+        /// </summary>
+        public void HandleNewProcess(int processId, int parentProcessId = -1)
         {
             try
             {
+                // 1. Parent Inheritance Logic (Most Robust)
+                if (parentProcessId != -1 && IsTracked(parentProcessId))
+                {
+                    lock (_lock)
+                    {
+                        if (_trackedProcessIds.TryAdd(processId, 0))
+                        {
+                            DebugConsole.WriteSuccess($"Tracking child process: PID {processId} (Parent: {parentProcessId})");
+                            return; // Successfully tracked via inheritance
+                        }
+                    }
+                }
+
+                // 2. Directory Logic (Fallback for detached processes)
                 string exePath = GetProcessExecutablePath(processId);
 
                 if (!string.IsNullOrEmpty(exePath) &&
@@ -60,8 +92,18 @@ namespace SaveTracker.Resources.HELPERS
                     {
                         if (_trackedProcessIds.TryAdd(processId, 0))
                         {
-                            DebugConsole.WriteLine($"Now tracking child process: {Path.GetFileName(exePath)} (PID: {processId})");
+                            DebugConsole.WriteLine($"Now tracking directory process: {Path.GetFileName(exePath)} (PID: {processId})");
                         }
+                    }
+                }
+                else
+                {
+                    // Debug logging to diagnose why directory check failed if we expected it to pass
+                    // Only log if we have a path but it didn't match (to avoid noise for system processes)
+                    if (!string.IsNullOrEmpty(exePath) && exePath.Contains("SaveTracker", StringComparison.OrdinalIgnoreCase) == false)
+                    {
+                        // Using WriteLine instead of WriteDebug to ensure visibility
+                        DebugConsole.WriteLine($"[ProcessMonitor] Ignored PID {processId} Path: '{exePath}' (Parent {parentProcessId} IsTracked: {IsTracked(parentProcessId)})");
                     }
                 }
             }
@@ -112,7 +154,7 @@ namespace SaveTracker.Resources.HELPERS
                 try
                 {
                     await Task.Delay(intervalMs, cancellationToken);
-                    ScanForNewProcesses();
+                    ScanForProcessesInDirectory();
                 }
                 catch (OperationCanceledException)
                 {
@@ -128,9 +170,10 @@ namespace SaveTracker.Resources.HELPERS
         }
 
         /// <summary>
-        /// Scans for processes in the install directory using WMI
+        /// Scans for processes in the install directory using WMI.
+        /// Public so it can be called manually (e.g. after ETW start) to catch startup races.
         /// </summary>
-        private void ScanForNewProcesses()
+        public void ScanForProcessesInDirectory()
         {
             try
             {
@@ -225,6 +268,38 @@ namespace SaveTracker.Resources.HELPERS
 #endif
 
             return processIds;
+        }
+
+        /// <summary>
+        /// Explicitly scans for existing child processes of a given PID.
+        /// This fixes race conditions where a child process starts before ETW tracing is fully active.
+        /// </summary>
+        public void ScanForChildren(int parentPid)
+        {
+#if WINDOWS
+            try
+            {
+                // Query path must be correct: Win32_Process where ParentProcessId = X
+                string query = $"SELECT ProcessId FROM Win32_Process WHERE ParentProcessId = {parentPid}";
+                using (var searcher = new ManagementObjectSearcher(query))
+                {
+                    foreach (ManagementObject obj in searcher.Get())
+                    {
+                        try
+                        {
+                            int childPid = Convert.ToInt32(obj["ProcessId"]);
+                            DebugConsole.WriteInfo($"[ProcessMonitor] Found existing child process: PID {childPid} (Parent: {parentPid})");
+                            HandleNewProcess(childPid, parentPid);
+                        }
+                        catch { }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteWarning($"Error scanning for children of PID {parentPid}: {ex.Message}");
+            }
+#endif
         }
 
         /// <summary>

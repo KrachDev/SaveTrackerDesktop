@@ -207,10 +207,9 @@ namespace SaveTracker.Resources.Logic
                 }
 
                 var effectiveProvider = provider ?? await GetEffectiveProvider(game);
-                var cloudProviderHelper = new CloudProviderHelper();
-                var remoteName = cloudProviderHelper.GetProviderConfigName(effectiveProvider);
-                var sanitizedGameName = SanitizeGameName(game.Name);
-                var remoteBasePath = $"{remoteName}:{SaveFileUploadManager.RemoteBaseFolder}/{sanitizedGameName}";
+
+                // Use helper to get correct path for active profile
+                var remoteBasePath = await _rcloneOps.GetRemotePathAsync(effectiveProvider, game);
 
                 DebugConsole.WriteInfo($"Checking cloud for: {remoteBasePath}");
 

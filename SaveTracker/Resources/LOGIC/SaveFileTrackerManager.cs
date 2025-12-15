@@ -19,7 +19,7 @@ namespace SaveTracker.Resources.LOGIC
     public class SaveFileTrackerManager
     {
         // Constants
-        private const int DIRECTORY_SCAN_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+        private const int DIRECTORY_SCAN_INTERVAL_MS = 30 * 1000; // 30 seconds - Faster scan to catch game process after launcher
         private const int PROCESS_SHUTDOWN_GRACE_PERIOD_MS = 5000; // 5 seconds - wait for filesystem to settle
         private const string ETW_SESSION_NAME = "SaveTrackerSession";
 
@@ -343,9 +343,12 @@ namespace SaveTracker.Resources.LOGIC
             _processMonitor = new ProcessMonitor(_game.InstallDirectory);
             await _processMonitor.Initialize(_initialProcessId);
 
+            // Critical: Scan for children immediately IN StartTracking.
+            // Moving it here caused a race condition where we scanned BEFORE ETW was ready.
+            // _processMonitor.ScanForChildren(_initialProcessId);
+
             return true;
         }
-
         public async Task StartTracking()
         {
             if (_isDisposed)
@@ -384,13 +387,26 @@ namespace SaveTracker.Resources.LOGIC
                 if (System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))
                 {
                     DebugConsole.WriteSuccess("ETW tracking started successfully");
+
+                    // CRITICAL: Give child processes a moment to spawn
+                    // Many games launch child processes within 100-500ms
+                    await Task.Delay(250);
+
+                    // STEP 1: Scan for direct children first (most accurate)
+                    DebugConsole.WriteInfo($"Scanning for child processes of PID {_initialProcessId}...");
+                    _processMonitor.ScanForChildren(_initialProcessId);
+
+                    // STEP 2: Scan entire directory for any related processes (catches detached processes)
+                    DebugConsole.WriteInfo("Scanning for all processes in install directory...");
+                    _processMonitor.ScanForProcessesInDirectory();
+
+                    // STEP 3: Do another child scan to catch late spawners
+                    await Task.Delay(100);
+                    DebugConsole.WriteInfo($"Final child process scan for PID {_initialProcessId}...");
+                    _processMonitor.ScanForChildren(_initialProcessId);
                 }
 
-                // PERFORM INITIAL SCAN
-                // This ensures we track existing files even if no IO happens during this session
-                DebugConsole.WriteInfo($"[DEBUG] Checking directory for initial scan: '{_game.InstallDirectory}' Exists: {Directory.Exists(_game.InstallDirectory)}");
-                // LOAD PREVIOUSLY TRACKED FILES
-                // This is critical if TrackReads is disabled and files are outside InstallDirectory
+                // Load previously tracked files (checksums)
                 try
                 {
                     DebugConsole.WriteInfo("Loading previously tracked files from checksums...");
@@ -403,7 +419,6 @@ namespace SaveTracker.Resources.LOGIC
                         foreach (var fileRecord in checksumData.Files)
                         {
                             // Reconstruct absolute path
-                            // Helper method needed? checksumData stores relative/contracted paths
                             string fullPath = SaveTracker.Resources.Logic.RecloneManagement.RcloneFileOperations.ExpandStoredPath(fileRecord.Key, _game.InstallDirectory);
 
                             if (!string.IsNullOrEmpty(fullPath) && File.Exists(fullPath))
@@ -419,33 +434,6 @@ namespace SaveTracker.Resources.LOGIC
                 {
                     DebugConsole.WriteWarning($"Failed to load previous files: {ex.Message}");
                 }
-
-                if (Directory.Exists(_game.InstallDirectory))
-                {
-                    DebugConsole.WriteInfo($"Performing initial scan of {_game.InstallDirectory}...");
-                    await Task.Run(() =>
-                    {
-                        try
-                        {
-                            var files = Directory.GetFiles(_game.InstallDirectory, "*", SearchOption.AllDirectories);
-                            int count = 0;
-                            foreach (var file in files)
-                            {
-                                HandleFileAccess(file);
-                                count++;
-                            }
-                            DebugConsole.WriteInfo($"Initial scan complete. Processed {count} files.");
-                        }
-                        catch (Exception ex)
-                        {
-                            DebugConsole.WriteWarning($"Initial scan failed: {ex.Message}");
-                        }
-                    });
-                }
-                else
-                {
-                    DebugConsole.WriteWarning($"Directory not found for initial scan: '{_game.InstallDirectory}'");
-                }
             }
             catch (Exception ex)
             {
@@ -454,7 +442,6 @@ namespace SaveTracker.Resources.LOGIC
                 throw;
             }
         }
-
         private void SetupEventHandlers()
         {
             if (_etwSession?.Source == null)
@@ -470,7 +457,15 @@ namespace SaveTracker.Resources.LOGIC
                 {
                     if (_isTracking && !_isDisposed)
                     {
-                        _processMonitor?.HandleNewProcess(data.ProcessID);
+                        // DEBUG: Log every process start to debug detection logic
+                        // Only log if potentially relevant (parent is tracked, or related to our tracking)
+                        bool parentTracked = _processMonitor != null && _processMonitor.IsTracked(data.ParentID);
+                        if (parentTracked)
+                        {
+                            DebugConsole.WriteDebug($"[ETW-PROC] Process Start: {data.ProcessName} ({data.ProcessID}) - Parent: {data.ParentID} (TRACKED)");
+                        }
+
+                        _processMonitor?.HandleNewProcess(data.ProcessID, data.ParentID);
                     }
                 }
                 catch (Exception ex)
@@ -498,15 +493,51 @@ namespace SaveTracker.Resources.LOGIC
             // File write tracking
             if (trackWrites)
             {
+                // Steam Integration: explicit tracking of Steam process
+                // User Request: Always track Steam (with filter), as checking for "IsSteamGame" was unreliable.
+                try
+                {
+                    var steamProcs = System.Diagnostics.Process.GetProcessesByName("steam");
+                    foreach (var p in steamProcs)
+                    {
+                        if (_processMonitor != null)
+                        {
+                            _processMonitor.AddExplicitlyTrackedPid(p.Id);
+                            DebugConsole.WriteInfo($"[Steam Integration] Tracking Steam process (PID: {p.Id}) for userdata monitoring.");
+                        }
+                    }
+                }
+                catch { }
+
                 _etwSession.Source.Kernel.FileIOWrite += data =>
                 {
                     try
                     {
                         if (_isTracking && !_isDisposed && _processMonitor != null)
                         {
-                            if (_processMonitor.IsTracked(data.ProcessID))
+                            bool isGameProcess = _processMonitor.IsTracked(data.ProcessID);
+
+                            if (isGameProcess)
                             {
-                                HandleFileAccess(data.FileName);
+                                // If it's the Steam process, apply strict filter
+                                string processName = "";
+                                try { processName = System.Diagnostics.Process.GetProcessById(data.ProcessID).ProcessName; } catch { }
+
+                                if (processName.Equals("steam", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    // Steam writes lots of junk. Only accept USERDATA/REMOTE.
+                                    // "remote" is the standard steam cloud folder structure: userdata/id/appid/remote/
+                                    if (data.FileName.Contains("userdata", StringComparison.OrdinalIgnoreCase) &&
+                                        data.FileName.Contains("remote", StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        HandleFileAccess(data.FileName);
+                                    }
+                                }
+                                else
+                                {
+                                    // Normal Game Process -> Accept everything (FileCollector will filter temp files)
+                                    HandleFileAccess(data.FileName);
+                                }
                             }
                         }
                     }

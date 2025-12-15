@@ -151,6 +151,7 @@ namespace SaveTracker.ViewModels
             Avalonia.Threading.Dispatcher.UIThread.Post(() =>
             {
                 LaunchGameCommand.NotifyCanExecuteChanged();
+                OpenProfileManagerCommand.NotifyCanExecuteChanged();
             });
         }
 
@@ -194,7 +195,14 @@ namespace SaveTracker.ViewModels
         {
             var version = System.Reflection.Assembly.GetExecutingAssembly()
                 .GetName().Version;
-            return version != null ? $"SaveTracker Desktop v{version.Major}.{version.Minor}.{version.Build}" : "SaveTracker Desktop";
+            // Uses generated BuildInfo class
+            string verStr = version != null ? $"SaveTracker Desktop v{version.Major}.{version.Minor}.{version.Build}" : "SaveTracker Desktop";
+            try
+            {
+                verStr += $" | Build: {SaveTracker.Resources.SAVE_SYSTEM.BuildInfo.BuildNumber}";
+            }
+            catch { } // Ignore if BuildInfo not found (e.g. fresh clone)
+            return verStr;
         }
         // ========== SIMPLIFIED EVENTS ==========
         public event Action? OnAddGameRequested;
@@ -747,6 +755,37 @@ namespace SaveTracker.ViewModels
                 SyncStatusText = "Ready";
             }
         }
+
+        [RelayCommand(CanExecute = nameof(IsLaunchEnabled))]
+        private async Task OpenProfileManager()
+        {
+            if (SelectedGame?.Game == null) return;
+
+            try
+            {
+                var mainWindow = Avalonia.Application.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop
+                    ? desktop.MainWindow as Window
+                    : null;
+
+                if (mainWindow != null)
+                {
+                    var vm = new ProfileManagerViewModel(SelectedGame.Game);
+                    var window = new ProfileManagerWindow
+                    {
+                        DataContext = vm
+                    };
+                    await window.ShowDialog(mainWindow);
+
+                    // Refresh game details after window closes (in case profile switched)
+                    await LoadGameDetailsAsync(SelectedGame);
+                }
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteException(ex, "Failed to open profile manager");
+            }
+        }
+
         [RelayCommand(CanExecute = nameof(IsLaunchEnabled))]
         private async Task LaunchGameAsync()
         {
@@ -1038,7 +1077,12 @@ namespace SaveTracker.ViewModels
                         var filesToUpload = _trackLogic?.GetUploadList();
                         if (filesToUpload != null && filesToUpload.Count > 0)
                         {
-                            await UploadFilesAsync(filesToUpload, game);
+                            bool forceUpload = comparison.Status == SmartSyncService.ProgressStatus.CloudNotFound;
+                            if (forceUpload)
+                            {
+                                DebugConsole.WriteInfo("Forcing upload because cloud save is missing.");
+                            }
+                            await UploadFilesAsync(filesToUpload, game, forceUpload);
                         }
                         else
                         {
@@ -1102,7 +1146,7 @@ namespace SaveTracker.ViewModels
 
 
 
-        private async Task UploadFilesAsync(List<string> files, Game game)
+        private async Task UploadFilesAsync(List<string> files, Game game, bool force = false)
         {
             try
             {
@@ -1176,7 +1220,7 @@ namespace SaveTracker.ViewModels
                     SyncStatusText = $"{progress.Status} ({progress.PercentComplete}%)";
                 };
 
-                var uploadResult = await _uploadManager.Upload(files, game, provider.Provider, CancellationToken.None);
+                var uploadResult = await _uploadManager.Upload(files, game, provider.Provider, CancellationToken.None, force);
 
                 if (uploadResult.Success)
                 {
@@ -1265,11 +1309,16 @@ namespace SaveTracker.ViewModels
                 var config = await ConfigManagement.LoadConfigAsync();
                 if (config?.CloudConfig == null) return;
 
-                var remoteName = _providerHelper.GetProviderConfigName(config.CloudConfig.Provider);
-                var sanitizedGameName = SanitizeGameName(SelectedGame.Game.Name);
+                // Get the remote path (handles profiles correctly)
+                string remotePath = await rcloneOps.GetRemotePathAsync(config.CloudConfig.Provider, SelectedGame.Game);
 
-                // Build the remote path to the game's cloud folder
-                string remotePath = $"{remoteName}:{SaveFileUploadManager.RemoteBaseFolder}/{sanitizedGameName}";
+                // Verify cloud save exists for this profile before attempting download
+                if (!await rcloneOps.CheckCloudSaveExistsAsync(remotePath, config.CloudConfig.Provider))
+                {
+                    DebugConsole.WriteWarning($"No cloud save found at {remotePath}");
+                    _notificationService?.Show("Download Failed", "No cloud save found for this profile.", NotificationType.Warning);
+                    return;
+                }
 
                 // Extract just the relative paths (filenames) from selected files
                 var selectedRelativePaths = selectedFiles.Select(f => f.Path).ToList();
@@ -2160,11 +2209,15 @@ namespace SaveTracker.ViewModels
                     return;
                 }
 
-                var remoteName = _providerHelper.GetProviderConfigName(config.CloudConfig.Provider);
-                var sanitizedGameName = SanitizeGameName(game.Name);
-                var remotePath = $"{remoteName}:{SaveFileUploadManager.RemoteBaseFolder}/{sanitizedGameName}";
-
                 var rcloneOps = new RcloneFileOperations();
+                var remotePath = await rcloneOps.GetRemotePathAsync(config.CloudConfig.Provider, game);
+
+                if (!await rcloneOps.CheckCloudSaveExistsAsync(remotePath, config.CloudConfig.Provider))
+                {
+                    DebugConsole.WriteWarning($"No cloud save found at {remotePath} - skipping download");
+                    return;
+                }
+
                 bool success = await rcloneOps.DownloadWithChecksumAsync(remotePath, game, config.CloudConfig.Provider);
 
                 if (success)

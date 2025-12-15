@@ -281,6 +281,9 @@
                             <Button Command="{Binding SyncNowCommand}" 
                                     Content="{Binding SyncButtonText}"
                                     IsEnabled="{Binding IsSyncEnabled}"/>
+                            <Button Command="{Binding OpenProfileManagerCommand}" 
+                                    Content="👥 Profiles"
+                                    IsEnabled="{Binding IsLaunchEnabled}"/>
                         </StackPanel>
                     </Grid>
                 </Border>
