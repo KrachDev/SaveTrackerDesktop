@@ -45,7 +45,7 @@ namespace SaveTracker.Resources.Logic
             public TimeSpan LocalPlayTime { get; set; }
             public TimeSpan CloudPlayTime { get; set; }
             public TimeSpan Difference { get; set; }
-            public string Message { get; set; }
+            public string Message { get; set; } = string.Empty;
         }
 
         /// <summary>

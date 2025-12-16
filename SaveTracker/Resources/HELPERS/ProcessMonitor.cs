@@ -54,7 +54,7 @@ namespace SaveTracker.Resources.HELPERS
             {
                 if (_trackedProcessIds.TryAdd(processId, 0))
                 {
-                    DebugConsole.WriteLine($"[ProcessMonitor] Explicitly tracking external PID {processId}");
+                    //DebugConsole.WriteLine($"[ProcessMonitor] Explicitly tracking external PID {processId}");
                 }
             }
         }
@@ -103,7 +103,7 @@ namespace SaveTracker.Resources.HELPERS
                     if (!string.IsNullOrEmpty(exePath) && exePath.Contains("SaveTracker", StringComparison.OrdinalIgnoreCase) == false)
                     {
                         // Using WriteLine instead of WriteDebug to ensure visibility
-                        DebugConsole.WriteLine($"[ProcessMonitor] Ignored PID {processId} Path: '{exePath}' (Parent {parentProcessId} IsTracked: {IsTracked(parentProcessId)})");
+                        // DebugConsole.WriteLine($"[ProcessMonitor] Ignored PID {processId} Path: '{exePath}' (Parent {parentProcessId} IsTracked: {IsTracked(parentProcessId)})");
                     }
                 }
             }

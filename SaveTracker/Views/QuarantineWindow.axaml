@@ -1,0 +1,85 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="using:SaveTracker.ViewModels"
+        mc:Ignorable="d" d:DesignWidth="600" d:DesignHeight="400"
+        x:Class="SaveTracker.Views.QuarantineWindow"
+        x:DataType="vm:QuarantineViewModel"
+        Title="Quarantine Manager"
+        Width="600" Height="400"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        Background="#1E1E1E">
+
+    <Window.Styles>
+        <Style Selector="Button">
+            <Setter Property="Background" Value="#3F3F46"/>
+            <Setter Property="Foreground" Value="#CCCCCC"/>
+            <Setter Property="Padding" Value="10,6"/>
+            <Setter Property="CornerRadius" Value="4"/>
+        </Style>
+    </Window.Styles>
+
+    <Grid RowDefinitions="Auto,*,Auto" Margin="20">
+        
+        <!-- Header -->
+        <StackPanel Grid.Row="0" Spacing="5" Margin="0,0,0,15">
+            <TextBlock Text="Quarantined Files" 
+                       Foreground="#FFCC00" 
+                       FontSize="20" 
+                       FontWeight="Bold"/>
+            <TextBlock Text="These files were moved here to prevent accidental overwrites." 
+                       Foreground="#858585" 
+                       FontSize="12"/>
+        </StackPanel>
+
+        <!-- File List -->
+        <Border Grid.Row="1" 
+                Background="#252526" 
+                BorderBrush="#3F3F46" 
+                BorderThickness="1" 
+                CornerRadius="4" 
+                Margin="0,0,0,15">
+            <ListBox ItemsSource="{Binding Items}" 
+                     SelectedItem="{Binding SelectedItem}"
+                     Background="Transparent">
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <Grid ColumnDefinitions="*,Auto" Margin="5">
+                            <StackPanel Spacing="2">
+                                <TextBlock Text="{Binding FileName}" 
+                                           Foreground="White" 
+                                           FontWeight="SemiBold"/>
+                                <TextBlock Text="{Binding OriginalPath, StringFormat='Original: {0}'}" 
+                                           FontSize="10" 
+                                           Foreground="#888888"/>
+                                <TextBlock Text="{Binding Reason, StringFormat='Reason: {0}'}" 
+                                           FontSize="10" 
+                                           Foreground="#CC5555"/>
+                            </StackPanel>
+                            <TextBlock Grid.Column="1" 
+                                       Text="{Binding QuarantinedDate}" 
+                                       FontSize="10" 
+                                       Foreground="#666666" 
+                                       VerticalAlignment="Center"/>
+                        </Grid>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+        </Border>
+
+        <!-- Actions -->
+        <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="10" HorizontalAlignment="Right">
+             <Button Command="{Binding DeleteCommand}" 
+                     Content="🗑️ Delete" 
+                     Background="#C42B1C"
+                     Foreground="White"/>
+            <Button Command="{Binding RestoreCommand}" 
+                    Content="↩️ Restore" 
+                    Background="#16825D"
+                    Foreground="White"
+                    FontWeight="Bold"/>
+        </StackPanel>
+    </Grid>
+</Window>

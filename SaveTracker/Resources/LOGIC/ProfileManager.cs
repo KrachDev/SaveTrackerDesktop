@@ -227,7 +227,7 @@ namespace SaveTracker.Resources.LOGIC
             try
             {
                 string json = await File.ReadAllTextAsync(path);
-                return JsonSerializer.Deserialize<ProfileManifest>(json) ?? new ProfileManifest { ProfileId = profile.Id };
+                return JsonSerializer.Deserialize<ProfileManifest>(json, JsonHelper.DefaultCaseInsensitive) ?? new ProfileManifest { ProfileId = profile.Id };
             }
             catch (Exception ex)
             {
@@ -249,37 +249,65 @@ namespace SaveTracker.Resources.LOGIC
         /// </summary>
         private async Task<ProfileManifest> LoadOrBuildManifest(Game game, Profile profile)
         {
+            ProfileManifest manifest;
+
             if (File.Exists(GetManifestPath(game, profile)))
             {
-                return await LoadManifest(game, profile);
+                manifest = await LoadManifest(game, profile);
+            }
+            else
+            {
+                DebugConsole.WriteInfo($"Building initial manifest for profile {profile.Name}...");
+                manifest = new ProfileManifest { ProfileId = profile.Id, LastActive = DateTime.Now };
+
+                // Get currently tracked files from ChecksumService (the old "source of truth")
+                var checksumData = await _checksumService.LoadChecksumData(game.InstallDirectory);
+                var gameData = await ConfigManagement.GetGameData(game);
+
+                if (checksumData != null && checksumData.Files != null)
+                {
+                    foreach (var contractPath in checksumData.Files.Keys)
+                    {
+                        string fullPath = PathContractor.ExpandPath(contractPath, game.InstallDirectory, gameData?.DetectedPrefix);
+
+                        // We only add it to the manifest if it currently exists
+                        if (File.Exists(fullPath))
+                        {
+                            string relPath = Path.GetRelativePath(game.InstallDirectory, fullPath);
+                            string backupSuffix = ".ST_PROFILE." + SanitizeProfileName(profile.Name);
+
+                            manifest.Files.Add(new ManagedFile
+                            {
+                                OriginalPath = relPath,
+                                BackupPath = relPath + backupSuffix,
+                                LastModified = File.GetLastWriteTime(fullPath)
+                            });
+                        }
+                    }
+                }
             }
 
-            DebugConsole.WriteInfo($"Building initial manifest for profile {profile.Name}...");
-            var manifest = new ProfileManifest { ProfileId = profile.Id, LastActive = DateTime.Now };
-
-            // Get currently tracked files from ChecksumService (the old "source of truth")
-            var checksumData = await _checksumService.LoadChecksumData(game.InstallDirectory);
-            var gameData = await ConfigManagement.GetGameData(game);
-
-            if (checksumData != null && checksumData.Files != null)
+            // RECOVERY: If manifest is empty, it might mean the files are already deactivated (renamed).
+            // Scan for files matching .ST_PROFILE.{Name} to "claim" them.
+            if (manifest.Files.Count == 0)
             {
-                foreach (var contractPath in checksumData.Files.Keys)
+                DebugConsole.WriteInfo($"Manifest empty. Scanning for lost {profile.Name} files...");
+                string suffix = ".ST_PROFILE." + SanitizeProfileName(profile.Name);
+
+                // Recursive scan for *{suffix}
+                var files = Directory.GetFiles(game.InstallDirectory, "*" + suffix, SearchOption.AllDirectories);
+                foreach (var file in files)
                 {
-                    string fullPath = PathContractor.ExpandPath(contractPath, game.InstallDirectory, gameData?.DetectedPrefix);
+                    string relPath = Path.GetRelativePath(game.InstallDirectory, file);
+                    string originalRelPath = relPath.Substring(0, relPath.Length - suffix.Length);
 
-                    // We only add it to the manifest if it currently exists
-                    if (File.Exists(fullPath))
+                    DebugConsole.WriteInfo($"Recovered tracked file: {originalRelPath}");
+                    manifest.Files.Add(new ManagedFile
                     {
-                        string relPath = Path.GetRelativePath(game.InstallDirectory, fullPath);
-                        string backupSuffix = ".ST_PROFILE." + SanitizeProfileName(profile.Name);
-
-                        manifest.Files.Add(new ManagedFile
-                        {
-                            OriginalPath = relPath,
-                            BackupPath = relPath + backupSuffix,
-                            LastModified = File.GetLastWriteTime(fullPath)
-                        });
-                    }
+                        OriginalPath = originalRelPath,
+                        BackupPath = relPath,
+                        LastModified = File.GetLastWriteTime(file)
+                    });
                 }
             }
 

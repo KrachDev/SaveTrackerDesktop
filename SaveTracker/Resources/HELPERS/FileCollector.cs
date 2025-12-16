@@ -59,16 +59,16 @@ namespace SaveTracker.Resources.HELPERS
                             if (string.Equals(normalizedPath, normalizedBlacklist, StringComparison.OrdinalIgnoreCase))
                             {
                                 if (shouldLog)
-                                    DebugConsole.WriteWarning($"Skipped (Game Blacklist - Exact): {filePath}");
-                                return true;
+                                    //DebugConsole.WriteWarning($"Skipped (Game Blacklist - Exact): {filePath}");
+                                    return true;
                             }
 
                             // Check if file is within blacklisted directory
                             if (normalizedPath.StartsWith(normalizedBlacklist + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
                             {
                                 if (shouldLog)
-                                    DebugConsole.WriteWarning($"Skipped (Game Blacklist - Directory): {filePath}");
-                                return true;
+                                    //DebugConsole.WriteWarning($"Skipped (Game Blacklist - Directory): {filePath}");
+                                    return true;
                             }
                         }
                     }
@@ -89,8 +89,8 @@ namespace SaveTracker.Resources.HELPERS
                         normalizedPath.Equals(ignoredDir, StringComparison.OrdinalIgnoreCase))
                     {
                         if (shouldLog)
-                            DebugConsole.WriteWarning($"Skipped (System Directory): {filePath}");
-                        return true;
+                            // DebugConsole.WriteWarning($"Skipped (System Directory): {filePath}");
+                            return true;
                     }
                 }
 
@@ -101,15 +101,15 @@ namespace SaveTracker.Resources.HELPERS
                 if (Ignorlist.IgnoredFileNames.Contains(fileName))
                 {
                     if (shouldLog)
-                        DebugConsole.WriteWarning($"Skipped (Ignored Filename): {filePath}");
-                    return true;
+                        //DebugConsole.WriteWarning($"Skipped (Ignored Filename): {filePath}");
+                        return true;
                 }
 
                 if (Ignorlist.IgnoredExtensions.Contains(fileExtension))
                 {
                     if (shouldLog)
-                        DebugConsole.WriteWarning($"Skipped (Ignored Extension): {filePath}");
-                    return true;
+                        //DebugConsole.WriteWarning($"Skipped (Ignored Extension): {filePath}");
+                        return true;
                 }
 
                 // 4. Simple keyword filtering
@@ -121,15 +121,15 @@ namespace SaveTracker.Resources.HELPERS
                     if (lowerFileName.Contains(keyword))
                     {
                         if (shouldLog)
-                            DebugConsole.WriteWarning($"Skipped (Keyword in Filename '{keyword}'): {filePath}");
-                        return true;
+                            //DebugConsole.WriteWarning($"Skipped (Keyword in Filename '{keyword}'): {filePath}");
+                            return true;
                     }
 
                     if (lowerPath.Contains($"{Path.DirectorySeparatorChar}{keyword}{Path.DirectorySeparatorChar}"))
                     {
                         if (shouldLog)
-                            DebugConsole.WriteWarning($"Skipped (Keyword in Path '{keyword}'): {filePath}");
-                        return true;
+                            //DebugConsole.WriteWarning($"Skipped (Keyword in Path '{keyword}'): {filePath}");
+                            return true;
                     }
                 }
 
@@ -137,8 +137,8 @@ namespace SaveTracker.Resources.HELPERS
                 if (IsObviousSystemFile(fileName))
                 {
                     if (shouldLog)
-                        DebugConsole.WriteWarning($"Skipped (System File Heuristic): {filePath}");
-                    return true;
+                        //DebugConsole.WriteWarning($"Skipped (System File Heuristic): {filePath}");
+                        return true;
                 }
 
                 // File passed all filters
@@ -148,7 +148,9 @@ namespace SaveTracker.Resources.HELPERS
             catch (Exception ex)
             {
                 if (shouldLog)
-                    DebugConsole.WriteWarning($"Skipped (Path Processing Error): {filePath} - {ex.Message}");
+                {
+                    //DebugConsole.WriteWarning($"Skipped (Path Processing Error): {filePath} - {ex.Message}");
+                }
                 return false;
             }
         }

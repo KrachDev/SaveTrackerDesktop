@@ -103,6 +103,13 @@
                     HorizontalAlignment="Stretch"
                     Background="#C42B1C"
                     Foreground="White"/>
+
+            <Button Command="{Binding OpenQuarantineCommand}" 
+                    Content="⚠️ View Excluded/Quarantined Files" 
+                    HorizontalAlignment="Stretch"
+                    Background="#3F3F46"
+                    Foreground="#FFCC00"
+                    Margin="0,10,0,0"/>
         </StackPanel>
     </Grid>
 </Window>

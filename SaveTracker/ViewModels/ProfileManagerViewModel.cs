@@ -102,5 +102,25 @@ namespace SaveTracker.ViewModels
                 DebugConsole.WriteException(ex, "Failed to switch profile");
             }
         }
+
+        [RelayCommand]
+        private async Task OpenQuarantine()
+        {
+            try
+            {
+                var vm = new QuarantineViewModel(_game);
+                var win = new SaveTracker.Views.QuarantineWindow { DataContext = vm };
+
+                if (Avalonia.Application.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop)
+                {
+                    var owner = desktop.Windows.FirstOrDefault(w => w.IsActive) ?? desktop.MainWindow;
+                    if (owner != null) await win.ShowDialog(owner);
+                }
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteException(ex, "Failed to open quarantine manager");
+            }
+        }
     }
 }
