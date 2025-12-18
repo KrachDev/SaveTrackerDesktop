@@ -248,50 +248,54 @@ namespace SaveTracker.Resources.HELPERS
             }
             catch (Exception ex)
             {
-                DebugConsole.WriteWarning($"Error querying Win32_Process: {ex.Message}");
+                // Silently fallback or log just a warning if WMI fails completely
+                // DebugConsole.WriteWarning($"[WMI Failure] Falling back to native process scan: {ex.Message}");
+                return GetRunningProcessesWithPathsNative();
             }
 #else
-            try
-            {
-                if (System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Linux))
-                {
-                    // Linux specific implementation using /proc
-                    var pids = LinuxUtils.GetAllProcesses();
-                    foreach (var pid in pids)
-                    {
-                        string path = LinuxUtils.ResolveProcPath(pid);
-                        if (!string.IsNullOrEmpty(path))
-                        {
-                            processes.Add((pid, path));
-                        }
-                    }
-                }
-                else
-                {
-                    // Fallback / MacOS
-                    var allProcesses = System.Diagnostics.Process.GetProcesses();
-                    foreach (var proc in allProcesses)
-                    {
-                        try
-                        {
-                            if (proc.MainModule != null && !string.IsNullOrEmpty(proc.MainModule.FileName))
-                            {
-                                processes.Add((proc.Id, proc.MainModule.FileName));
-                            }
-                        }
-                        catch { }
-                        finally { proc.Dispose(); }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                DebugConsole.WriteWarning($"Error scanning processes: {ex.Message}");
-            }
+            return GetRunningProcessesWithPathsNative();
 #endif
-
             return processes;
         }
+
+        private List<(int ProcessId, string ExecutablePath)> GetRunningProcessesWithPathsNative()
+        {
+            var processes = new List<(int ProcessId, string ExecutablePath)>();
+
+            if (System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Linux))
+            {
+                // Linux specific implementation using /proc
+                var pids = LinuxUtils.GetAllProcesses();
+                foreach (var pid in pids)
+                {
+                    string path = LinuxUtils.ResolveProcPath(pid);
+                    if (!string.IsNullOrEmpty(path))
+                    {
+                        processes.Add((pid, path));
+                    }
+                }
+            }
+            else
+            {
+                // Fallback / MacOS / Windows Native
+                var allProcesses = System.Diagnostics.Process.GetProcesses();
+                foreach (var proc in allProcesses)
+                {
+                    try
+                    {
+                        if (proc.MainModule != null && !string.IsNullOrEmpty(proc.MainModule.FileName))
+                        {
+                            processes.Add((proc.Id, proc.MainModule.FileName));
+                        }
+                    }
+                    catch { }
+                    finally { proc.Dispose(); }
+                }
+            }
+            return processes;
+        }
+
+
 
         public void Dispose()
         {

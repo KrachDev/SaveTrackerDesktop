@@ -12,9 +12,9 @@
     <Company>KrachDev</Company>
     <Authors>KrachDev</Authors>
     <Copyright>Copyright © 2025 KrachDev</Copyright>
-    <Version>0.4.9</Version>
-    <AssemblyVersion>0.4.9.$([System.DateTime]::Now.ToString("MMdd"))</AssemblyVersion>
-    <FileVersion>0.4.9.$([System.DateTime]::Now.ToString("MMdd"))</FileVersion>
+    <Version>0.5.0</Version>
+    <AssemblyVersion>0.5.0.$([System.DateTime]::Now.ToString("MMdd"))</AssemblyVersion>
+    <FileVersion>0.5.0.$([System.DateTime]::Now.ToString("MMdd"))</FileVersion>
     <Description>Automatic game save file tracking and cloud synchronization</Description>
     <PackageProjectUrl>https://github.com/KrachDev/SaveTrackerDesktop</PackageProjectUrl>
     <RepositoryUrl>https://github.com/KrachDev/SaveTrackerDesktop</RepositoryUrl>

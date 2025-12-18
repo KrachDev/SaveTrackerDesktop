@@ -98,6 +98,9 @@ namespace SaveTracker.ViewModels
         private string _gamePlayTimeText = "Play Time: Never";
 
         [ObservableProperty]
+        private string _gameProfileText = "Profile: Default";
+
+        [ObservableProperty]
         private string _cloudStorageText = "Not configured";
 
         [ObservableProperty]
@@ -266,16 +269,50 @@ namespace SaveTracker.ViewModels
                     }
                 }
 
-                DebugConsole.WriteInfo("Is Admin: " + AdminHelper.IsAdministrator().Result.ToString());
+                DebugConsole.WriteInfo("Is Admin: " + (await AdminHelper.IsAdministrator()).ToString());
 
                 // Check for updates on startup if enabled
                 if (_mainConfig?.CheckForUpdatesOnStartup ?? true)
                 {
-                    _ = CheckForUpdatesAsync();
+                    _ = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            if (await NetworkHelper.IsInternetAvailableAsync())
+                            {
+                                await CheckForUpdatesAsync();
+                            }
+                            else
+                            {
+                                DebugConsole.WriteInfo("Offline: Skipping update check.");
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            DebugConsole.WriteWarning($"Background update check failed: {ex.Message}");
+                        }
+                    });
                 }
 
                 // Update Cloud Game Cache in background
-                _ = UpdateCloudGameCacheAsync();
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        if (await NetworkHelper.IsInternetAvailableAsync())
+                        {
+                            await UpdateCloudGameCacheAsync();
+                        }
+                        else
+                        {
+                            DebugConsole.WriteInfo("Offline: Skipping cloud game cache update.");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        DebugConsole.WriteWarning($"Background cloud cache update failed: {ex.Message}");
+                    }
+                });
 
             }
             catch (Exception ex)
@@ -428,6 +465,9 @@ namespace SaveTracker.ViewModels
                 // Load game-specific settings
                 await LoadGameSettingsAsync(game);
                 InitializeGameProperties(game);
+                // Update profile display
+                await UpdateProfileDisplayAsync(game);
+
                 // Clear cloud files (load on demand when tab is selected)
                 CloudFiles.Clear();
                 CloudFilesCountText = "Click refresh to load";
@@ -436,9 +476,37 @@ namespace SaveTracker.ViewModels
                 LaunchGameCommand.NotifyCanExecuteChanged();
                 SyncNowCommand.NotifyCanExecuteChanged();
             }
+
             catch (Exception ex)
             {
                 DebugConsole.WriteException(ex, "Error loading game details");
+            }
+        }
+
+        private async Task UpdateProfileDisplayAsync(Game game)
+        {
+            try
+            {
+                var globalConfig = await ConfigManagement.LoadConfigAsync();
+                if (globalConfig != null && globalConfig.Profiles != null)
+                {
+                    var profiles = globalConfig.Profiles;
+                    var activeId = game.ActiveProfileId;
+                    var activeProfile = profiles.FirstOrDefault(p => p.Id == activeId)
+                                        ?? profiles.FirstOrDefault(p => p.IsDefault);
+
+                    string profileName = activeProfile?.Name ?? "Default";
+                    GameProfileText = $"Profile: {profileName}";
+                }
+                else
+                {
+                    GameProfileText = "Profile: Default";
+                }
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteWarning($"Failed to update profile display: {ex.Message}");
+                GameProfileText = "Profile: Unknown";
             }
         }
 
@@ -986,6 +1054,13 @@ namespace SaveTracker.ViewModels
                 {
                     try
                     {
+                        // Resolve Profile Name
+                        // This logic is now handled by UpdateProfileDisplayAsync
+                        if (SelectedGame?.Game != null)
+                        {
+                            await UpdateProfileDisplayAsync(SelectedGame.Game);
+                        }
+
                         if (SelectedGame?.Game != null && _trackLogic != null)
                         {
                             if (IsTrackingEnabledForGame())

@@ -276,71 +276,75 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             int failedCount = 0;
 
             // PERFORMANCE: Parallel checksum calculation to use all CPU cores
-            System.Threading.Tasks.Parallel.ForEach(filePaths, new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount }, filePath =>
+            // Wrapped in Task.Run to ensure it runs on thread pool and doesn't block UI
+            await Task.Run(() =>
             {
-                if (!File.Exists(filePath))
+                System.Threading.Tasks.Parallel.ForEach(filePaths, new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount }, filePath =>
                 {
-                    DebugConsole.WriteWarning($"File not found, skipping: {filePath}");
-                    Interlocked.Increment(ref failedCount);
-                    return;
-                }
-
-                // Get relative path from game directory for checking purposes
-                string contractedPath = PathContractor.ContractPath(filePath, gameDirectory, detectedPrefix);
-                string fileName = Path.GetFileName(filePath);
-
-                // Determine if file is internal (inside game directory)
-                // PathContractor uses %GAMEPATH% prefix for internal files
-                bool isInternal = contractedPath.StartsWith("%GAMEPATH%", StringComparison.OrdinalIgnoreCase);
-
-                try
-                {
-                    // Note: ShouldUploadFileWithChecksum is async, but Parallel.ForEach needs sync
-                    // We'll use Task.Run().GetAwaiter().GetResult() for CPU-bound work
-                    bool needsUpload = force;
-                    if (!force)
+                    if (!File.Exists(filePath))
                     {
-                        needsUpload = ShouldUploadFileWithChecksum(filePath, gameDirectory).GetAwaiter().GetResult();
+                        DebugConsole.WriteWarning($"File not found, skipping: {filePath}");
+                        Interlocked.Increment(ref failedCount);
+                        return;
                     }
 
-                    if (needsUpload)
+                    // Get relative path from game directory for checking purposes
+                    string contractedPath = PathContractor.ContractPath(filePath, gameDirectory, detectedPrefix);
+                    string fileName = Path.GetFileName(filePath);
+
+                    // Determine if file is internal (inside game directory)
+                    // PathContractor uses %GAMEPATH% prefix for internal files
+                    bool isInternal = contractedPath.StartsWith("%GAMEPATH%", StringComparison.OrdinalIgnoreCase);
+
+                    try
                     {
-                        if (isInternal)
+                        // Note: ShouldUploadFileWithChecksum is async, but Parallel.ForEach needs sync
+                        // We'll use Task.Run().GetAwaiter().GetResult() for CPU-bound work
+                        bool needsUpload = force;
+                        if (!force)
                         {
-                            internalFilesToBatchConcurrent.Add(filePath);
+                            needsUpload = ShouldUploadFileWithChecksum(filePath, gameDirectory).GetAwaiter().GetResult();
+                        }
 
-                            // Strip %GAMEPATH%/ or %GAMEPATH%\ prefix to get pure relative path
-                            string pureRelative = Path.GetRelativePath(gameDirectory, filePath);
-                            relativeInternalPathsConcurrent.Add(pureRelative);
+                        if (needsUpload)
+                        {
+                            if (isInternal)
+                            {
+                                internalFilesToBatchConcurrent.Add(filePath);
 
-                            var info = new FileInfo(filePath);
-                            Interlocked.Add(ref batchUploadSizeAtomic, info.Length);
+                                // Strip %GAMEPATH%/ or %GAMEPATH%\ prefix to get pure relative path
+                                string pureRelative = Path.GetRelativePath(gameDirectory, filePath);
+                                relativeInternalPathsConcurrent.Add(pureRelative);
+
+                                var info = new FileInfo(filePath);
+                                Interlocked.Add(ref batchUploadSizeAtomic, info.Length);
+                            }
+                            else
+                            {
+                                // External file - must upload individually
+                                externalFilesToSingleConcurrent.Add(filePath);
+                            }
                         }
                         else
                         {
-                            // External file - must upload individually
-                            externalFilesToSingleConcurrent.Add(filePath);
+                            DebugConsole.WriteSuccess($"SKIPPED: {fileName} - Identical to last uploaded version");
+                            Interlocked.Increment(ref skippedCount);
+                            Interlocked.Add(ref skippedSize, new FileInfo(filePath).Length);
                         }
                     }
-                    else
+                    catch (Exception ex)
                     {
-                        DebugConsole.WriteSuccess($"SKIPPED: {fileName} - Identical to last uploaded version");
-                        Interlocked.Increment(ref skippedCount);
-                        Interlocked.Add(ref skippedSize, new FileInfo(filePath).Length);
+                        DebugConsole.WriteException(ex, $"Error checking file {fileName}");
+                        Interlocked.Increment(ref failedCount);
                     }
-                }
-                catch (Exception ex)
-                {
-                    DebugConsole.WriteException(ex, $"Error checking file {fileName}");
-                    Interlocked.Increment(ref failedCount);
-                }
 
-                // Report progress during file checking (0-40% of total progress)
-                int currentCount = Interlocked.Increment(ref processedCount);
-                if (currentCount % 10 == 0 || currentCount == filePaths.Count)
-                {
-                    progress?.Report((double)currentCount / filePaths.Count * 40);
-                }
+                    // Report progress during file checking (0-40% of total progress)
+                    int currentCount = Interlocked.Increment(ref processedCount);
+                    if (currentCount % 10 == 0 || currentCount == filePaths.Count)
+                    {
+                        progress?.Report((double)currentCount / filePaths.Count * 40);
+                    }
+                });
             });
 
             // Convert concurrent collections to regular lists

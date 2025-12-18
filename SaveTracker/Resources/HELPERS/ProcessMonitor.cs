@@ -10,10 +10,41 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
+using System.Runtime.InteropServices;
+
 namespace SaveTracker.Resources.HELPERS
 {
     public class ProcessMonitor : IDisposable
     {
+        // P/Invoke for Native Child Scanning
+        [DllImport("kernel32.dll", SetLastError = true)]
+        static extern IntPtr CreateToolhelp32Snapshot(uint dwFlags, uint th32ProcessID);
+        [DllImport("kernel32.dll")]
+        static extern bool Process32First(IntPtr hSnapshot, ref PROCESSENTRY32 lppe);
+        [DllImport("kernel32.dll")]
+        static extern bool Process32Next(IntPtr hSnapshot, ref PROCESSENTRY32 lppe);
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        static extern bool CloseHandle(IntPtr hObject);
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
+        public struct PROCESSENTRY32
+        {
+            public uint dwSize;
+            public uint cntUsage;
+            public uint th32ProcessID;
+            public IntPtr th32DefaultHeapID;
+            public uint th32ModuleID;
+            public uint cntThreads;
+            public uint th32ParentProcessID;
+            public int pcPriClassBase;
+            public uint dwFlags;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
+            public string szExeFile;
+        }
+
+        private const uint TH32CS_SNAPPROCESS = 0x00000002;
+
         private readonly string _installDirectory;
         // Replace ConcurrentHashSet with ConcurrentDictionary
         private readonly ConcurrentDictionary<int, byte> _trackedProcessIds = new();
@@ -204,11 +235,10 @@ namespace SaveTracker.Resources.HELPERS
         /// </summary>
         private List<int> GetProcessesFromDirectory(string directory)
         {
-            var processIds = new List<int>();
-
 #if WINDOWS
             try
             {
+                var processIds = new List<int>();
                 string query = "SELECT ProcessId, ExecutablePath FROM Win32_Process";
                 using (var searcher = new ManagementObjectSearcher(query))
                 {
@@ -226,17 +256,25 @@ namespace SaveTracker.Resources.HELPERS
                         }
                         catch
                         {
-                            // Skip processes we can't access
                             continue;
                         }
                     }
                 }
+                return processIds;
             }
             catch (Exception ex)
             {
-                DebugConsole.WriteLine($"[ERROR] Getting directory processes (WMI): {ex.Message}");
+                DebugConsole.WriteWarning($"[WMI Failure] Falling back to native process scan: {ex.Message}");
+                return GetProcessesFromDirectoryNative(directory);
             }
 #else
+            return GetProcessesFromDirectoryNative(directory);
+#endif
+        }
+
+        private List<int> GetProcessesFromDirectoryNative(string directory)
+        {
+            var processIds = new List<int>();
             try
             {
                 var processes = System.Diagnostics.Process.GetProcesses();
@@ -265,8 +303,6 @@ namespace SaveTracker.Resources.HELPERS
             {
                 DebugConsole.WriteLine($"[ERROR] Getting directory processes (native): {ex.Message}");
             }
-#endif
-
             return processIds;
         }
 
@@ -297,9 +333,51 @@ namespace SaveTracker.Resources.HELPERS
             }
             catch (Exception ex)
             {
-                DebugConsole.WriteWarning($"Error scanning for children of PID {parentPid}: {ex.Message}");
+                DebugConsole.WriteWarning($"[WMI Child Scan Failed] PID {parentPid}: {ex.Message}. Falling back to native scan.");
+                ScanForChildrenNative(parentPid);
             }
+#else
+            ScanForChildrenNative(parentPid);
 #endif
+        }
+
+        private void ScanForChildrenNative(int parentPid)
+        {
+            IntPtr hSnapshot = IntPtr.Zero;
+            try
+            {
+                hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+                if (hSnapshot == IntPtr.Zero || hSnapshot == (IntPtr)(-1)) return;
+
+                PROCESSENTRY32 procEntry = new PROCESSENTRY32();
+                procEntry.dwSize = (uint)Marshal.SizeOf(typeof(PROCESSENTRY32));
+
+                if (Process32First(hSnapshot, ref procEntry))
+                {
+                    do
+                    {
+                        if (procEntry.th32ParentProcessID == parentPid)
+                        {
+                            int childPid = (int)procEntry.th32ProcessID;
+                            // Verify it's not the same process (unlikely but safe)
+                            if (childPid != parentPid)
+                            {
+                                DebugConsole.WriteInfo($"[ProcessMonitor-Native] Found child process: PID {childPid} (Name: {procEntry.szExeFile})");
+                                HandleNewProcess(childPid, parentPid);
+                            }
+                        }
+                    } while (Process32Next(hSnapshot, ref procEntry));
+                }
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteWarning($"[Native Child Scan Failed] {ex.Message}");
+            }
+            finally
+            {
+                if (hSnapshot != IntPtr.Zero && hSnapshot != (IntPtr)(-1))
+                    CloseHandle(hSnapshot);
+            }
         }
 
         /// <summary>
@@ -324,10 +402,18 @@ namespace SaveTracker.Resources.HELPERS
             }
             catch (Exception ex)
             {
-                DebugConsole.WriteWarning($"Error getting executable path for PID {processId}: {ex.Message}");
+                // Silence common warnings, only log if it's not a generic "not found"
+                // DebugConsole.WriteWarning($"[WMI Path Error] PID {processId}: {ex.Message}");
+                return GetProcessExecutablePathNative(processId);
             }
             return "";
 #else
+            return GetProcessExecutablePathNative(processId);
+#endif
+        }
+
+        private string GetProcessExecutablePathNative(int processId)
+        {
             try
             {
                 using (var proc = System.Diagnostics.Process.GetProcessById(processId))
@@ -339,7 +425,6 @@ namespace SaveTracker.Resources.HELPERS
             {
                 return "";
             }
-#endif
         }
 
         /// <summary>

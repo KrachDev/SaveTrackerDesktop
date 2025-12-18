@@ -109,7 +109,20 @@ namespace SaveTracker
                 });
 
                 // Upload analytics to Firebase if due
-                _ = Task.Run(async () => await SaveTracker.Resources.Logic.AnalyticsService.UploadToFirebaseAsync());
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        if (await NetworkHelper.IsInternetAvailableAsync())
+                        {
+                            await SaveTracker.Resources.Logic.AnalyticsService.UploadToFirebaseAsync();
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        DebugConsole.WriteWarning($"Background analytics upload failed: {ex.Message}");
+                    }
+                });
             }
 
             base.OnFrameworkInitializationCompleted();

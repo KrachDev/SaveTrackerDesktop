@@ -213,6 +213,13 @@ namespace SaveTracker.Resources.LOGIC
         private FileSystemWatcher? _linuxInstallWatcher;
         private FileSystemWatcher? _linuxPrefixWatcher;
 
+        // Filtering & Limits
+        private FilePathFilter _pathFilter;
+        private readonly HashSet<int> _steamPids = new HashSet<int>();
+        private const int MAX_TRACKED_FILES = 500;
+        private const long MAX_TOTAL_SIZE_BYTES = 100 * 1024 * 1024; // 100 MB
+        private long _currentTotalSizeBytes = 0;
+
 
         bool trackWrites = true;
         bool trackReads = false;
@@ -224,6 +231,7 @@ namespace SaveTracker.Resources.LOGIC
             _probeForPrefix = probeForPrefix;
             _fileCollector = new FileCollector(_game);
             _cancellationTokenSource = new CancellationTokenSource();
+            _pathFilter = new FilePathFilter(_game.InstallDirectory);
         }
 
         public async Task<bool> Initialize()
@@ -494,17 +502,14 @@ namespace SaveTracker.Resources.LOGIC
             if (trackWrites)
             {
                 // Steam Integration: explicit tracking of Steam process
-                // User Request: Always track Steam (with filter), as checking for "IsSteamGame" was unreliable.
+                // User Request: Always track Steam (with filter), but DO NOT add to ProcessMonitor to avoid tracking its children (browser, overlay etc).
                 try
                 {
                     var steamProcs = System.Diagnostics.Process.GetProcessesByName("steam");
                     foreach (var p in steamProcs)
                     {
-                        if (_processMonitor != null)
-                        {
-                            _processMonitor.AddExplicitlyTrackedPid(p.Id);
-                            DebugConsole.WriteInfo($"[Steam Integration] Tracking Steam process (PID: {p.Id}) for userdata monitoring.");
-                        }
+                        _steamPids.Add(p.Id);
+                        DebugConsole.WriteInfo($"[Steam Integration] Found Steam process (PID: {p.Id}) - Tracking writes to userdata only.");
                     }
                 }
                 catch { }
@@ -513,37 +518,33 @@ namespace SaveTracker.Resources.LOGIC
                 {
                     try
                     {
-                        if (_isTracking && !_isDisposed && _processMonitor != null)
+                        if (_isTracking && !_isDisposed)
                         {
-                            bool isGameProcess = _processMonitor.IsTracked(data.ProcessID);
-
-                            if (isGameProcess)
+                            // Check if it's the Steam process
+                            if (_steamPids.Contains(data.ProcessID))
                             {
-                                // If it's the Steam process, apply strict filter
-                                string processName = "";
-                                try { processName = System.Diagnostics.Process.GetProcessById(data.ProcessID).ProcessName; } catch { }
-
-                                if (processName.Equals("steam", StringComparison.OrdinalIgnoreCase))
+                                // Steam writes lots of junk. Only accept USERDATA/REMOTE.
+                                // "remote" is the standard steam cloud folder structure: userdata/id/appid/remote/
+                                // Use simple string check for performance
+                                if (data.FileName.Contains("userdata", StringComparison.OrdinalIgnoreCase) &&
+                                    data.FileName.Contains("remote", StringComparison.OrdinalIgnoreCase))
                                 {
-                                    // Steam writes lots of junk. Only accept USERDATA/REMOTE.
-                                    // "remote" is the standard steam cloud folder structure: userdata/id/appid/remote/
-                                    if (data.FileName.Contains("userdata", StringComparison.OrdinalIgnoreCase) &&
-                                        data.FileName.Contains("remote", StringComparison.OrdinalIgnoreCase))
-                                    {
-                                        HandleFileAccess(data.FileName);
-                                    }
-                                }
-                                else
-                                {
-                                    // Normal Game Process -> Accept everything (FileCollector will filter temp files)
                                     HandleFileAccess(data.FileName);
                                 }
+                                return;
+                            }
+
+                            // Normal Game Process -> Check strictly against ProcessMonitor
+                            if (_processMonitor != null && _processMonitor.IsTracked(data.ProcessID))
+                            {
+                                HandleFileAccess(data.FileName);
                             }
                         }
                     }
                     catch (Exception ex)
                     {
-                        DebugConsole.WriteWarning($"ETW Write Error: {ex.Message}");
+                        // Silence excessive logging for high-volume IO errors
+                        // DebugConsole.WriteWarning($"ETW Write Error: {ex.Message}");
                     }
                 };
             }
@@ -592,7 +593,45 @@ namespace SaveTracker.Resources.LOGIC
                     normalizedPath = filePath.Replace('\\', '/');
                 }
 
-                // FIRST: Check for double extensions and track both versions
+                // FIRST: Check against Strict Path Filter
+                if (!_pathFilter.ShouldTrack(normalizedPath))
+                {
+                    // DebugConsole.WriteDebug($"[Filter] Blocked: {normalizedPath}");
+                    return;
+                }
+
+                // CHECK: Emergency Brake - Count
+                lock (_listLock)
+                {
+                    if (_trackedFiles.Count >= MAX_TRACKED_FILES)
+                    {
+                        if (_trackedFiles.Count == MAX_TRACKED_FILES) // Log only once
+                        {
+                            DebugConsole.WriteError($"[EMERGENCY STOP] Tracking paused - exceeded {MAX_TRACKED_FILES} files.");
+                            // Notify user somehow? For now, just Log.
+                            _trackedFiles.Add("TRACKING_LIMIT_EXCEEDED_PLACEHOLDER");
+                        }
+                        return;
+                    }
+                }
+
+                // CHECK: Emergency Brake - Size
+                try
+                {
+                    var fileInfo = new FileInfo(normalizedPath);
+                    if (fileInfo.Exists)
+                    {
+                        // Basic check, might be updated later but good for initial filter
+                        if (_currentTotalSizeBytes + fileInfo.Length > MAX_TOTAL_SIZE_BYTES)
+                        {
+                            DebugConsole.WriteError($"[EMERGENCY STOP] Tracking paused - exceeded {MAX_TOTAL_SIZE_BYTES / 1024 / 1024}MB.");
+                            return;
+                        }
+                    }
+                }
+                catch { }
+
+                // Check for double extensions and track both versions
                 string extension = Path.GetExtension(normalizedPath);
                 string companionFile = null;
 
@@ -639,6 +678,12 @@ namespace SaveTracker.Resources.LOGIC
                     {
                         _trackedFiles.Add(normalizedPath);
                         _uploadCandidates.Add(normalizedPath);
+                        try
+                        {
+                            if (File.Exists(normalizedPath))
+                                _currentTotalSizeBytes += new FileInfo(normalizedPath).Length;
+                        }
+                        catch { }
                         DebugConsole.WriteLine($"Tracked: {normalizedPath}");
                     }
 

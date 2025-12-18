@@ -364,7 +364,8 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                 var result = await _executor.ExecuteRcloneCommand(
                     $"lsf \"{remotePath}\" --recursive --config \"{configPath}\"",
                     TimeSpan.FromSeconds(30),
-                    hideWindow: true
+                    hideWindow: true,
+                    allowedExitCodes: new[] { 3 }
                 );
 
                 if (result.Success && !string.IsNullOrWhiteSpace(result.Output))
@@ -391,12 +392,19 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
         {
             try
             {
+                if (string.IsNullOrWhiteSpace(remotePath))
+                {
+                    DebugConsole.WriteWarning("ListCloudDirectories: remotePath is null or empty. Returning empty list.");
+                    return new List<string>();
+                }
+
                 string configPath = RclonePathHelper.GetConfigPath(provider);
                 // "lsd" lists only directories
                 var result = await _executor.ExecuteRcloneCommand(
                     $"lsd \"{remotePath}\" --config \"{configPath}\"",
                     TimeSpan.FromSeconds(30),
-                    hideWindow: true
+                    hideWindow: true,
+                    allowedExitCodes: new[] { 3 }
                 );
 
                 if (result.Success && !string.IsNullOrWhiteSpace(result.Output))

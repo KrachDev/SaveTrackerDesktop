@@ -269,6 +269,10 @@
                             <TextBlock Text="{Binding GamePlayTimeText}" 
                                        FontSize="12" 
                                        Foreground="#858585"/>
+                            <TextBlock Text="{Binding GameProfileText}" 
+                                       FontSize="12" 
+                                       FontWeight="SemiBold"
+                                       Foreground="#4EC9B0"/>
                         </StackPanel>
 
                         <StackPanel Grid.Column="2" 
