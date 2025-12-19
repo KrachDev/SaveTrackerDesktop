@@ -92,25 +92,22 @@ namespace SaveTracker.Resources.HELPERS
                 return false;
             }
 
-            // 1. Check PERMITTED lists first (The Game Install Dir is the most important)
-            // If it's in the Game Install Directory, we generally trust it (unless it's a denied subfolder? unlikely)
+            // 1. Steam Cloud Special Case (Always allow Steam userdata/remote if it looks like a save path)
+            // This bypasses the Deny list for Program Files (x86)
+            if (fullPath.Contains(@"\userdata\", StringComparison.OrdinalIgnoreCase) && 
+                fullPath.Contains(@"\remote\", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            // 2. Check PERMITTED lists (The Game Install Dir is the most important)
             bool isExplicitlyAllowed = _allowedBasePaths.Any(allowed =>
                 fullPath.StartsWith(allowed, StringComparison.OrdinalIgnoreCase));
 
-            // Small fix: If the allowed path is a parent of a denied path (e.g. Program Files vs Program Files/Brave),
-            // We need to be careful.
-            // Actually, the Denied list should take precedence.
-
-            // 2. Check DENIED lists
+            // 3. Check DENIED lists
             if (_deniedBasePaths.Any(denied => fullPath.StartsWith(denied, StringComparison.OrdinalIgnoreCase)))
             {
-                // Exception: If the denied path is a PARENT of an Allowed path (rare), we might have an issue.
-                // But generally:
-                // Allowed: C:\Games\MyGame
-                // Denied: C:\Games (hypothetically) -> Blocked.
-
                 // Exception: If the file is strictly inside the Game Install Directory, we ALWAYS allow it
-                // (Unless the game install dir itself is in a bad place like Windows folder? Unlikely).
                 bool insideInstallDir = _allowedBasePaths.FirstOrDefault() != null &&
                                         fullPath.StartsWith(_allowedBasePaths.First(), StringComparison.OrdinalIgnoreCase);
 

@@ -154,8 +154,8 @@ namespace SaveTracker.Resources.Logic
         {
             try
             {
-                DebugConsole.WriteInfo($"Reading local PlayTime from: {game.InstallDirectory}");
-                var checksumData = await _checksumService.LoadChecksumData(game.InstallDirectory);
+                DebugConsole.WriteInfo($"Reading local PlayTime from: {game.InstallDirectory} (Profile: {game.ActiveProfileId})");
+                var checksumData = await _checksumService.LoadChecksumData(game.InstallDirectory, game.ActiveProfileId);
 
                 DebugConsole.WriteInfo($"Checksum data loaded: PlayTime={checksumData.PlayTime}, Files={checksumData.Files.Count}");
 
@@ -229,14 +229,14 @@ namespace SaveTracker.Resources.Logic
                 {
                     // The checksum file is uploaded with path contraction
                     string gameDirectory = game.InstallDirectory;
-                    string checksumLocalFullPath = Path.Combine(gameDirectory, SaveFileUploadManager.ChecksumFilename);
+                    // Use profile-aware path
+                    string checksumLocalFullPath = _checksumService.GetChecksumFilePath(gameDirectory, game.ActiveProfileId);
+                    string checksumFileName = Path.GetFileName(checksumLocalFullPath);
 
                     // Get the relative path that would be used for upload (contracted path)
-                    string checksumRelativePath = PathContractor.ContractPath(checksumLocalFullPath, gameDirectory);
-                    checksumRelativePath = checksumRelativePath.Replace('\\', '/');
-
-                    string checksumRemotePath = $"{remoteBasePath}/{checksumRelativePath}";
-                    string checksumLocalPath = Path.Combine(tempFolder, SaveFileUploadManager.ChecksumFilename);
+                    // For checksum file it is just the filename at root
+                    string checksumRemotePath = $"{remoteBasePath}/{checksumFileName}";
+                    string checksumLocalPath = Path.Combine(tempFolder, checksumFileName);
 
                     DebugConsole.WriteInfo($"Downloading checksum from: {checksumRemotePath}");
 
@@ -245,7 +245,7 @@ namespace SaveTracker.Resources.Logic
                     bool downloaded = await transferService.DownloadFileWithRetry(
                         checksumRemotePath,
                         checksumLocalPath,
-                        SaveFileUploadManager.ChecksumFilename,
+                        checksumFileName,
                         effectiveProvider
                     );
 

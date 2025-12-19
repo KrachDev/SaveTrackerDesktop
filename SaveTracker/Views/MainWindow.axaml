@@ -223,6 +223,7 @@
                                 HorizontalAlignment="Stretch" 
                                 Padding="12,10"
                                 Background="#16825D"/>
+
                     </StackPanel>
                 </Grid>
             </Border>
@@ -365,14 +366,14 @@
                             </Border>
 
                             <!-- File List -->
-                            <ScrollViewer Grid.Row="2" Padding="0,0,0,100">
+                            <ScrollViewer Grid.Row="2" >
                                 <ItemsControl ItemsSource="{Binding TrackedFiles}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
                                             <Border Background="#252526"
                                                     BorderBrush="#3F3F46"
                                                     BorderThickness="0,0,0,1"
-                                                    Padding="15,12"
+                                              
                                                     DoubleTapped="TrackedFile_DoubleTapped">
                                                 <Grid ColumnDefinitions="40,2*,3*,100,150,120">
                                                     <CheckBox Grid.Column="0" 
@@ -410,7 +411,6 @@
                                                     <Border Grid.Column="5"
                                                             Background="{Binding StatusColor}"
                                                             CornerRadius="4"
-                                                            Padding="8,4"
                                                             HorizontalAlignment="Left"
                                                             VerticalAlignment="Center">
                                                         <TextBlock Text="{Binding StatusText}"
@@ -505,14 +505,14 @@
                             </Border>
 
                             <!-- Cloud File List -->
-                            <ScrollViewer Grid.Row="2" Padding="0,0,0,100">
+                            <ScrollViewer Grid.Row="2">
                                 <ItemsControl ItemsSource="{Binding CloudFiles}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
                                             <Border Background="#252526"
                                                     BorderBrush="#3F3F46"
                                                     BorderThickness="0,0,0,1"
-                                                    Padding="15,12">
+                                                   >
                                                 <Grid ColumnDefinitions="40,3*,150,150,120">
                                                     <CheckBox Grid.Column="0" 
                                                               IsChecked="{Binding IsSelected}"
@@ -540,7 +540,6 @@
                                                     <Border Grid.Column="4"
                                                             Background="#0E7490"
                                                             CornerRadius="4"
-                                                            Padding="8,4"
                                                             HorizontalAlignment="Left"
                                                             VerticalAlignment="Center">
                                                         <TextBlock Text="In Cloud"
@@ -767,8 +766,16 @@
                                                 <TextBlock Text="Game Name" Foreground="#CCCCCC"/>
                                                 <AutoCompleteBox Text="{Binding EditableGameName}"
                                                                  ItemsSource="{Binding AvailableCloudGames}"
-                                                                 Watermark="Enter game name..."
-                                                                 FilterMode="Contains"/>
+                                                                 FilterMode="StartsWith"
+                                                                 Watermark="Enter game name to check cloud..."
+                                                                 MinimumPrefixLength="2"
+                                                                 MaxDropDownHeight="300">
+                                                    <AutoCompleteBox.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <TextBlock Text="{Binding}" Padding="8,4"/>
+                                                        </DataTemplate>
+                                                    </AutoCompleteBox.ItemTemplate>
+                                                </AutoCompleteBox>
                                                 <Grid ColumnDefinitions="*,Auto">
                                                     <TextBlock Text="Updates display name."
                                                            FontSize="10"
@@ -779,6 +786,8 @@
                                                                 HorizontalAlignment="Right"
                                                                 FontWeight="Bold"/>
                                                 </Grid>
+                                                <TextBlock Text="💡 To add an already synced game, type the exact same name&#10;💡 Type 2 letters for the autocomplete" 
+                                                         FontSize="10" Foreground="#858585" FontStyle="Italic" TextWrapping="Wrap"/>
                                             </StackPanel>
 
                                             <StackPanel Spacing="5">

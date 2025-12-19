@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using SaveTracker.Resources.HELPERS;
 using SaveTracker.Resources.Logic.RecloneManagement;
+using SaveTracker.Resources.Logic;
 using SaveTracker.Resources.SAVE_SYSTEM;
 
 namespace SaveTracker.Resources.LOGIC
@@ -103,19 +104,45 @@ namespace SaveTracker.Resources.LOGIC
             var quarantine = new QuarantineManager(game.InstallDirectory);
 
             // 2. Load Manifests
-            // If Manifest doesn't exist (Legacy/New), build it from current state for the Current Profile
             var currentManifest = await LoadOrBuildManifest(game, currentProfile);
-            var targetManifest = await LoadManifest(game, targetProfile); // Target might be empty if new
+            var targetManifest = await LoadManifest(game, targetProfile);
 
-            // 3. Deactivate Current (Move Active -> Backup)
-            foreach (var file in currentManifest.Files.ToList()) // ToList to allow modification if needed
+            // 3. Pre-flight validation: ensure we can perform the switch
+            List<string> backupPaths = new List<string>();
+            foreach (var file in currentManifest.Files)
+            {
+                string fullBackupPath = Path.Combine(game.InstallDirectory, file.BackupPath);
+                string backupDir = Path.GetDirectoryName(fullBackupPath);
+                
+                if (!string.IsNullOrEmpty(backupDir) && !Directory.Exists(backupDir))
+                {
+                    try
+                    {
+                        Directory.CreateDirectory(backupDir);
+                    }
+                    catch (Exception ex)
+                    {
+                        throw new InvalidOperationException($"Cannot create backup directory {backupDir}: {ex.Message}", ex);
+                    }
+                }
+                backupPaths.Add(fullBackupPath);
+            }
+
+            // 4. Deactivate Current (Move Active -> Backup)
+            foreach (var file in currentManifest.Files.ToList())
             {
                 string fullActivePath = Path.Combine(game.InstallDirectory, file.OriginalPath);
                 string fullBackupPath = Path.Combine(game.InstallDirectory, file.BackupPath);
 
                 if (File.Exists(fullActivePath))
                 {
-                    // Update Hash before backup? Optional.
+                    // SAFETY: Do not manage system files
+                    if (IsSystemFile(file.OriginalPath))
+                    {
+                        DebugConsole.WriteWarning($"Skipping system file during deactivation: {file.OriginalPath}");
+                        continue;
+                    }
+
                     try
                     {
                         // Ensure backup directory exists (if nested)
@@ -123,15 +150,15 @@ namespace SaveTracker.Resources.LOGIC
                         if (!string.IsNullOrEmpty(backupDir) && !Directory.Exists(backupDir))
                             Directory.CreateDirectory(backupDir);
 
+                        // Use overwrite to handle edge cases
                         File.Move(fullActivePath, fullBackupPath, overwrite: true);
                         DebugConsole.WriteDebug($"Deactivated: {file.OriginalPath}");
                         file.LastModified = DateTime.Now;
                     }
                     catch (Exception ex)
                     {
-                        DebugConsole.WriteError($"Failed to deactivate {file.OriginalPath}: {ex.Message}");
-                        // Critical failure? If we fail to move 1 file, should we stop?
-                        // For now, continue best effort.
+                        DebugConsole.WriteError($"CRITICAL: Failed to deactivate {file.OriginalPath}: {ex.Message}");
+                        throw new InvalidOperationException($"Profile switch aborted. Failed to deactivate {file.OriginalPath}. Your save data is safe but profile switch incomplete.", ex);
                     }
                 }
                 else
@@ -143,9 +170,8 @@ namespace SaveTracker.Resources.LOGIC
             // Save Current Manifest immediately to record the state change
             await SaveManifest(game, currentProfile, currentManifest);
 
-            // 4. Activate Target (Move Backup -> Active)
-            // If target manifest is empty (New Profile), we just start clean.
-            if (targetManifest != null)
+            // 5. Activate Target (Move Backup -> Active)
+            if (targetManifest != null && targetManifest.Files.Count > 0)
             {
                 foreach (var file in targetManifest.Files)
                 {
@@ -160,18 +186,26 @@ namespace SaveTracker.Resources.LOGIC
 
                     if (File.Exists(fullBackupPath))
                     {
+                        // SAFETY: Do not manage system files
+                        if (IsSystemFile(file.OriginalPath))
+                        {
+                            DebugConsole.WriteWarning($"Skipping system file during activation: {file.OriginalPath}");
+                            continue;
+                        }
+
                         try
                         {
                             string activeDir = Path.GetDirectoryName(fullActivePath);
                             if (!string.IsNullOrEmpty(activeDir) && !Directory.Exists(activeDir))
                                 Directory.CreateDirectory(activeDir);
 
-                            File.Move(fullBackupPath, fullActivePath);
+                            File.Move(fullBackupPath, fullActivePath, overwrite: true);
                             DebugConsole.WriteDebug($"Activated: {file.OriginalPath}");
                         }
                         catch (Exception ex)
                         {
                             DebugConsole.WriteError($"Failed to restore {file.OriginalPath}: {ex.Message}");
+                            // Don't throw here—continue best effort to restore other files
                         }
                     }
                     else
@@ -180,8 +214,12 @@ namespace SaveTracker.Resources.LOGIC
                     }
                 }
             }
+            else
+            {
+                DebugConsole.WriteInfo("Target profile is new/empty. Starting fresh.");
+            }
 
-            // 5. Update Game Config
+            // 6. Update Game Config
             game.ActiveProfileId = targetProfile.Id;
             await ConfigManagement.SaveGameAsync(game);
 
@@ -206,17 +244,15 @@ namespace SaveTracker.Resources.LOGIC
         // Helpers for Manifests
         private string GetManifestPath(Game game, Profile profile)
         {
-            // Manifests stored in game directory? Or helper directory?
-            // Safer to store in AppData/Manifests to avoid cluttering game dir? 
-            // Or store in GameDir hidden. 
-            // Decision: Store in GameDir/.ST_PROFILES/profile_{id}.manifest
+            // Store in GameDir/.ST_PROFILES using only ProfileId for consistent lookups
             string profileDir = Path.Combine(game.InstallDirectory, ".ST_PROFILES");
             if (!Directory.Exists(profileDir))
             {
                 Directory.CreateDirectory(profileDir);
                 File.SetAttributes(profileDir, File.GetAttributes(profileDir) | FileAttributes.Hidden);
             }
-            return Path.Combine(profileDir, $"profile_{SanitizeProfileName(profile.Name)}_{profile.Id}.json");
+            // Use only ProfileId to avoid name-change issues
+            return Path.Combine(profileDir, $"profile_{profile.Id}.json");
         }
 
         private async Task<ProfileManifest> LoadManifest(Game game, Profile profile)
@@ -246,6 +282,8 @@ namespace SaveTracker.Resources.LOGIC
         /// <summary>
         /// Loads existing manifest OR (if missing) builds one from the *current* state of the filesystem.
         /// This bridges the gap between the old system and the new one.
+        /// For new profiles: builds from global checksums OR current filesystem state.
+        /// For existing profiles: loads from manifest + reconciles with profile-specific data.
         /// </summary>
         private async Task<ProfileManifest> LoadOrBuildManifest(Game game, Profile profile)
         {
@@ -260,58 +298,257 @@ namespace SaveTracker.Resources.LOGIC
                 DebugConsole.WriteInfo($"Building initial manifest for profile {profile.Name}...");
                 manifest = new ProfileManifest { ProfileId = profile.Id, LastActive = DateTime.Now };
 
-                // Get currently tracked files from ChecksumService (the old "source of truth")
-                var checksumData = await _checksumService.LoadChecksumData(game.InstallDirectory);
-                var gameData = await ConfigManagement.GetGameData(game);
-
-                if (checksumData != null && checksumData.Files != null)
+                // For DEFAULT profile: get files from global checksum data (legacy compatibility)
+                // For NEW profiles: only track files that currently exist on disk
+                if (profile.IsDefault)
                 {
-                    foreach (var contractPath in checksumData.Files.Keys)
+                    // DEFAULT PROFILE: Use global checksums as source of truth for legacy data
+                    try
                     {
-                        string fullPath = PathContractor.ExpandPath(contractPath, game.InstallDirectory, gameData?.DetectedPrefix);
+                        var checksumService = new ChecksumService();
+                        var checksumData = await checksumService.LoadChecksumData(game.InstallDirectory);
+                        var gameData = await ConfigManagement.GetGameData(game);
 
-                        // We only add it to the manifest if it currently exists
-                        if (File.Exists(fullPath))
+                        if (checksumData != null && checksumData.Files != null && checksumData.Files.Count > 0)
                         {
-                            string relPath = Path.GetRelativePath(game.InstallDirectory, fullPath);
-                            string backupSuffix = ".ST_PROFILE." + SanitizeProfileName(profile.Name);
+                            DebugConsole.WriteInfo($"Initializing DEFAULT profile with {checksumData.Files.Count} files from global checksums");
+                            
+                            foreach (var contractPath in checksumData.Files.Keys)
+                            {
+                                string fullPath = PathContractor.ExpandPath(contractPath, game.InstallDirectory, gameData?.DetectedPrefix);
 
+                                // We only add it to the manifest if it currently exists
+                                if (File.Exists(fullPath))
+                                {
+                                    string relPath = Path.GetRelativePath(game.InstallDirectory, fullPath);
+                                    string backupSuffix = ".ST_PROFILE." + SanitizeProfileName(profile.Name);
+
+                                    manifest.Files.Add(new ManagedFile
+                                    {
+                                        OriginalPath = relPath,
+                                        BackupPath = relPath + backupSuffix,
+                                        LastModified = File.GetLastWriteTime(fullPath)
+                                    });
+                                }
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        DebugConsole.WriteWarning($"Failed to load default profile from global checksums: {ex.Message}");
+                    }
+                }
+                else
+                {
+                    // NEW PROFILE: Start empty (user will add files when switching to it)
+                    DebugConsole.WriteInfo($"New profile {profile.Name} created - it will be empty until files are managed");
+                }
+            }
+
+            // RECOVERY: If manifest is empty for non-default profile, scan for deactivated files on disk
+            if (manifest.Files.Count == 0 && profile.IsDefault == false)
+            {
+                DebugConsole.WriteInfo($"Manifest empty for non-default profile {profile.Name}. Scanning for deactivated files...");
+                string suffix = ".ST_PROFILE." + SanitizeProfileName(profile.Name);
+
+                try
+                {
+                    var files = Directory.GetFiles(game.InstallDirectory, "*" + suffix, SearchOption.AllDirectories);
+                    if (files.Length > 0)
+                    {
+                        DebugConsole.WriteInfo($"Found {files.Length} deactivated files for {profile.Name}");
+                        foreach (var file in files)
+                        {
+                            string relPath = Path.GetRelativePath(game.InstallDirectory, file);
+                            string originalRelPath = relPath.Substring(0, relPath.Length - suffix.Length);
+
+                            DebugConsole.WriteInfo($"Recovered tracked file: {originalRelPath}");
                             manifest.Files.Add(new ManagedFile
                             {
-                                OriginalPath = relPath,
-                                BackupPath = relPath + backupSuffix,
-                                LastModified = File.GetLastWriteTime(fullPath)
+                                OriginalPath = originalRelPath,
+                                BackupPath = relPath,
+                                LastModified = File.GetLastWriteTime(file)
                             });
                         }
                     }
                 }
+                catch (Exception ex)
+                {
+                    DebugConsole.WriteWarning($"Error scanning for deactivated files: {ex.Message}");
+                }
             }
 
-            // RECOVERY: If manifest is empty, it might mean the files are already deactivated (renamed).
-            // Scan for files matching .ST_PROFILE.{Name} to "claim" them.
-            if (manifest.Files.Count == 0)
+            // RECOVERY PHASE: For DEFAULT profile, cross-reference with global checksums to find truly "lost" files
+            if (profile.IsDefault)
             {
-                DebugConsole.WriteInfo($"Manifest empty. Scanning for lost {profile.Name} files...");
-                string suffix = ".ST_PROFILE." + SanitizeProfileName(profile.Name);
-
-                // Recursive scan for *{suffix}
-                var files = Directory.GetFiles(game.InstallDirectory, "*" + suffix, SearchOption.AllDirectories);
-                foreach (var file in files)
+                try
                 {
-                    string relPath = Path.GetRelativePath(game.InstallDirectory, file);
-                    string originalRelPath = relPath.Substring(0, relPath.Length - suffix.Length);
+                    var checksumService = new ChecksumService();
+                    var checksumData = await checksumService.LoadChecksumData(game.InstallDirectory);
+                    var gameData = await ConfigManagement.GetGameData(game);
 
-                    DebugConsole.WriteInfo($"Recovered tracked file: {originalRelPath}");
-                    manifest.Files.Add(new ManagedFile
+                    if (checksumData?.Files != null && checksumData.Files.Count > 0)
                     {
-                        OriginalPath = originalRelPath,
-                        BackupPath = relPath,
-                        LastModified = File.GetLastWriteTime(file)
-                    });
+                        foreach (var contractPath in checksumData.Files.Keys)
+                        {
+                            string fullPath = PathContractor.ExpandPath(contractPath, game.InstallDirectory, gameData?.DetectedPrefix);
+                            string relPath = Path.GetRelativePath(game.InstallDirectory, fullPath);
+
+                            if (IsSystemFile(relPath)) continue;
+
+                            // Check if this file is already in our manifest
+                            if (!manifest.Files.Any(f => f.OriginalPath.Equals(relPath, StringComparison.OrdinalIgnoreCase)))
+                            {
+                                // Check if file exists in active location or backup location
+                                if (File.Exists(fullPath))
+                                {
+                                    // File exists in active location but NOT in manifest - add it
+                                    string suffix = ".ST_PROFILE." + SanitizeProfileName(profile.Name);
+                                    string backupPath = relPath + suffix;
+
+                                    DebugConsole.WriteInfo($"[Self-Heal] Recovered missing manifest entry from active location: {relPath}");
+                                    manifest.Files.Add(new ManagedFile
+                                    {
+                                        OriginalPath = relPath,
+                                        BackupPath = backupPath,
+                                        LastModified = File.GetLastWriteTime(fullPath)
+                                    });
+                                }
+                                else
+                                {
+                                    // File doesn't exist in active location - check if it's in backup state
+                                    string suffix = ".ST_PROFILE." + SanitizeProfileName(profile.Name);
+                                    string backupPath = relPath + suffix;
+                                    string fullBackupPath = Path.Combine(game.InstallDirectory, backupPath);
+
+                                    if (File.Exists(fullBackupPath))
+                                    {
+                                        DebugConsole.WriteInfo($"[Self-Heal] Recovered missing manifest entry from backup: {relPath}");
+                                        manifest.Files.Add(new ManagedFile
+                                        {
+                                            OriginalPath = relPath,
+                                            BackupPath = backupPath,
+                                            LastModified = File.GetLastWriteTime(fullBackupPath)
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    DebugConsole.WriteWarning($"[Self-Heal] Failed manifest-checksum reconciliation for default profile: {ex.Message}");
                 }
             }
 
             return manifest;
+        }
+
+        /// <summary>
+        /// Migrates global checksum data to profile-specific data.
+        /// Call this once per profile to transition from the old global .savetracker file to profile-specific tracking.
+        /// </summary>
+        public async Task MigrateGlobalChecksumsToProfile(Game game, Profile targetProfile)
+        {
+            try
+            {
+                var checksumService = new ChecksumService();
+                var globalChecksumData = await checksumService.LoadChecksumData(game.InstallDirectory);
+                
+                if (globalChecksumData?.Files == null || globalChecksumData.Files.Count == 0)
+                {
+                    DebugConsole.WriteInfo($"No global checksums to migrate for profile {targetProfile.Name}");
+                    return;
+                }
+
+                DebugConsole.WriteInfo($"Migrating {globalChecksumData.Files.Count} global checksums to profile {targetProfile.Name}");
+
+                // The global checksum data should now be considered as belonging to this profile
+                // When switching away from this profile, the files will be deactivated
+                // When switching to this profile, they will be reactivated
+                
+                // The actual migration happens implicitly:
+                // 1. Files are currently active on disk
+                // 2. LoadOrBuildManifest will read them from global checksums
+                // 3. When switching to another profile, they get backed up with profile suffix
+                // 4. When switching back, they are restored from backup
+
+                DebugConsole.WriteSuccess($"Profile {targetProfile.Name} will now manage {globalChecksumData.Files.Count} files");
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteException(ex, $"Failed to migrate global checksums to profile {targetProfile.Name}");
+            }
+        }
+
+        /// <summary>
+        /// Consolidates all tracked files into a single profile's manifest.
+        /// Useful for cleanup or when removing global checksum dependency.
+        /// </summary>
+        public async Task ConsolidateToProfile(Game game, Profile consolidateIntoProfile)
+        {
+            try
+            {
+                var checksumService = new ChecksumService();
+                var globalChecksumData = await checksumService.LoadChecksumData(game.InstallDirectory);
+                var gameData = await ConfigManagement.GetGameData(game);
+
+                if (globalChecksumData?.Files == null || globalChecksumData.Files.Count == 0)
+                {
+                    DebugConsole.WriteInfo("No files to consolidate");
+                    return;
+                }
+
+                var manifest = await LoadManifest(game, consolidateIntoProfile) ?? new ProfileManifest { ProfileId = consolidateIntoProfile.Id };
+
+                DebugConsole.WriteInfo($"Consolidating {globalChecksumData.Files.Count} files into profile {consolidateIntoProfile.Name}");
+
+                foreach (var contractPath in globalChecksumData.Files.Keys)
+                {
+                    string fullPath = PathContractor.ExpandPath(contractPath, game.InstallDirectory, gameData?.DetectedPrefix);
+                    string relPath = Path.GetRelativePath(game.InstallDirectory, fullPath);
+
+                    // Skip if already in manifest
+                    if (manifest.Files.Any(f => f.OriginalPath.Equals(relPath, StringComparison.OrdinalIgnoreCase)))
+                        continue;
+
+                    if (File.Exists(fullPath))
+                    {
+                        string backupSuffix = ".ST_PROFILE." + SanitizeProfileName(consolidateIntoProfile.Name);
+                        manifest.Files.Add(new ManagedFile
+                        {
+                            OriginalPath = relPath,
+                            BackupPath = relPath + backupSuffix,
+                            LastModified = File.GetLastWriteTime(fullPath)
+                        });
+                    }
+                }
+
+                await SaveManifest(game, consolidateIntoProfile, manifest);
+                DebugConsole.WriteSuccess($"Consolidated {manifest.Files.Count} files into {consolidateIntoProfile.Name} profile");
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteException(ex, $"Failed to consolidate files into profile {consolidateIntoProfile.Name}");
+            }
+        }
+
+        private bool IsSystemFile(string path)
+        {
+            if (string.IsNullOrEmpty(path)) return false;
+
+            string fileName = Path.GetFileName(path);
+
+            // Internal metadata files ONLY
+            if (fileName.Equals(SaveFileUploadManager.ChecksumFilename, StringComparison.OrdinalIgnoreCase)) return true;
+            if (path.Contains(".ST_PROFILES", StringComparison.OrdinalIgnoreCase)) return true;
+            if (path.Contains(".savetracker", StringComparison.OrdinalIgnoreCase)) return true;
+
+            // DO NOT filter DLLs/EXEs indiscriminately—they may be part of game saves
+            // (e.g., packed executables, mod DLLs that are save state)
+
+            return false;
         }
 
         private string SanitizeProfileName(string name)

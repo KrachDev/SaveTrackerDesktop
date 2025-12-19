@@ -595,6 +595,34 @@ namespace SaveTracker.ViewModels
         }
 
         [RelayCommand]
+        private void OpenInstallDirectory()
+        {
+            if (SelectedGame?.Game == null) return;
+
+            try
+            {
+                string path = SelectedGame.Game.InstallDirectory;
+                if (Directory.Exists(path))
+                {
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = "explorer.exe",
+                        Arguments = $"\"{path}\"",
+                        UseShellExecute = true
+                    });
+                }
+                else
+                {
+                    DebugConsole.WriteWarning($"Install directory not found: {path}");
+                }
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteException(ex, "Failed to open install directory");
+            }
+        }
+
+        [RelayCommand]
         private async Task DeleteGameAsync()
         {
             if (SelectedGame?.Game == null) return;
@@ -1479,18 +1507,9 @@ namespace SaveTracker.ViewModels
             try
             {
                 var game = SelectedGame.Game;
-                string gameDataFile = game.GetGameDataFile();
 
-                GameUploadData data;
-                if (File.Exists(gameDataFile))
-                {
-                    string json = await File.ReadAllTextAsync(gameDataFile);
-                    data = System.Text.Json.JsonSerializer.Deserialize<GameUploadData>(json, JsonHelper.GetOptions()) ?? new GameUploadData();
-                }
-                else
-                {
-                    data = new GameUploadData();
-                }
+                // Use profile-aware data loader
+                var data = await ConfigManagement.GetGameData(game) ?? new GameUploadData();
 
                 foreach (var filePath in filePaths)
                 {
@@ -1532,12 +1551,9 @@ namespace SaveTracker.ViewModels
                 if (selectedFiles.Count == 0) return;
 
                 var game = SelectedGame.Game;
-                string gameDataFile = game.GetGameDataFile();
 
-                if (!File.Exists(gameDataFile)) return;
-
-                string json = await File.ReadAllTextAsync(gameDataFile);
-                var data = System.Text.Json.JsonSerializer.Deserialize<GameUploadData>(json, JsonHelper.GetOptions());
+                // Use profile-aware data loader
+                var data = await ConfigManagement.GetGameData(game);
 
                 if (data == null) return;
 
@@ -1683,7 +1699,8 @@ namespace SaveTracker.ViewModels
                 TrackedFiles.Clear();
                 foreach (var file in gameUploadData.Files)
                 {
-                    if (!file.Key.Contains(SaveFileUploadManager.ChecksumFilename))
+                    // Exclude any file that looks like a SaveTracker metadata file
+                    if (!file.Key.Contains(".savetracker", StringComparison.OrdinalIgnoreCase))
                     {
                         TrackedFiles.Add(new TrackedFileViewModel(file.Value, game, gameUploadData.LastSyncStatus));
                     }

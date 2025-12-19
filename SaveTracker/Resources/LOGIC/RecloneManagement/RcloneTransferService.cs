@@ -90,7 +90,7 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             IProgress<double>? progress = null)
         {
             // Create a temporary file list for rclone
-            string listFilePath = System.IO.Path.GetTempFileName();
+            string listFilePath = System.IO.Path.GetRandomFileName();
 
             try
             {

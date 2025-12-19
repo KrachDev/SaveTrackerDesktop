@@ -1,0 +1,152 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="700" d:DesignHeight="600"
+        x:Class="SaveTracker.Views.Dialog.UC_SteamImport"
+        xmlns:vm="clr-namespace:SaveTracker.Views.Dialog"
+        x:DataType="vm:UC_SteamImport_ViewModel"
+        Title="Import Steam Games"
+        Width="700" Height="600"
+        MinWidth="600" MinHeight="400"
+        Background="#1E1E1E"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        SystemDecorations="Full">
+
+    <Grid Margin="20" RowDefinitions="Auto,*,Auto">
+        
+        <!-- Header -->
+        <StackPanel Grid.Row="0" Margin="0,0,0,20">
+            <TextBlock Text="Import Steam Games" FontSize="24" FontWeight="Bold" Foreground="White"/>
+            <TextBlock Text="Select games to add to SaveTracker. Games launched via Steam will be auto-detected." 
+                      FontSize="13" Foreground="#858585" Margin="0,5,0,0"/>
+            <TextBlock Text="{Binding StatusMessage}" 
+                      Foreground="#4CC9B0" Margin="0,10,0,0" FontSize="14"/>
+        </StackPanel>
+
+        <!-- Main Content -->
+        <Border Grid.Row="1" 
+                Background="#252526" 
+                CornerRadius="6" 
+                Padding="1"
+                BorderBrush="#3F3F46"
+                BorderThickness="1">
+            
+            <Grid>
+                <!-- Loading State -->
+                <StackPanel IsVisible="{Binding IsLoading}" 
+                           HorizontalAlignment="Center" 
+                           VerticalAlignment="Center"
+                           Spacing="15">
+                    <TextBlock Text="Scanning Steam Libraries..." 
+                             Foreground="White" 
+                             HorizontalAlignment="Center"/>
+                    <!-- Replaced ProgressBar with simple text for reliability if styling missing -->
+                    <TextBlock Text="Please Wait..." 
+                             Foreground="#858585" 
+                             FontSize="12"
+                             HorizontalAlignment="Center"/>
+                </StackPanel>
+
+                <!-- Games List -->
+                <ListBox IsVisible="{Binding !IsLoading}" 
+                        ItemsSource="{Binding DetectedGames}" 
+                        Background="Transparent"
+                        ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <Grid ColumnDefinitions="Auto,*,Auto" Margin="5">
+                                <CheckBox Grid.Column="0" 
+                                         IsChecked="{Binding IsSelected}" 
+                                         IsEnabled="{Binding !AlreadyImported}"
+                                         VerticalAlignment="Center"/>
+                                
+                                <StackPanel Grid.Column="1" Margin="10,0">
+                                    <TextBlock Text="{Binding Name}" 
+                                             FontWeight="Bold" 
+                                             Foreground="White" 
+                                             FontSize="14"/>
+                                    <TextBlock Text="{Binding InstallDir}" 
+                                             FontSize="11" 
+                                             Foreground="#858585" 
+                                             TextTrimming="CharacterEllipsis"/>
+                                </StackPanel>
+                                
+                                <Border Grid.Column="2" 
+                                        CornerRadius="4" 
+                                        Background="#333333" 
+                                        Padding="8,4" 
+                                        VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding StatusText}" 
+                                             Foreground="{Binding StatusColor}" 
+                                             FontSize="11" 
+                                             FontWeight="SemiBold"/>
+                                </Border>
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                    <ListBox.Styles>
+                         <Style Selector="ListBoxItem">
+                            <Setter Property="Padding" Value="10,5"/>
+                         </Style>
+                         <Style Selector="ListBoxItem:selected /template/ ContentPresenter">
+                              <Setter Property="Background" Value="#2D2D30"/>
+                         </Style>
+                         <Style Selector="ListBoxItem:pointerover /template/ ContentPresenter">
+                              <Setter Property="Background" Value="#2D2D30"/>
+                         </Style>
+                    </ListBox.Styles>
+                </ListBox>
+                
+                <!-- Empty State -->
+                <StackPanel IsVisible="{Binding !HasGames}" 
+                           HorizontalAlignment="Center" 
+                           VerticalAlignment="Center">
+                    <TextBlock Text="No Steam games found" 
+                             Foreground="#858585" 
+                             IsVisible="{Binding !IsLoading}"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Footer -->
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10" Margin="0,20,0,0">
+             <Button Command="{Binding ScanForSteamGamesCommand}"
+                    Content="Refresh" 
+                    Padding="20,10"
+                    Background="#3F3F46"
+                    Foreground="#CCCCCC"/>
+            
+            <Button Command="{Binding ImportSelectedCommand}"
+                    Content="Import Selected" 
+                    Padding="20,10"
+                    Background="#0E639C"
+                    Foreground="White"
+                    FontWeight="SemiBold"
+                    IsEnabled="{Binding !IsLoading}"/>
+        </StackPanel>
+
+    </Grid>
+
+    <Window.Styles>
+        <Style Selector="Button">
+            <Setter Property="Background" Value="#3F3F46"/>
+            <Setter Property="Foreground" Value="#CCCCCC"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="CornerRadius" Value="4"/>
+            <Setter Property="Cursor" Value="Hand"/>
+        </Style>
+        <Style Selector="Button:pointerover">
+            <Setter Property="Background" Value="#505050"/>
+        </Style>
+        <Style Selector="Button:disabled">
+            <Setter Property="Opacity" Value="0.5"/>
+            <Setter Property="Cursor" Value="Arrow"/>
+        </Style>
+        <Style Selector="CheckBox">
+             <Setter Property="Foreground" Value="#CCCCCC"/>
+        </Style>
+    </Window.Styles>
+
+</Window>

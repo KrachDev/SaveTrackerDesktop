@@ -245,17 +245,20 @@ namespace SaveTracker.ViewModels
                     // Use helper to get correct path for active profile
                     var remotePath = await rcloneOps.GetRemotePathAsync(provider, _game);
 
+                    var checksumService = new ChecksumService();
                     string gameDirectory = _game.InstallDirectory;
-                    string checksumLocalFullPath = Path.Combine(gameDirectory, SaveFileUploadManager.ChecksumFilename);
-                    string checksumRelativePath = PathContractor.ContractPath(checksumLocalFullPath, gameDirectory).Replace('\\', '/');
-                    string checksumRemotePath = $"{remotePath}/{checksumRelativePath}";
-                    string checksumLocalPath = Path.Combine(tempFolder, SaveFileUploadManager.ChecksumFilename);
+                    // Uses profile-specific filename logic
+                    string realChecksumPath = checksumService.GetChecksumFilePath(gameDirectory, _game.ActiveProfileId);
+                    string realChecksumName = Path.GetFileName(realChecksumPath);
+
+                    string checksumRemotePath = $"{remotePath}/{realChecksumName}";
+                    string checksumLocalPath = Path.Combine(tempFolder, realChecksumName);
 
                     var transferService = new RcloneTransferService();
                     bool downloaded = await transferService.DownloadFileWithRetry(
                         checksumRemotePath,
                         checksumLocalPath,
-                        SaveFileUploadManager.ChecksumFilename,
+                        realChecksumName,
                         provider
                     );
 
@@ -713,11 +716,13 @@ namespace SaveTracker.ViewModels
                         await Dispatcher.UIThread.InvokeAsync(() =>
                         {
                             OperationLog.Add($"[{DateTime.Now:HH:mm:ss}] Uploading checksum file...");
-                            CurrentFile = ".savetracker_checksums.json";
+                            // Use generic name in UI or fetch actual name. Generic is fine.
+                            CurrentFile = "Metadata (Checksums)";
                             FileProgress = "";
                         });
 
-                        string checksumFile = checksumService.GetChecksumFilePath(_game.InstallDirectory);
+                        // CRITICAL: Pass profile ID to get correct checksum file
+                        string checksumFile = checksumService.GetChecksumFilePath(_game.InstallDirectory, _game.ActiveProfileId);
                         if (File.Exists(checksumFile))
                         {
                             await rcloneOps.ProcessFile(

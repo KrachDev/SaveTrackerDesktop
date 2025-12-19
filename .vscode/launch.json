@@ -6,7 +6,7 @@
             "type": "coreclr",
             "request": "launch",
             "preLaunchTask": "build",
-            "program": "${workspaceFolder}/SaveTracker/bin/Debug/net8.0/SaveTracker.dll",
+            "program": "${workspaceFolder}/SaveTracker/bin/Debug/net8.0-windows10.0.17763.0/SaveTracker.dll",
             "args": [],
             "cwd": "${workspaceFolder}/SaveTracker",
             "console": "integratedTerminal",

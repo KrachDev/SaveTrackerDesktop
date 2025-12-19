@@ -40,7 +40,7 @@
             
             <!-- General Settings Tab -->
             <TabItem Header="⚙️ General">
-                <ScrollViewer Padding="20,20,20,100" VerticalScrollBarVisibility="Auto">
+                <ScrollViewer  VerticalScrollBarVisibility="Auto">
                     <StackPanel Spacing="20" Margin="0,0,0,20">
                         
                         <!-- Tracking Settings -->
@@ -126,7 +126,7 @@
 
             <!-- Analytics Tab -->
             <TabItem Header="📊 Analytics">
-                <ScrollViewer Padding="20,20,20,100" VerticalScrollBarVisibility="Auto">
+                <ScrollViewer  VerticalScrollBarVisibility="Auto">
                     <StackPanel Spacing="20" Margin="0,0,0,20">
                         
                         <!-- Privacy Notice -->
@@ -266,7 +266,7 @@
 
             <!-- Updates Tab -->
             <TabItem Header="🔄 Updates">
-                <ScrollViewer Padding="20,20,20,100" VerticalScrollBarVisibility="Auto">
+                <ScrollViewer  VerticalScrollBarVisibility="Auto">
                     <StackPanel Spacing="20" Margin="0,0,0,20">
                         
                         <!-- Update Settings -->

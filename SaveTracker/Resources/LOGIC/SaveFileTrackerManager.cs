@@ -419,7 +419,13 @@ namespace SaveTracker.Resources.LOGIC
                 {
                     DebugConsole.WriteInfo("Loading previously tracked files from checksums...");
                     var checksumService = new SaveTracker.Resources.Logic.RecloneManagement.ChecksumService();
-                    var checksumData = await checksumService.LoadChecksumData(_game.InstallDirectory);
+                    
+                    // Ensure legacy file is migrated to profile-specific naming first
+                    string profileId = _game.ActiveProfileId ?? "DEFAULT_PROFILE_ID";
+                    await checksumService.MigrateFromLegacyIfNeeded(_game.InstallDirectory, profileId);
+                    
+                    // Now load the checksums with profile awareness
+                    var checksumData = await checksumService.LoadChecksumData(_game.InstallDirectory, profileId);
 
                     if (checksumData != null && checksumData.Files != null)
                     {
@@ -596,7 +602,11 @@ namespace SaveTracker.Resources.LOGIC
                 // FIRST: Check against Strict Path Filter
                 if (!_pathFilter.ShouldTrack(normalizedPath))
                 {
-                    // DebugConsole.WriteDebug($"[Filter] Blocked: {normalizedPath}");
+                    // For Steam games, let's keep an eye on userdata blocks if debugging
+                    if (normalizedPath.Contains("userdata", StringComparison.OrdinalIgnoreCase))
+                    {
+                        DebugConsole.WriteDebug($"[Filter] Blocked (PathFilter): {normalizedPath}");
+                    }
                     return;
                 }
 
@@ -652,6 +662,8 @@ namespace SaveTracker.Resources.LOGIC
                 // NOW check if should be ignored
                 if (_fileCollector.ShouldIgnore(normalizedPath))
                 {
+                    // DebugConsole.WriteDebug($"[Filter] Blocked (IgnoreList): {normalizedPath}");
+
                     // Even if THIS file is ignored, track the companion if it exists
                     if (companionFile != null && !_fileCollector.ShouldIgnore(companionFile))
                     {
@@ -948,7 +960,7 @@ namespace SaveTracker.Resources.LOGIC
         }
 
         /// <summary>
-        /// Updates PlayTime in both GameUploadData config AND checksums.json.
+        /// Updates PlayTime in both GameUploadData.json (per-game config) AND checksums.json.
         /// CRITICAL: Smart Sync reads from checksums.json, so both must be updated atomically.
         /// Also adds tracked files to checksum data so they appear in Smart Sync.
         /// </summary>
@@ -973,8 +985,8 @@ namespace SaveTracker.Resources.LOGIC
                 // We perform the PlayTime update HERE safely using the service lock.
                 var checksumService = new SaveTracker.Resources.Logic.RecloneManagement.ChecksumService();
 
-                // Load existing data safely
-                var checksumData = await checksumService.LoadChecksumData(_game.InstallDirectory);
+                // Load existing data safely - USE PROFILE ID from active profile
+                var checksumData = await checksumService.LoadChecksumData(_game.InstallDirectory, _game.ActiveProfileId);
 
                 // Update PlayTime
                 checksumData.PlayTime = data.PlayTime; // Set to total
@@ -1035,7 +1047,8 @@ namespace SaveTracker.Resources.LOGIC
                     }
                 }
 
-                await checksumService.SaveChecksumData(checksumData, _game.InstallDirectory);
+                // SAVE WITH PROFILE ID - THIS IS CRITICAL!
+                await checksumService.SaveChecksumData(checksumData, _game.InstallDirectory, _game.ActiveProfileId);
 
                 DebugConsole.WriteSuccess(
                     $"PlayTime committed for '{_game.Name}': {oldPlayTime} + {sessionDuration} = {data.PlayTime} (saved to both config and checksums)"

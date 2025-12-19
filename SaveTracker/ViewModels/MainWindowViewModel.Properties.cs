@@ -7,6 +7,7 @@ using SaveTracker.Resources.HELPERS.Linux;
 using SaveTracker.Resources.Logic;
 using SaveTracker.Resources.Logic.RecloneManagement;
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -163,6 +164,19 @@ namespace SaveTracker.ViewModels
         private CancellationTokenSource? _cloudCheckCts;
         private readonly RcloneExecutor _rcloneExecutorInternal = new RcloneExecutor();
 
+        // Cache for cloud game list (5-minute TTL)
+        private List<string> _cachedCloudGamesList;
+        private DateTime _cloudGamesCacheTime = DateTime.MinValue;
+        private const int CloudGamesCacheTTLMinutes = 5;
+
+        // Track last cloud check to avoid duplicate network calls
+        private string _lastCheckedGameName = "";
+        private DateTime _lastCloudCheckTime = DateTime.MinValue;
+        private const int CloudCheckCooldownSeconds = 30;
+
+        // Guard flag to prevent overlapping cloud suggestions loads
+        private bool _isLoadingCloudGames = false;
+
         // ========== INITIALIZATION ==========
 
         private async void InitializeGameProperties(Game game)
@@ -184,6 +198,9 @@ namespace SaveTracker.ViewModels
                 DebugConsole.WriteException(ex, "Failed to load game prefix");
                 EditablePrefix = "";
             }
+
+            // Load cloud game suggestions for autocomplete dropdown
+            await LoadCloudGameSuggestionsAsync();
 
             // Trigger cloud check
             OnEditableGameNameChanged(game.Name);
@@ -220,19 +237,44 @@ namespace SaveTracker.ViewModels
         [RelayCommand]
         private async Task RefreshCloudGamesAsync()
         {
+            // Invalidate cache to force fresh fetch
+            _cloudGamesCacheTime = DateTime.MinValue;
             await LoadCloudGameSuggestionsAsync();
 
             // Optional: Provide feedback
             Avalonia.Threading.Dispatcher.UIThread.Post(() =>
             {
-                DebugConsole.WriteInfo($"Refreshed cloud game list. Found {AvailableCloudGames.Count} games.");
+                DebugConsole.WriteInfo($"Cloud game list refreshed. Found {AvailableCloudGames.Count} games.");
             });
         }
 
         private async Task LoadCloudGameSuggestionsAsync()
         {
+            // Prevent overlapping loads
+            if (_isLoadingCloudGames)
+            {
+                DebugConsole.WriteDebug("Cloud games load already in progress, skipping duplicate request");
+                return;
+            }
+
+            // Check cache first (5-minute TTL)
+            if (_cachedCloudGamesList != null &&
+                (DateTime.Now - _cloudGamesCacheTime).TotalMinutes < CloudGamesCacheTTLMinutes)
+            {
+                DebugConsole.WriteDebug($"Using cached cloud games list ({_cachedCloudGamesList.Count} games)");
+                Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                {
+                    AvailableCloudGames.Clear();
+                    foreach (var d in _cachedCloudGamesList)
+                        AvailableCloudGames.Add(d);
+                });
+                return;
+            }
+
+            _isLoadingCloudGames = true;
             try
             {
+                DebugConsole.WriteDebug("Fetching cloud games list from remote...");
                 var config = await ConfigManagement.LoadConfigAsync();
                 var provider = config.CloudConfig.Provider;
                 string configPath = RclonePathHelper.GetConfigPath(provider);
@@ -247,50 +289,50 @@ namespace SaveTracker.ViewModels
 
                 if (result.Success)
                 {
-                    // Output format: "      -1 2023-10-26 12:00:00        -1 DirectoryName"
                     var lines = result.Output.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
                     var dirs = new System.Collections.Generic.List<string>();
 
                     foreach (var line in lines)
                     {
-                        // Extract directory name (last part of the line)
-                        // lsd output usually ends with the name. 
-                        // We can trim start and split by space, taking the rest? 
-                        // Or just take the last part after the last space index that is part of the metadata columns?
-                        // lsd columns are fixed width-ish but better to parse carefully.
-                        // Format: [Size] [Date] [Time] [Count] [Name]
-                        // -1 2022-01-01 12:00:00 -1 My Game Name
-
-                        // Robust approach: split by spaces, skip the first 4 tokens (Size, Date, Time, Count seems to be standard for lsd, or sometimes just -1 -1)
-                        // Actually, 'lsd' output: 
-                        //           -1 2023-12-07 18:00:00        -1 GameName
-                        // The ' -1' is size/count. 
-
                         var parts = line.Trim().Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
                         if (parts.Length >= 5)
                         {
-                            // Rejoin from index 4 to end (0-based) to get the name (which might have spaces)
                             string name = string.Join(" ", parts.Skip(4));
                             dirs.Add(name);
                         }
                     }
 
+                    // Cache the results
+                    _cachedCloudGamesList = dirs;
+                    _cloudGamesCacheTime = DateTime.Now;
+
                     Avalonia.Threading.Dispatcher.UIThread.Post(() =>
                     {
                         AvailableCloudGames.Clear();
-                        foreach (var d in dirs) AvailableCloudGames.Add(d);
+                        foreach (var d in dirs)
+                            AvailableCloudGames.Add(d);
                     });
+
+                    DebugConsole.WriteDebug($"Cloud games list cached with {dirs.Count} items");
+                }
+                else
+                {
+                    DebugConsole.WriteWarning("Failed to fetch cloud games list");
                 }
             }
             catch (Exception ex)
             {
                 DebugConsole.WriteException(ex, "Failed to load cloud suggestions");
             }
+            finally
+            {
+                _isLoadingCloudGames = false;
+            }
         }
 
         partial void OnEditableGameNameChanged(string value)
         {
-            // Debounce check
+            // Debounce check - increase debounce to 1 second and add cooldown check
             _cloudCheckCts?.Cancel();
             _cloudCheckCts = new CancellationTokenSource();
             var token = _cloudCheckCts.Token;
@@ -299,8 +341,16 @@ namespace SaveTracker.ViewModels
             {
                 try
                 {
-                    await Task.Delay(500, token); // 500ms debounce
+                    await Task.Delay(1000, token); // Increased debounce to 1 second
                     if (token.IsCancellationRequested) return;
+
+                    // Skip if we've checked this name recently (within 30 seconds)
+                    if (value == _lastCheckedGameName &&
+                        (DateTime.Now - _lastCloudCheckTime).TotalSeconds < CloudCheckCooldownSeconds)
+                    {
+                        DebugConsole.WriteDebug("Cloud check skipped - recently checked");
+                        return;
+                    }
 
                     await CheckCloudGameExistence(value);
                 }
@@ -329,22 +379,46 @@ namespace SaveTracker.ViewModels
                     CloudCheckColor = "Gray";
                 });
 
-                // Get global provider (assuming global for now as per request)
+                // Get global provider
                 var config = await ConfigManagement.LoadConfigAsync();
                 var provider = config.CloudConfig.Provider;
 
                 // Sanitize name to match how it's stored
                 string sanitizedName = SanitizeGameNameForCheck(gameName);
 
-                // Get config path
+                // First, try to use cached list if available
+                if (_cachedCloudGamesList != null && _cachedCloudGamesList.Count > 0)
+                {
+                    bool exists = _cachedCloudGamesList.Any(name =>
+                        name.Equals(sanitizedName, StringComparison.OrdinalIgnoreCase));
+
+                    Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                    {
+                        if (exists)
+                        {
+                            CloudCheckStatus = "✓ Found in Cloud";
+                            CloudCheckColor = "#4CC9B0"; // Green-ish
+                        }
+                        else
+                        {
+                            CloudCheckStatus = "Not found in Cloud (New)";
+                            CloudCheckColor = "Gray";
+                        }
+                    });
+
+                    // Track this check
+                    _lastCheckedGameName = gameName;
+                    _lastCloudCheckTime = DateTime.Now;
+
+                    DebugConsole.WriteDebug($"Cloud check via cache: {gameName} - {(exists ? "Found" : "Not found")}");
+                    return;
+                }
+
+                // Cache miss - do fresh network call
                 string configPath = RclonePathHelper.GetConfigPath(provider);
                 string remoteName = _providerHelper.GetProviderConfigName(provider);
-
-                // Command: rclone lsd remote:SaveTrackerCloudSave --config ...
-                // Note: We scan the ROOT folder (SaveTrackerCloudSave) to see if our game folder exists within it.
                 string remotePath = $"{remoteName}:{SaveFileUploadManager.RemoteBaseFolder}";
 
-                // We use lsd to list directories in the root
                 var result = await _rcloneExecutorInternal.ExecuteRcloneCommand(
                     $"lsd \"{remotePath}\" --config \"{configPath}\" " + RcloneExecutor.GetPerformanceFlags(),
                     TimeSpan.FromSeconds(10),
@@ -353,8 +427,6 @@ namespace SaveTracker.ViewModels
 
                 if (result.Success)
                 {
-                    // Output format: "      -1 2023-10-26 12:00:00        -1 DirectoryName"
-                    // Parse line by line
                     var lines = result.Output.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
                     bool exists = lines.Any(line => line.TrimEnd().EndsWith($" {sanitizedName}", StringComparison.OrdinalIgnoreCase));
 
@@ -368,28 +440,47 @@ namespace SaveTracker.ViewModels
                         else
                         {
                             CloudCheckStatus = "Not found in Cloud (New)";
-                            CloudCheckColor = "Gray"; // or a neutral color/CheckIcon
+                            CloudCheckColor = "Gray";
                         }
                     });
+
+                    // Update cache with results
+                    var dirs = new System.Collections.Generic.List<string>();
+                    foreach (var line in lines)
+                    {
+                        var parts = line.Trim().Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                        if (parts.Length >= 5)
+                        {
+                            string name = string.Join(" ", parts.Skip(4));
+                            dirs.Add(name);
+                        }
+                    }
+                    _cachedCloudGamesList = dirs;
+                    _cloudGamesCacheTime = DateTime.Now;
+
+                    DebugConsole.WriteDebug($"Cloud check via network: {gameName} - {(exists ? "Found" : "Not found")}");
                 }
                 else
                 {
                     Avalonia.Threading.Dispatcher.UIThread.Post(() =>
-                   {
-                       // If root folder doesn't exist, lsd might fail or return nothing.
-                       // Assume not found or error.
-                       CloudCheckStatus = "Check failed (Connection?)";
-                       CloudCheckColor = "#C42B1C"; // Red
-                   });
+                    {
+                        CloudCheckStatus = "Check failed (Connection?)";
+                        CloudCheckColor = "#C42B1C"; // Red
+                    });
+                    DebugConsole.WriteWarning("Cloud check failed - network error");
                 }
+
+                // Track this check
+                _lastCheckedGameName = gameName;
+                _lastCloudCheckTime = DateTime.Now;
             }
             catch (Exception ex)
             {
                 Avalonia.Threading.Dispatcher.UIThread.Post(() =>
-               {
-                   CloudCheckStatus = "Check Error";
-                   CloudCheckColor = "#C42B1C";
-               });
+                {
+                    CloudCheckStatus = "Check Error";
+                    CloudCheckColor = "#C42B1C";
+                });
                 DebugConsole.WriteException(ex, "Cloud check error");
             }
         }
@@ -405,6 +496,33 @@ namespace SaveTracker.ViewModels
         }
 
         // ========== COMMANDS ==========
+
+        [RelayCommand]
+        private async Task OpenSteamImportAsync()
+        {
+            var mainWindow = Avalonia.Application.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop
+               ? desktop.MainWindow
+               : null;
+
+            if (mainWindow == null) return;
+
+            var dialog = new SaveTracker.Views.Dialog.UC_SteamImport();
+
+            // ShowDialog returns the result when Close(result) is called
+            var importedGames = await dialog.ShowDialog<List<Game>>(mainWindow);
+
+            if (importedGames != null && importedGames.Count > 0)
+            {
+                DebugConsole.WriteSuccess($"Imported {importedGames.Count} Steam games via dialog.");
+
+                foreach (var game in importedGames)
+                {
+                    await OnGameAddedAsync(game);
+                }
+
+                _notificationService?.Show("Steam Import", $"Successfully imported {importedGames.Count} games from Steam.", Avalonia.Controls.Notifications.NotificationType.Success);
+            }
+        }
 
         [RelayCommand]
         private async Task BrowseForGameExecutableAsync()
@@ -572,20 +690,29 @@ namespace SaveTracker.ViewModels
                 {
                     try
                     {
-                        var checksumService = new ChecksumService();
-                        string oldChecksumPath = checksumService.GetChecksumFilePath(oldInstallDir);
-                        string newChecksumPath = checksumService.GetChecksumFilePath(newInstallDir);
-
-                        if (File.Exists(oldChecksumPath))
+                        if (!Directory.Exists(newInstallDir))
                         {
-                            if (!Directory.Exists(newInstallDir))
+                            Directory.CreateDirectory(newInstallDir);
+                        }
+
+                        // Move ALL profile checksum files (pattern: .savetracker_profile_*.json)
+                        if (Directory.Exists(oldInstallDir))
+                        {
+                            var checksumFiles = Directory.GetFiles(oldInstallDir, ".savetracker_profile_*.json");
+                            foreach (var oldPath in checksumFiles)
                             {
-                                Directory.CreateDirectory(newInstallDir);
+                                string filename = Path.GetFileName(oldPath);
+                                string newChecksumPath = Path.Combine(newInstallDir, filename);
+
+                                File.Copy(oldPath, newChecksumPath, true);
+                                File.Delete(oldPath);
+                                DebugConsole.WriteInfo($"Moved profile checksum: {filename}");
                             }
 
-                            File.Copy(oldChecksumPath, newChecksumPath, true);
-                            File.Delete(oldChecksumPath);
-                            DebugConsole.WriteInfo($"Moved local checksums from {oldInstallDir} to {newInstallDir}");
+                            if (checksumFiles.Length > 0)
+                            {
+                                DebugConsole.WriteSuccess($"Moved {checksumFiles.Length} profile checksum file(s) to {newInstallDir}");
+                            }
                         }
                     }
                     catch (Exception ex)

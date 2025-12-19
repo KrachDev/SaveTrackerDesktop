@@ -62,6 +62,24 @@ namespace SaveTracker.ViewModels
             try
             {
                 await _profileManager.AddProfileAsync(NewProfileName);
+
+                // After creating the profile, offer to migrate existing saves
+                var createdProfiles = await _profileManager.GetProfilesAsync();
+                var newProfile = createdProfiles.FirstOrDefault(p => p.Name.Equals(NewProfileName, StringComparison.OrdinalIgnoreCase));
+
+                if (newProfile != null)
+                {
+                    // Auto-migrate global checksums to this new profile if it's the first non-default profile
+                    var gameData = await ConfigManagement.GetGameData(_game);
+                    var hasGlobalSaves = gameData?.Files != null && gameData.Files.Count > 0;
+
+                    if (hasGlobalSaves && createdProfiles.Count(p => !p.IsDefault) == 1)
+                    {
+                        DebugConsole.WriteInfo($"Auto-migrating existing saves to new profile: {NewProfileName}");
+                        await _profileManager.MigrateGlobalChecksumsToProfile(_game, newProfile);
+                    }
+                }
+
                 NewProfileName = ""; // Clear input
                 await LoadProfilesAsync(); // Refresh list
             }

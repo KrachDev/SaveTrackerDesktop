@@ -56,7 +56,7 @@
                     <Grid ColumnDefinitions="50,*" Margin="5">
                         <!-- Icon Placeholder -->
                         <Border Width="40" Height="40" Background="#333" CornerRadius="4" VerticalAlignment="Center">
-                             <TextBlock Text="🎮" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="20"/>
+                             <Image Source="{Binding Icon}" Width="32" Height="32" Stretch="Uniform" />
                         </Border>
                         
                         <StackPanel Grid.Column="1" Margin="15,0,0,0" VerticalAlignment="Center">

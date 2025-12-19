@@ -15,6 +15,11 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
     {
         private static readonly SemaphoreSlim _checksumFileLock = new SemaphoreSlim(1, 1);
 
+        // Constants for checksum file naming
+        public const string LegacyChecksumFilename = ".savetracker_checksums.json"; // Old global naming
+        public const string ProfileChecksumFilenamePrefix = ".savetracker_profile_"; // New profile-specific naming
+        public const string ProfileChecksumFilenameSuffix = ".json";
+
         public async Task UpdatePlayTime(string gameDirectory, TimeSpan playTime)
         {
             try
@@ -33,9 +38,187 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             }
         }
 
-        public string GetChecksumFilePath(string gameDirectory)
+        /// <summary>
+        /// Gets the checksum file path. ALWAYS uses profile-specific naming now.
+        /// If no profileId, uses DEFAULT profile ID.
+        /// Detects and migrates legacy .savetracker_checksums.json to new scheme.
+        /// </summary>
+        public string GetChecksumFilePath(string gameDirectory, string? profileId = null)
         {
-            return Path.Combine(gameDirectory, SaveFileUploadManager.ChecksumFilename);
+            if (string.IsNullOrEmpty(gameDirectory))
+                throw new ArgumentNullException(nameof(gameDirectory));
+
+            // If no profileId, use DEFAULT profile
+            if (string.IsNullOrEmpty(profileId))
+            {
+                profileId = "DEFAULT_PROFILE_ID";
+            }
+
+            // UNIFIED NAMING: ALL profiles use .savetracker_profile_<ID>.json
+            // Note: SanitizeProfileId handles DEFAULT_PROFILE_ID specially
+            string sanitized = SanitizeProfileId(profileId);
+            string profileChecksumFilename = $"{ProfileChecksumFilenamePrefix}{sanitized}{ProfileChecksumFilenameSuffix}";
+            string profilePath = Path.Combine(gameDirectory, profileChecksumFilename);
+            
+            DebugConsole.WriteDebug($"[Checksum] Using profile-specific file for {profileId}: {profileChecksumFilename}");
+            return profilePath;
+        }
+
+        /// <summary>
+        /// Sanitizes profile ID for use in filenames (removes special characters)
+        /// </summary>
+        private static string SanitizeProfileId(string profileId)
+        {
+            if (string.IsNullOrEmpty(profileId))
+                return "default";
+            
+            // Handle special case for DEFAULT_PROFILE_ID
+            if (profileId.Equals("DEFAULT_PROFILE_ID", StringComparison.OrdinalIgnoreCase))
+                return "default";
+            
+            // For GUIDs and other IDs: keep only alphanumeric characters
+            // Remove hyphens, underscores, and special characters
+            string sanitized = System.Text.RegularExpressions.Regex.Replace(
+                profileId.ToLowerInvariant(), 
+                "[^a-z0-9]", 
+                ""
+            );
+            
+            // Limit to 16 characters to keep filenames reasonable
+            if (sanitized.Length > 16)
+            {
+                sanitized = sanitized.Substring(0, 16);
+            }
+            
+            return sanitized;
+        }
+
+        /// <summary>
+        /// Migrates legacy global checksum file (.savetracker_checksums.json) 
+        /// to the new unified profile-specific naming scheme.
+        /// This runs automatically on first access to ensure data is migrated.
+        /// </summary>
+        public async Task<bool> MigrateFromLegacyIfNeeded(string gameDirectory, string? profileId = null)
+        {
+            // Normalize profileId - if null, treat as DEFAULT
+            if (string.IsNullOrEmpty(profileId))
+            {
+                profileId = "DEFAULT_PROFILE_ID";
+            }
+
+            await _checksumFileLock.WaitAsync();
+            try
+            {
+                string legacyPath = Path.Combine(gameDirectory, LegacyChecksumFilename);
+                string profilePath = GetChecksumFilePath(gameDirectory, profileId);
+
+                // Check if migration is needed
+                if (!File.Exists(legacyPath) || File.Exists(profilePath))
+                {
+                    return false; // Nothing to migrate
+                }
+
+                DebugConsole.WriteInfo($"[Checksum Migration] Migrating {LegacyChecksumFilename} to profile-specific: {Path.GetFileName(profilePath)}");
+
+                try
+                {
+                    // Copy legacy file to profile-specific location
+                    File.Copy(legacyPath, profilePath, overwrite: false);
+                    
+                    DebugConsole.WriteSuccess($"[Checksum Migration] Successfully migrated checksum file to profile {profileId}");
+                    
+                    // Optional: Delete legacy file after successful migration to all profiles
+                    // For now, keep it for safety
+                    
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    DebugConsole.WriteWarning($"[Checksum Migration] Failed to migrate checksum file: {ex.Message}");
+                    return false;
+                }
+            }
+            finally
+            {
+                _checksumFileLock.Release();
+            }
+        }
+
+        /// <summary>
+        /// Explicitly migrates legacy .savetracker_checksums.json to all profiles in the game directory.
+        /// Called during initialization to ensure complete migration.
+        /// </summary>
+        public async Task<int> MigrateAllLegacyChecksumsAsync(string gameDirectory)
+        {
+            int migratedCount = 0;
+            string legacyPath = Path.Combine(gameDirectory, LegacyChecksumFilename);
+
+            if (!File.Exists(legacyPath))
+            {
+                return 0; // No legacy file to migrate
+            }
+
+            await _checksumFileLock.WaitAsync();
+            try
+            {
+                DebugConsole.WriteInfo($"[Checksum Migration] Found legacy checksum file, migrating to profile-specific naming...");
+
+                // Load the legacy data
+                string jsonContent;
+                try
+                {
+                    using var stream = new FileStream(legacyPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                    using var reader = new StreamReader(stream);
+                    jsonContent = await reader.ReadToEndAsync();
+                }
+                catch (Exception ex)
+                {
+                    DebugConsole.WriteError($"[Checksum Migration] Failed to read legacy file: {ex.Message}");
+                    return 0;
+                }
+
+                var legacyData = JsonConvert.DeserializeObject<GameUploadData>(jsonContent);
+                if (legacyData == null)
+                {
+                    DebugConsole.WriteWarning("[Checksum Migration] Legacy file contains no data");
+                    return 0;
+                }
+
+                // Migrate to DEFAULT profile (.savetracker_profile_default.json)
+                string defaultProfilePath = GetChecksumFilePath(gameDirectory, "DEFAULT_PROFILE_ID");
+                if (!File.Exists(defaultProfilePath))
+                {
+                    try
+                    {
+                        string json = JsonConvert.SerializeObject(legacyData, Formatting.Indented);
+                        using var stream = new FileStream(defaultProfilePath, FileMode.Create, FileAccess.Write, FileShare.Read);
+                        using var writer = new StreamWriter(stream);
+                        await writer.WriteAsync(json);
+                        await writer.FlushAsync();
+                        
+                        DebugConsole.WriteSuccess($"[Checksum Migration] Migrated legacy file to DEFAULT profile: {Path.GetFileName(defaultProfilePath)}");
+                        migratedCount++;
+                    }
+                    catch (Exception ex)
+                    {
+                        DebugConsole.WriteError($"[Checksum Migration] Failed to migrate to DEFAULT profile: {ex.Message}");
+                        return migratedCount;
+                    }
+                }
+
+                // After successful migration to DEFAULT, optionally remove legacy file
+                // For maximum safety, keep it as backup
+                if (migratedCount > 0)
+                {
+                    DebugConsole.WriteInfo("[Checksum Migration] Complete. Legacy file preserved as backup.");
+                }
+
+                return migratedCount;
+            }
+            finally
+            {
+                _checksumFileLock.Release();
+            }
         }
 
         public async Task<string> GetFileChecksum(string filePath)
@@ -55,7 +238,7 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
         }
 
         // Internal method without lock (for use within locked contexts)
-        private async Task<GameUploadData> LoadChecksumDataInternal(string gameDirectory)
+        private async Task<GameUploadData> LoadChecksumDataInternal(string gameDirectory, string? profileId = null)
         {
             int maxRetries = 3;
             int delayMs = 500;
@@ -64,7 +247,7 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             {
                 try
                 {
-                    string checksumFilePath = GetChecksumFilePath(gameDirectory);
+                    string checksumFilePath = GetChecksumFilePath(gameDirectory, profileId);
 
                     if (!File.Exists(checksumFilePath))
                     {
@@ -84,7 +267,7 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                     var data = JsonConvert.DeserializeObject<GameUploadData>(jsonContent);
 
                     DebugConsole.WriteDebug(
-                        $"Loaded checksum data from {checksumFilePath} with {data?.Files?.Count ?? 0} file records"
+                        $"Loaded checksum data from {Path.GetFileName(checksumFilePath)} with {data?.Files?.Count ?? 0} file records"
                     );
                     return data ?? new GameUploadData();
                 }
@@ -106,13 +289,19 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             return new GameUploadData();
         }
 
-        // Public method with lock
+        // Public method with lock (legacy signature, uses DEFAULT profile)
         public async Task<GameUploadData> LoadChecksumData(string gameDirectory)
+        {
+            return await LoadChecksumData(gameDirectory, profileId: null);
+        }
+
+        // Public method with lock and profile support
+        public async Task<GameUploadData> LoadChecksumData(string gameDirectory, string? profileId)
         {
             await _checksumFileLock.WaitAsync();
             try
             {
-                return await LoadChecksumDataInternal(gameDirectory);
+                return await LoadChecksumDataInternal(gameDirectory, profileId);
             }
             finally
             {
@@ -121,7 +310,7 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
         }
 
         // Internal method without lock (for use within locked contexts)
-        private async Task SaveChecksumDataInternal(GameUploadData data, string gameDirectory)
+        private async Task SaveChecksumDataInternal(GameUploadData data, string gameDirectory, string? profileId = null)
         {
             int maxRetries = 3;
             int delayMs = 500;
@@ -130,7 +319,7 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             {
                 try
                 {
-                    string checksumFilePath = GetChecksumFilePath(gameDirectory);
+                    string checksumFilePath = GetChecksumFilePath(gameDirectory, profileId);
 
                     if (!Directory.Exists(gameDirectory))
                     {
@@ -146,7 +335,7 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                         await writer.FlushAsync();
                     }
 
-                    DebugConsole.WriteDebug($"Saved checksum data to {checksumFilePath}");
+                    DebugConsole.WriteDebug($"Saved checksum data to {Path.GetFileName(checksumFilePath)}");
                     DebugConsole.WriteInfo(
                         $"Checksum file updated with {data.Files.Count} file records"
                     );
@@ -161,23 +350,24 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                 catch (Exception ex)
                 {
                     DebugConsole.WriteException(ex, $"Failed to save checksum data to {gameDirectory}");
-                    // On final failure or non-IO exception, we might want to throw or just log. 
-                    // Original code logged exception inside this method but caller also caught?
-                    // Caller 'SaveChecksumData' catches and throws.
-                    // If we return here, caller thinks success?
-                    // We should rethrow if we can't save.
                     throw;
                 }
             }
         }
 
-        // Public method with lock
+        // Public method with lock (legacy signature, uses DEFAULT profile)
         public async Task SaveChecksumData(GameUploadData data, string gameDirectory)
+        {
+            await SaveChecksumData(data, gameDirectory, profileId: null);
+        }
+
+        // Public method with lock and profile support
+        public async Task SaveChecksumData(GameUploadData data, string gameDirectory, string? profileId)
         {
             await _checksumFileLock.WaitAsync();
             try
             {
-                await SaveChecksumDataInternal(data, gameDirectory);
+                await SaveChecksumDataInternal(data, gameDirectory, profileId);
             }
             catch (Exception ex)
             {
@@ -190,7 +380,7 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             }
         }
 
-        public async Task UpdateFileChecksumRecord(string filePath, string gameDirectory, string? detectedPrefix = null)
+        public async Task UpdateFileChecksumRecord(string filePath, string gameDirectory, string? detectedPrefix = null, string? profileId = null)
         {
             await _checksumFileLock.WaitAsync();
             try
@@ -206,7 +396,7 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                     return;
                 }
 
-                var checksumData = await LoadChecksumDataInternal(gameDirectory);
+                var checksumData = await LoadChecksumDataInternal(gameDirectory, profileId);
 
                 // Contract the path to portable format before storing (with Wine prefix support)
                 string portablePath = PathContractor.ContractPath(filePath, gameDirectory, detectedPrefix);
@@ -221,7 +411,7 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                     LastWriteTime = fileInfo.LastWriteTimeUtc // Store timestamp for future optimizations
                 };
 
-                await SaveChecksumDataInternal(checksumData, gameDirectory);
+                await SaveChecksumDataInternal(checksumData, gameDirectory, profileId);
 
                 DebugConsole.WriteDebug(
                     $"Updated checksum record for {portablePath} in {gameDirectory}"
@@ -241,7 +431,7 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
         /// Migrates absolute Linux Wine paths to Windows-style environment variables
         /// Called automatically when loading checksum data on Linux
         /// </summary>
-        public async Task<bool> MigratePathsIfNeeded(string gameDirectory, string? detectedPrefix)
+        public async Task<bool> MigratePathsIfNeeded(string gameDirectory, string? detectedPrefix, string? profileId = null)
         {
             if (string.IsNullOrEmpty(detectedPrefix))
                 return false; // Can't migrate without a prefix
@@ -249,7 +439,7 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             await _checksumFileLock.WaitAsync();
             try
             {
-                var checksumData = await LoadChecksumDataInternal(gameDirectory);
+                var checksumData = await LoadChecksumDataInternal(gameDirectory, profileId);
                 if (checksumData.Files.Count == 0)
                     return false; // Nothing to migrate
 
@@ -285,7 +475,7 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                 if (needsMigration)
                 {
                     checksumData.Files = migratedFiles;
-                    await SaveChecksumDataInternal(checksumData, gameDirectory);
+                    await SaveChecksumDataInternal(checksumData, gameDirectory, profileId);
 
                     DebugConsole.WriteSuccess(
                         $"Successfully migrated {migratedFiles.Count} file paths to cross-platform format"
@@ -306,12 +496,12 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             }
         }
 
-        public async Task CleanupChecksumRecords(string gameDirectory, TimeSpan maxAge)
+        public async Task CleanupChecksumRecords(string gameDirectory, TimeSpan maxAge, string? profileId = null)
         {
             await _checksumFileLock.WaitAsync();
             try
             {
-                var checksumData = await LoadChecksumDataInternal(gameDirectory);
+                var checksumData = await LoadChecksumDataInternal(gameDirectory, profileId);
                 var cutoffDate = DateTime.UtcNow - maxAge;
 
                 var filesToRemove = checksumData.Files
@@ -326,7 +516,7 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
 
                 if (filesToRemove.Any())
                 {
-                    await SaveChecksumDataInternal(checksumData, gameDirectory);
+                    await SaveChecksumDataInternal(checksumData, gameDirectory, profileId);
                     DebugConsole.WriteInfo(
                         $"Cleaned up {filesToRemove.Count} old checksum records from {gameDirectory}"
                     );

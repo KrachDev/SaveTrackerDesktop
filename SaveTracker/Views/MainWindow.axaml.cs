@@ -436,11 +436,10 @@ namespace SaveTracker.Views
 
         private void GamePath_Tapped(object? sender, Avalonia.Input.TappedEventArgs e)
         {
-            // TODO: Re-add OpenInstallDirectoryCommand
-            //if (_viewModel != null)
-            //{
-            //    _viewModel.OpenInstallDirectoryCommand.Execute(null);
-            //}
+            if (_viewModel != null)
+            {
+                _viewModel.OpenInstallDirectoryCommand.Execute(null);
+            }
         }
 
         private void MinimizeWindow()

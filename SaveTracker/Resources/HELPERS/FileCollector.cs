@@ -161,7 +161,9 @@ namespace SaveTracker.Resources.HELPERS
             // We allow files starting with "." now (like .savetracker_checksums.json is handled elsewhere, but game saves might be .save)
             if (fileName.Equals("desktop.ini", StringComparison.OrdinalIgnoreCase) ||
                 fileName.Equals("Thumbs.db", StringComparison.OrdinalIgnoreCase) ||
-                fileName.Equals(".DS_Store", StringComparison.OrdinalIgnoreCase))
+                fileName.Equals(".DS_Store", StringComparison.OrdinalIgnoreCase) ||
+                fileName.Contains(".savetracker", StringComparison.OrdinalIgnoreCase) ||
+                fileName.Contains(".ST_PROFILE", StringComparison.OrdinalIgnoreCase))
                 return true;
 
             // Don't filter "~" temp files unless we are sure. But usually games don't use them for persistent saves.
