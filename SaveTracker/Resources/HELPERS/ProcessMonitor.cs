@@ -49,6 +49,7 @@ namespace SaveTracker.Resources.HELPERS
         // Replace ConcurrentHashSet with ConcurrentDictionary
         private readonly ConcurrentDictionary<int, byte> _trackedProcessIds = new();
         private readonly object _lock = new object();
+        private static bool _isWmiBroken = false;
 
 
         public ProcessMonitor(string installDirectory)
@@ -238,6 +239,8 @@ namespace SaveTracker.Resources.HELPERS
 #if WINDOWS
             try
             {
+                if (_isWmiBroken) return GetProcessesFromDirectoryNative(directory);
+
                 var processIds = new List<int>();
                 string query = "SELECT ProcessId, ExecutablePath FROM Win32_Process";
                 using (var searcher = new ManagementObjectSearcher(query))
@@ -264,7 +267,11 @@ namespace SaveTracker.Resources.HELPERS
             }
             catch (Exception ex)
             {
-                DebugConsole.WriteWarning($"[WMI Failure] Falling back to native process scan: {ex.Message}");
+                if (!_isWmiBroken)
+                {
+                    DebugConsole.WriteWarning($"[WMI Failure] Falling back to native process scan: {ex.Message}");
+                    _isWmiBroken = true;
+                }
                 return GetProcessesFromDirectoryNative(directory);
             }
 #else
@@ -315,6 +322,8 @@ namespace SaveTracker.Resources.HELPERS
 #if WINDOWS
             try
             {
+                if (_isWmiBroken) { ScanForChildrenNative(parentPid); return; }
+
                 // Query path must be correct: Win32_Process where ParentProcessId = X
                 string query = $"SELECT ProcessId FROM Win32_Process WHERE ParentProcessId = {parentPid}";
                 using (var searcher = new ManagementObjectSearcher(query))
@@ -333,7 +342,11 @@ namespace SaveTracker.Resources.HELPERS
             }
             catch (Exception ex)
             {
-                DebugConsole.WriteWarning($"[WMI Child Scan Failed] PID {parentPid}: {ex.Message}. Falling back to native scan.");
+                if (!_isWmiBroken)
+                {
+                    DebugConsole.WriteWarning($"[WMI Child Scan Failed] PID {parentPid}: {ex.Message}. Falling back to native scan.");
+                    _isWmiBroken = true;
+                }
                 ScanForChildrenNative(parentPid);
             }
 #else
@@ -391,6 +404,8 @@ namespace SaveTracker.Resources.HELPERS
 #if WINDOWS
             try
             {
+                if (_isWmiBroken) return GetProcessExecutablePathNative(processId);
+
                 string query = $"SELECT ExecutablePath FROM Win32_Process WHERE ProcessId = {processId}";
                 using (var searcher = new ManagementObjectSearcher(query))
                 {
@@ -452,6 +467,8 @@ namespace SaveTracker.Resources.HELPERS
 #if WINDOWS
                 try
                 {
+                    if (_isWmiBroken) goto native_scan;
+
                     string query = "SELECT ProcessId, ExecutablePath FROM Win32_Process";
                     using (var searcher = new ManagementObjectSearcher(query))
                     {
@@ -480,8 +497,14 @@ namespace SaveTracker.Resources.HELPERS
                 }
                 catch (Exception ex)
                 {
-                    DebugConsole.WriteWarning($"Error while scanning for running process in directory '{normalizedDir}': {ex.Message}");
+                    if (!_isWmiBroken)
+                    {
+                        DebugConsole.WriteWarning($"Error while scanning for running process in directory '{normalizedDir}': {ex.Message}");
+                        _isWmiBroken = true;
+                    }
                 }
+
+            native_scan:
 #else
                 try
                 {

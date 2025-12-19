@@ -142,7 +142,10 @@ namespace SaveTracker.Resources.HELPERS
             "config",
             "sentry",
             "sentrynative",
-            "event"
+            "event",
+            ".savetracker_checksums.json",
+            ".ST_PROFILE.",
+            ".ST_PROFILES"
         };
     }
 }

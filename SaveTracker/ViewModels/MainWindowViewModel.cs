@@ -595,6 +595,34 @@ namespace SaveTracker.ViewModels
         }
 
         [RelayCommand]
+        private void OpenInstallDirectory()
+        {
+            if (SelectedGame?.Game == null) return;
+
+            try
+            {
+                string path = SelectedGame.Game.InstallDirectory;
+                if (Directory.Exists(path))
+                {
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = "explorer.exe",
+                        Arguments = $"\"{path}\"",
+                        UseShellExecute = true
+                    });
+                }
+                else
+                {
+                    DebugConsole.WriteWarning($"Install directory not found: {path}");
+                }
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteException(ex, "Failed to open install directory");
+            }
+        }
+
+        [RelayCommand]
         private async Task DeleteGameAsync()
         {
             if (SelectedGame?.Game == null) return;

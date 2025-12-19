@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using SaveTracker.Resources.HELPERS;
 using SaveTracker.Resources.Logic.RecloneManagement;
+using SaveTracker.Resources.Logic;
 using SaveTracker.Resources.SAVE_SYSTEM;
 
 namespace SaveTracker.Resources.LOGIC
@@ -115,6 +116,13 @@ namespace SaveTracker.Resources.LOGIC
 
                 if (File.Exists(fullActivePath))
                 {
+                    // SAFETY: Do not manage system files
+                    if (IsSystemFile(file.OriginalPath))
+                    {
+                        DebugConsole.WriteWarning($"Skipping system file during deactivation: {file.OriginalPath}");
+                        continue;
+                    }
+
                     // Update Hash before backup? Optional.
                     try
                     {
@@ -160,6 +168,13 @@ namespace SaveTracker.Resources.LOGIC
 
                     if (File.Exists(fullBackupPath))
                     {
+                        // SAFETY: Do not manage system files
+                        if (IsSystemFile(file.OriginalPath))
+                        {
+                            DebugConsole.WriteWarning($"Skipping system file during activation: {file.OriginalPath}");
+                            continue;
+                        }
+
                         try
                         {
                             string activeDir = Path.GetDirectoryName(fullActivePath);
@@ -311,7 +326,68 @@ namespace SaveTracker.Resources.LOGIC
                 }
             }
 
+            // RECOVERY PHASE: Cross-reference with global checksums to find "lost" files
+            try
+            {
+                var checksumData = await _checksumService.LoadChecksumData(game.InstallDirectory);
+                var gameData = await ConfigManagement.GetGameData(game);
+
+                if (checksumData?.Files != null)
+                {
+                    foreach (var contractPath in checksumData.Files.Keys)
+                    {
+                        string fullPath = PathContractor.ExpandPath(contractPath, game.InstallDirectory, gameData?.DetectedPrefix);
+                        string relPath = Path.GetRelativePath(game.InstallDirectory, fullPath);
+
+                        if (IsSystemFile(relPath)) continue;
+
+                        // Check if this file is already in our manifest
+                        if (!manifest.Files.Any(f => f.OriginalPath.Equals(relPath, StringComparison.OrdinalIgnoreCase)))
+                        {
+                            // If it's not in manifest, it might be an orphan from a previous failed switch
+                            string suffix = ".ST_PROFILE." + SanitizeProfileName(profile.Name);
+                            string backupPath = relPath + suffix;
+                            string fullBackupPath = Path.Combine(game.InstallDirectory, backupPath);
+
+                            if (File.Exists(fullBackupPath) || File.Exists(fullPath))
+                            {
+                                DebugConsole.WriteInfo($"[Self-Heal] Recovered missing manifest entry for: {relPath}");
+                                manifest.Files.Add(new ManagedFile
+                                {
+                                    OriginalPath = relPath,
+                                    BackupPath = backupPath,
+                                    LastModified = File.Exists(fullPath) ? File.GetLastWriteTime(fullPath) : File.GetLastWriteTime(fullBackupPath)
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteWarning($"[Self-Heal] Failed manifest-checksum reconciliation: {ex.Message}");
+            }
+
             return manifest;
+        }
+
+        private bool IsSystemFile(string path)
+        {
+            if (string.IsNullOrEmpty(path)) return false;
+
+            string fileName = Path.GetFileName(path);
+
+            // Internal metadata files
+            if (fileName.Equals(SaveFileUploadManager.ChecksumFilename, StringComparison.OrdinalIgnoreCase)) return true;
+            if (path.Contains(".ST_PROFILES", StringComparison.OrdinalIgnoreCase)) return true;
+            if (path.Contains(".savetracker", StringComparison.OrdinalIgnoreCase)) return true;
+
+            // Common junk/engine files that shouldn't be profiled
+            if (fileName.Equals("unityplayer.dll", StringComparison.OrdinalIgnoreCase)) return true;
+            if (fileName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) return true;
+            if (fileName.EndsWith(".dll", StringComparison.OrdinalIgnoreCase)) return true;
+
+            return false;
         }
 
         private string SanitizeProfileName(string name)

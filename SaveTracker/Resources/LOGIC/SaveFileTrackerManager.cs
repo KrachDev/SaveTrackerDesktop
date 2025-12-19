@@ -596,7 +596,11 @@ namespace SaveTracker.Resources.LOGIC
                 // FIRST: Check against Strict Path Filter
                 if (!_pathFilter.ShouldTrack(normalizedPath))
                 {
-                    // DebugConsole.WriteDebug($"[Filter] Blocked: {normalizedPath}");
+                    // For Steam games, let's keep an eye on userdata blocks if debugging
+                    if (normalizedPath.Contains("userdata", StringComparison.OrdinalIgnoreCase))
+                    {
+                        DebugConsole.WriteDebug($"[Filter] Blocked (PathFilter): {normalizedPath}");
+                    }
                     return;
                 }
 
@@ -652,6 +656,8 @@ namespace SaveTracker.Resources.LOGIC
                 // NOW check if should be ignored
                 if (_fileCollector.ShouldIgnore(normalizedPath))
                 {
+                    // DebugConsole.WriteDebug($"[Filter] Blocked (IgnoreList): {normalizedPath}");
+
                     // Even if THIS file is ignored, track the companion if it exists
                     if (companionFile != null && !_fileCollector.ShouldIgnore(companionFile))
                     {
