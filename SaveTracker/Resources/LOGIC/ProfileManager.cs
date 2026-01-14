@@ -136,13 +136,7 @@ namespace SaveTracker.Resources.LOGIC
 
                 if (File.Exists(fullActivePath))
                 {
-                    // SAFETY: Do not manage system files
-                    if (IsSystemFile(file.OriginalPath))
-                    {
-                        DebugConsole.WriteWarning($"Skipping system file during deactivation: {file.OriginalPath}");
-                        continue;
-                    }
-
+                    // Update Hash before backup? Optional.
                     try
                     {
                         // Ensure backup directory exists (if nested)
@@ -362,19 +356,13 @@ namespace SaveTracker.Resources.LOGIC
                             string relPath = Path.GetRelativePath(game.InstallDirectory, file);
                             string originalRelPath = relPath.Substring(0, relPath.Length - suffix.Length);
 
-                            DebugConsole.WriteInfo($"Recovered tracked file: {originalRelPath}");
-                            manifest.Files.Add(new ManagedFile
-                            {
-                                OriginalPath = originalRelPath,
-                                BackupPath = relPath,
-                                LastModified = File.GetLastWriteTime(file)
-                            });
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    DebugConsole.WriteWarning($"Error scanning for deactivated files: {ex.Message}");
+                    DebugConsole.WriteInfo($"Recovered tracked file: {originalRelPath}");
+                    manifest.Files.Add(new ManagedFile
+                    {
+                        OriginalPath = originalRelPath,
+                        BackupPath = relPath,
+                        LastModified = File.GetLastWriteTime(file)
+                    });
                 }
             }
 
