@@ -113,7 +113,7 @@ namespace SaveTracker.Resources.LOGIC
             {
                 string fullBackupPath = Path.Combine(game.InstallDirectory, file.BackupPath);
                 string backupDir = Path.GetDirectoryName(fullBackupPath);
-                
+
                 if (!string.IsNullOrEmpty(backupDir) && !Directory.Exists(backupDir))
                 {
                     try
@@ -306,7 +306,7 @@ namespace SaveTracker.Resources.LOGIC
                         if (checksumData != null && checksumData.Files != null && checksumData.Files.Count > 0)
                         {
                             DebugConsole.WriteInfo($"Initializing DEFAULT profile with {checksumData.Files.Count} files from global checksums");
-                            
+
                             foreach (var contractPath in checksumData.Files.Keys)
                             {
                                 string fullPath = PathContractor.ExpandPath(contractPath, game.InstallDirectory, gameData?.DetectedPrefix);
@@ -356,13 +356,19 @@ namespace SaveTracker.Resources.LOGIC
                             string relPath = Path.GetRelativePath(game.InstallDirectory, file);
                             string originalRelPath = relPath.Substring(0, relPath.Length - suffix.Length);
 
-                    DebugConsole.WriteInfo($"Recovered tracked file: {originalRelPath}");
-                    manifest.Files.Add(new ManagedFile
-                    {
-                        OriginalPath = originalRelPath,
-                        BackupPath = relPath,
-                        LastModified = File.GetLastWriteTime(file)
-                    });
+                            DebugConsole.WriteInfo($"Recovered tracked file: {originalRelPath}");
+                            manifest.Files.Add(new ManagedFile
+                            {
+                                OriginalPath = originalRelPath,
+                                BackupPath = relPath,
+                                LastModified = File.GetLastWriteTime(file)
+                            });
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    DebugConsole.WriteWarning($"Failed to scan for deactivated files: {ex.Message}");
                 }
             }
 
@@ -443,7 +449,7 @@ namespace SaveTracker.Resources.LOGIC
             {
                 var checksumService = new ChecksumService();
                 var globalChecksumData = await checksumService.LoadChecksumData(game.InstallDirectory);
-                
+
                 if (globalChecksumData?.Files == null || globalChecksumData.Files.Count == 0)
                 {
                     DebugConsole.WriteInfo($"No global checksums to migrate for profile {targetProfile.Name}");
@@ -455,7 +461,7 @@ namespace SaveTracker.Resources.LOGIC
                 // The global checksum data should now be considered as belonging to this profile
                 // When switching away from this profile, the files will be deactivated
                 // When switching to this profile, they will be reactivated
-                
+
                 // The actual migration happens implicitly:
                 // 1. Files are currently active on disk
                 // 2. LoadOrBuildManifest will read them from global checksums
