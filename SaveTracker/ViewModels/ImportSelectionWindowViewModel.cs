@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using SaveTracker.Resources.HELPERS;
 using SaveTracker.Resources.LOGIC;
+using SaveTracker.Resources.LOGIC.Steam;
 using SaveTracker.Resources.SAVE_SYSTEM;
 using System;
 using System.Collections.Generic;
@@ -10,6 +11,8 @@ using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using Avalonia.Media;
+using Avalonia.Platform;
 
 namespace SaveTracker.ViewModels
 {
@@ -33,9 +36,8 @@ namespace SaveTracker.ViewModels
         private bool _isSelectionMode; // False = Launcher Selection, True = Game Selection
 
         [ObservableProperty]
-        private ObservableCollection<PlayniteGameWrapper> _detectedGames = new();
+        private ObservableCollection<ImportGameViewModel> _detectedGames = new();
 
-        private List<PlayniteGame> _scannedGames = new(); // Raw results
         private readonly PlayniteLibraryReader _playniteReader;
 
         public ImportSelectionWindowViewModel()
@@ -50,7 +52,7 @@ namespace SaveTracker.ViewModels
             {
                 Name = "Playnite",
                 Description = "Import from Playnite Library",
-                IconPath = "/Assets/playnite_icon.png",
+                IconPath = "/Assets/playnite_icon.svg",
                 IsAvailable = true,
                 Type = LauncherType.Playnite
             });
@@ -58,8 +60,9 @@ namespace SaveTracker.ViewModels
             Launchers.Add(new LauncherOption
             {
                 Name = "Steam",
-                Description = "Import from Steam (Coming Soon)",
-                IsAvailable = false,
+                Description = "Import from Steam Library",
+                IconPath = "/Assets/steam_icon.svg",
+                IsAvailable = true,
                 Type = LauncherType.Steam
             });
 
@@ -67,6 +70,7 @@ namespace SaveTracker.ViewModels
             {
                 Name = "Epic Games",
                 Description = "Import from Epic (Coming Soon)",
+                IconPath = "/Assets/epic_icon.svg",
                 IsAvailable = false,
                 Type = LauncherType.Epic
             });
@@ -93,19 +97,22 @@ namespace SaveTracker.ViewModels
 
             try
             {
-                List<PlayniteGame> rawGames = new();
+                List<ImportGameViewModel> rawGames = new();
 
                 if (SelectedLauncher.Type == LauncherType.Playnite)
                 {
                     rawGames = await ScanPlayniteAsync();
                 }
+                else if (SelectedLauncher.Type == LauncherType.Steam)
+                {
+                    rawGames = await ScanSteamAsync();
+                }
 
                 if (rawGames.Count > 0)
                 {
-                    _scannedGames = rawGames;
-                    foreach (var game in _scannedGames)
+                    foreach (var game in rawGames)
                     {
-                        DetectedGames.Add(new PlayniteGameWrapper(game));
+                        DetectedGames.Add(game);
                     }
                     IsSelectionMode = true;
                     StatusText = $"Found {DetectedGames.Count} games. Select games to import.";
@@ -145,16 +152,24 @@ namespace SaveTracker.ViewModels
             try
             {
                 var result = new List<Game>();
-                foreach (var wrapper in selected)
+                foreach (var vm in selected)
                 {
-                    var pg = wrapper.Game;
-                    result.Add(new Game
+                    var newGame = new Game
                     {
-                        Name = pg.DisplayName ?? pg.Name ?? "Unknown", // Use refined name
-                        InstallDirectory = pg.InstallDirectory ?? "",
-                        ExecutablePath = pg.ExecutablePath ?? "",
+                        Name = vm.Name,
+                        InstallDirectory = vm.Path,
+                        ExecutablePath = vm.ExecutablePath,
                         LastTracked = DateTime.MinValue,
-                    });
+                        SteamAppId = vm.SteamAppId,
+                        LaunchViaSteam = vm.LaunchViaSteam
+                    };
+
+                    // Save explicitly to config immediately? 
+                    // Usually the caller (MainWindow) handles adding it to the main list
+                    // But duplicates check happens here?
+                    // Previous logic just returned list.
+
+                    result.Add(newGame);
                 }
 
                 StatusText = $"Successfully imported {result.Count} games.";
@@ -172,7 +187,7 @@ namespace SaveTracker.ViewModels
             }
         }
 
-        private async Task<List<PlayniteGame>> ScanPlayniteAsync()
+        private async Task<List<ImportGameViewModel>> ScanPlayniteAsync()
         {
             return await Task.Run(async () =>
             {
@@ -225,8 +240,55 @@ namespace SaveTracker.ViewModels
                 // Filter valid ones
                 var validGames = playniteGames.Where(g => g.IsInstalled && !string.IsNullOrEmpty(g.ExecutablePath) && File.Exists(g.ExecutablePath)).ToList();
 
-                DebugConsole.WriteSuccess($"Found {validGames.Count} valid games.");
-                return validGames;
+                // Check against existing games (generic duplicate check)
+                var existingGames = await ConfigManagement.LoadAllGamesAsync();
+
+                return validGames.Select(pg => new ImportGameViewModel
+                {
+                    Name = pg.DisplayName ?? pg.Name ?? "Unknown",
+                    Path = pg.InstallDirectory ?? "",
+                    ExecutablePath = pg.ExecutablePath ?? "",
+                    Source = "Playnite",
+                    IsSelected = !existingGames.Any(g => g.InstallDirectory.Equals(pg.InstallDirectory, StringComparison.OrdinalIgnoreCase))
+                }).ToList();
+            });
+        }
+
+        private async Task<List<ImportGameViewModel>> ScanSteamAsync()
+        {
+            return await Task.Run(async () =>
+            {
+                var steamGames = SteamLibraryScanner.GetInstalledGames();
+                var existingGames = await ConfigManagement.LoadAllGamesAsync();
+
+                var results = new List<ImportGameViewModel>();
+
+                foreach (var gameInfo in steamGames)
+                {
+                    // Scan for executable
+                    var executables = SteamLibraryScanner.ScanForExecutables(gameInfo.InstallDirectory);
+                    string bestExe = executables.FirstOrDefault() ?? "";
+
+                    // Check if already imported
+                    bool isAlreadyImported = existingGames.Any(g =>
+                        (g.SteamAppId == gameInfo.AppId) ||
+                        (g.Name.Equals(gameInfo.Name, StringComparison.OrdinalIgnoreCase)) ||
+                        (g.InstallDirectory.Equals(gameInfo.InstallDirectory, StringComparison.OrdinalIgnoreCase))
+                    );
+
+                    results.Add(new ImportGameViewModel
+                    {
+                        Name = gameInfo.Name,
+                        Path = gameInfo.InstallDirectory,
+                        ExecutablePath = bestExe, // Might be empty
+                        SteamAppId = gameInfo.AppId,
+                        LaunchViaSteam = true,
+                        Source = "Steam",
+                        IsSelected = !isAlreadyImported
+                    });
+                }
+
+                return results;
             });
         }
 
@@ -265,39 +327,78 @@ namespace SaveTracker.ViewModels
         }
     }
 
-    public partial class PlayniteGameWrapper : ObservableObject
+    public partial class ImportGameViewModel : ObservableObject
     {
-        public PlayniteGame Game { get; }
+        [ObservableProperty]
+        private bool _isSelected;
 
-        public PlayniteGameWrapper(PlayniteGame game)
-        {
-            Game = game;
-        }
+        public string Name { get; set; } = "";
+        public string Path { get; set; } = "";
+        public string ExecutablePath { get; set; } = "";
+        public string? SteamAppId { get; set; }
+        public bool LaunchViaSteam { get; set; } = false;
+        public string Source { get; set; } = "";
 
-        public string Name => Game.DisplayName ?? Game.Name ?? "Unknown";
-        public string Path => Game.InstallDirectory ?? "";
-
-        public bool IsSelected
-        {
-            get => Game.IsSelected;
-            set
-            {
-                if (Game.IsSelected != value)
-                {
-                    Game.IsSelected = value;
-                    OnPropertyChanged();
-                }
-            }
-        }
+        // UI Helpers
+        public string DisplayPath => Path;
+        public string DisplayName => Name;
     }
 
     public class LauncherOption
     {
         public string Name { get; set; } = "";
         public string Description { get; set; } = "";
-        public string IconPath { get; set; } = "";
+
+        private string _iconPath = "";
+        public string IconPath
+        {
+            get => _iconPath;
+            set
+            {
+                if (_iconPath != value)
+                {
+                    _iconPath = value;
+                    LoadIcon();
+                }
+            }
+        }
+
         public bool IsAvailable { get; set; }
         public LauncherType Type { get; set; }
+
+        public Avalonia.Media.IImage? Icon { get; private set; }
+
+        private void LoadIcon()
+        {
+            if (string.IsNullOrEmpty(IconPath)) return;
+
+            try
+            {
+                // Ensure the URI is correct (avares://SaveTracker/Assets/...)
+                // If IconPath starts with /, remove it to append to base
+                string cleanPath = IconPath.TrimStart('/');
+                var uri = new Uri($"avares://SaveTracker/{cleanPath}");
+
+                if (IconPath.EndsWith(".svg", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Load SVG
+                    var svg = new Avalonia.Svg.Skia.SvgImage
+                    {
+                        Source = Avalonia.Svg.Skia.SvgSource.Load(uri.ToString(), null)
+                    };
+                    Icon = svg;
+                }
+                else
+                {
+                    // Load Bitmap
+                    Icon = new Avalonia.Media.Imaging.Bitmap(Avalonia.Platform.AssetLoader.Open(uri));
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Failed to load icon: {IconPath} - {ex.Message}");
+            }
+        }
     }
 
     public enum LauncherType

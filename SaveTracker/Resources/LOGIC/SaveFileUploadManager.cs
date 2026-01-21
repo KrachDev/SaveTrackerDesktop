@@ -130,7 +130,10 @@ namespace SaveTracker.Resources.Logic
             await session.InitializeAsync();
 
             var fileManager = new UploadFileManager(context.SaveFiles);
-            var checksumManager = new ChecksumFileManager(context.Game);
+            
+            // Pass the active profile ID to ChecksumFileManager so it uses profile-specific checksum files
+            string? profileId = context.Game.ActiveProfileId;
+            var checksumManager = new ChecksumFileManager(context.Game, profileId);
 
             // Prepare files
             fileManager.ValidateFiles();
@@ -528,12 +531,14 @@ namespace SaveTracker.Resources.Logic
     {
         private readonly Game _game;
         private readonly ChecksumService _checksumService;
+        private readonly string? _profileId;
         public string ChecksumFilePath { get; private set; }
         public bool HasChecksumFile => !string.IsNullOrEmpty(ChecksumFilePath) && File.Exists(ChecksumFilePath);
 
-        public ChecksumFileManager(Game game)
+        public ChecksumFileManager(Game game, string? profileId = null)
         {
             _game = game;
+            _profileId = profileId; // Will be null for DEFAULT profile
             _checksumService = new ChecksumService();
         }
 
@@ -549,20 +554,26 @@ namespace SaveTracker.Resources.Logic
                     return;
                 }
 
+                // Auto-migrate from legacy global naming - works for ANY profile including DEFAULT
+                string migrateToProfileId = !string.IsNullOrEmpty(_profileId) ? _profileId : "DEFAULT_PROFILE_ID";
+                await _checksumService.MigrateFromLegacyIfNeeded(gameDirectory, migrateToProfileId);
+
                 // Load existing checksum data (or create new if doesn't exist)
-                var checksumData = await _checksumService.LoadChecksumData(gameDirectory);
+                // Provide profileId so it uses profile-specific file
+                var checksumData = await _checksumService.LoadChecksumData(gameDirectory, _profileId);
 
                 // DON'T update checksums here - they should only be updated AFTER successful upload
                 // This method just ensures the checksum file exists and is ready to be uploaded
                 // Individual file checksums will be updated by ProcessFile after successful upload
 
                 // Save the checksum data (with existing checksums, not updated ones)
-                await _checksumService.SaveChecksumData(checksumData, gameDirectory);
+                // This creates the file with the correct profile-specific naming
+                await _checksumService.SaveChecksumData(checksumData, gameDirectory, _profileId);
 
-                // Set the checksum file path for upload
-                ChecksumFilePath = _checksumService.GetChecksumFilePath(gameDirectory);
+                // Set the checksum file path for upload (uses profile-specific naming for all profiles)
+                ChecksumFilePath = _checksumService.GetChecksumFilePath(gameDirectory, _profileId);
 
-                DebugConsole.WriteSuccess($"Checksum file prepared (checksums will be updated after successful uploads)");
+                DebugConsole.WriteSuccess($"Checksum file prepared: {Path.GetFileName(ChecksumFilePath)} (checksums will be updated after successful uploads)");
             }
             catch (Exception ex)
             {

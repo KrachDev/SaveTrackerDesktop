@@ -192,6 +192,35 @@ namespace SaveTracker.Resources.HELPERS
                     }
 #endif
 
+                    // 3. Steam game detection by install directory
+                    // For games launched via Steam, we don't always know the exact exe, 
+                    // so we check if ANY running process is inside the game's install directory
+                    if (!found && game.LaunchViaSteam && !string.IsNullOrEmpty(game.InstallDirectory))
+                    {
+                        string installDir = game.InstallDirectory.TrimEnd('\\', '/');
+
+                        foreach (var p in runningProcesses)
+                        {
+                            try
+                            {
+                                // Check if the process exe path starts with the game's install directory
+                                if (p.ExecutablePath.StartsWith(installDir, StringComparison.OrdinalIgnoreCase))
+                                {
+                                    // Skip common system/redistributable processes
+                                    string exeName = System.IO.Path.GetFileName(p.ExecutablePath).ToLowerInvariant();
+                                    if (IsRedistributableProcess(exeName))
+                                        continue;
+
+                                    found = true;
+                                    pid = p.ProcessId;
+                                    DebugConsole.WriteDebug($"[ProcessWatcher] Steam game matched by install dir: {p.ExecutablePath}");
+                                    break;
+                                }
+                            }
+                            catch { }
+                        }
+                    }
+
                     if (found)
                     {
                         DebugConsole.WriteSuccess($"GameProcessWatcher detected: {game.Name} (PID: {pid})");
@@ -211,6 +240,27 @@ namespace SaveTracker.Resources.HELPERS
             {
                 DebugConsole.WriteWarning($"Error scanning for game processes: {ex.Message}");
             }
+        }
+
+        /// <summary>
+        /// Checks if a process name is a common redistributable or system process that shouldn't trigger game detection.
+        /// </summary>
+        private static bool IsRedistributableProcess(string exeName)
+        {
+            var excludePatterns = new[]
+            {
+                "vcredist", "dxsetup", "dotnet", "unins", "setup", "install",
+                "crashhandler", "crashreporter", "ue4prereq", "directx",
+                "physx", "redist"
+            };
+
+            foreach (var pattern in excludePatterns)
+            {
+                if (exeName.Contains(pattern, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+
+            return false;
         }
 
         /// <summary>

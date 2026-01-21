@@ -220,7 +220,8 @@ namespace SaveTracker.Resources.SAVE_SYSTEM
         {
             try
             {
-                string filePath = Path.Combine(game.InstallDirectory, SaveFileUploadManager.ChecksumFilename);
+                var checksumService = new ChecksumService();
+                string filePath = checksumService.GetChecksumFilePath(game.InstallDirectory, game.ActiveProfileId);
 
                 if (!File.Exists(filePath))
                 {
@@ -232,13 +233,16 @@ namespace SaveTracker.Resources.SAVE_SYSTEM
             }
             catch (Exception ex)
             {
-                DebugConsole.WriteException(ex, $"{game.Name} Has No Data ");
+                // Silence common errors if file just doesn't exist or is empty
+                if (ex is not FileNotFoundException)
+                    DebugConsole.WriteException(ex, $"{game.Name} Has No Data ");
                 return null;
             }
         }
         public static async Task<bool?> HasData(Game game)
         {
-            string filePath = Path.Combine(game.InstallDirectory, SaveFileUploadManager.ChecksumFilename);
+            var checksumService = new ChecksumService();
+            string filePath = checksumService.GetChecksumFilePath(game.InstallDirectory, game.ActiveProfileId);
 
             // File doesn't exist → return null
             if (!File.Exists(filePath))
@@ -343,7 +347,8 @@ namespace SaveTracker.Resources.SAVE_SYSTEM
         {
             try
             {
-                string filePath = Path.Combine(game.InstallDirectory, SaveFileUploadManager.ChecksumFilename);
+                var checksumService = new ChecksumService();
+                string filePath = checksumService.GetChecksumFilePath(game.InstallDirectory, game.ActiveProfileId);
                 string jsonContent = JsonSerializer.Serialize(data, JsonHelper.DefaultIndented);
 
                 await File.WriteAllTextAsync(filePath, jsonContent);
@@ -493,10 +498,25 @@ public class Game : INotifyPropertyChanged
         set { _activeProfileId = value; OnPropertyChanged(); }
     }
 
-
-    public string GetGameDataFile()
+    // Steam Integration
+    private string? _steamAppId = null;
+    /// <summary>
+    /// Steam Application ID for games imported from Steam.
+    /// </summary>
+    public string? SteamAppId
     {
-        return Path.Combine(InstallDirectory, SaveFileUploadManager.ChecksumFilename);
+        get => _steamAppId;
+        set { _steamAppId = value; OnPropertyChanged(); }
+    }
+
+    private bool _launchViaSteam = false;
+    /// <summary>
+    /// If true, launches the game via Steam URL protocol instead of direct exe.
+    /// </summary>
+    public bool LaunchViaSteam
+    {
+        get => _launchViaSteam;
+        set { _launchViaSteam = value; OnPropertyChanged(); }
     }
 
 
@@ -542,8 +562,6 @@ public class Config
 
 public class CloudConfig
 {
-
-
     // Whether to use global settings or override per-game
     public bool UseGlobalSettings { get; set; } = true;
 

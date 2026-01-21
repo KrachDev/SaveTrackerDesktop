@@ -7,8 +7,8 @@
         xmlns:vm="clr-namespace:SaveTracker.Views.Dialog"
         x:DataType="vm:UC_AddGame_ViewModel"
         Title="Add Game"
-        Width="800" Height="600"
-        MinWidth="700" MinHeight="500"
+        Width="800" Height="500"
+        MinWidth="700" MinHeight="400"
         Background="#1E1E1E"
         WindowStartupLocation="CenterOwner"
         CanResize="False"
@@ -53,6 +53,38 @@
                         </StackPanel>
                     </Border>
 
+                </StackPanel>
+
+                <!-- RIGHT COLUMN: Options & Processes -->
+                <StackPanel Grid.Column="2" Spacing="20">
+                    
+                    <!-- Initial Metadata Alert -->
+                    <Border Background="#2D2D30" 
+                            BorderBrush="#E3A008" 
+                            BorderThickness="1" 
+                            CornerRadius="6" 
+                            Padding="15">
+                         <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
+                            <TextBlock Text="⚠️" 
+                                       FontSize="20" 
+                                       VerticalAlignment="Top"/>
+                            <StackPanel Grid.Column="1"
+                                       VerticalAlignment="Center"  
+                                       Spacing="4">
+                                <TextBlock Text="Important: Game Name Matters!" 
+                                           FontWeight="Bold" 
+                                           Foreground="#E3A008" 
+                                           FontSize="13"/>
+                                <TextBlock Text="This name acts as the UNIQUE ID for cloud backups. Use the same name across devices." 
+                                           FontSize="11" 
+                                           Foreground="#CCCCCC" 
+                                           TextWrapping="WrapWithOverflow"/>
+                            </StackPanel>
+                         </Grid>
+                    </Border>
+
+                   
+                    
                     <!-- Selected Game Info -->
                     <Border Background="#252526" Padding="15" CornerRadius="6">
                         <StackPanel Spacing="12">
@@ -77,14 +109,16 @@
                                               Foreground="{Binding CloudCheckColor}"
                                               FontSize="11"
                                               FontWeight="Bold"
+                                              HorizontalAlignment="Right"
                                               VerticalAlignment="Bottom"/>
                                 </Grid>
                                 
                                 <AutoCompleteBox Text="{Binding GameName}"
                                                  ItemsSource="{Binding AvailableCloudGames}"
-                                                 FilterMode="Contains"
+                                                 FilterMode="StartsWith"
                                                  Watermark="Enter game name to check cloud..."
-                                                 MinimumPrefixLength="1">
+                                                 MinimumPrefixLength="2"
+                                                 MaxDropDownHeight="300">
                                     <AutoCompleteBox.ItemTemplate>
                                         <DataTemplate>
                                             <TextBlock Text="{Binding}" Padding="8,4"/>
@@ -92,57 +126,14 @@
                                     </AutoCompleteBox.ItemTemplate>
                                 </AutoCompleteBox>
                                 
-                                <TextBlock Text="💡 Typing an existing cloud game name will link this game to those backups." 
-                                         FontSize="11" Foreground="#858585" FontStyle="Italic" TextWrapping="Wrap"/>
+                                <TextBlock FontSize="11" Foreground="#858585" FontStyle="Italic" TextWrapping="Wrap">
+    <Run Text="💡 To add an already synced game, type the exact same name"/>
+    <LineBreak/>
+    <Run Text="💡 Type at least 2 letters to trigger autocompletion"/>
+</TextBlock>
                             </StackPanel>
                         </StackPanel>
                     </Border>
-                </StackPanel>
-
-                <!-- RIGHT COLUMN: Options & Processes -->
-                <StackPanel Grid.Column="2" Spacing="20">
-                    
-                    <!-- Initial Metadata Alert -->
-                    <Border Background="#2D2D30" 
-                            BorderBrush="#E3A008" 
-                            BorderThickness="1" 
-                            CornerRadius="6" 
-                            Padding="12">
-                         <Grid ColumnDefinitions="Auto,*">
-                            <TextBlock Text="⚠️" FontSize="20" VerticalAlignment="Center" Margin="0,0,15,0"/>
-                            <StackPanel VerticalAlignment="Center" Spacing="4">
-                                <TextBlock Text="Important: Game Name Matters!" 
-                                           FontWeight="Bold" 
-                                           Foreground="#E3A008" 
-                                           FontSize="13"/>
-                                <TextBlock Text="This name acts as the UNIQUE ID for cloud backups. Use the same name across devices." 
-                                           FontSize="11" 
-                                           Foreground="#CCCCCC" 
-                                           TextWrapping="Wrap"/>
-                            </StackPanel>
-                         </Grid>
-                    </Border>
-
-                    <!-- Tracking Options -->
-                    <Border Background="#252526" Padding="15" CornerRadius="6">
-                        <StackPanel Spacing="12">
-                            <TextBlock Text="Initial Tracking Options" FontSize="14" FontWeight="SemiBold" Foreground="White"/>
-                            
-                            <CheckBox Content="Enable automatic tracking" IsChecked="True" Foreground="#CCCCCC"/>
-                            <CheckBox Content="Auto-detect save file locations" IsChecked="True" Foreground="#CCCCCC"/>
-                            <CheckBox Content="Track configuration files" IsChecked="True" Foreground="#CCCCCC"/>
-                            <CheckBox Content="Use global cloud provider settings" IsChecked="True" Foreground="#CCCCCC"/>
-                        </StackPanel>
-                    </Border>
-                    
-                     <!-- Running Processes Panel (Placeholder) -->
-                    <Border Background="#252526" Padding="15" CornerRadius="6" IsVisible="True" Opacity="0.6">
-                         <StackPanel Spacing="10">
-                            <TextBlock Text="Running Processes" FontSize="14" FontWeight="SemiBold" Foreground="White"/>
-                            <TextBlock Text="Coming soon feature..." Foreground="#858585" FontStyle="Italic"/>
-                         </StackPanel>
-                    </Border>
-
                 </StackPanel>
             </Grid>
         </Border>

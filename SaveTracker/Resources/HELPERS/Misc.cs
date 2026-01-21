@@ -279,12 +279,11 @@ namespace SaveTracker.Resources.HELPERS
 
         public static bool ShouldWeCheckForSaveExists(Game game)
         {
-            var Savejson = Path.Combine(game.InstallDirectory, SaveFileUploadManager.ChecksumFilename);
+            var checksumService = new ChecksumService();
+            string saveJson = checksumService.GetChecksumFilePath(game.InstallDirectory, game.ActiveProfileId);
 
-            if (!File.Exists(Savejson))
+            if (!File.Exists(saveJson))
                 return true;
-
-
 
             return false;
         }

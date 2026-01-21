@@ -465,7 +465,25 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                 var info = new FileInfo(filePath);
 
                 // Update checksum tracking after successful upload (with Wine prefix support)
-                await _checksumService.UpdateFileChecksumRecord(filePath, gameDirectory, detectedPrefix);
+                // CRITICAL: Pass the game's profile ID to use profile-aware checksum files
+                if (_currentGame != null)
+                {
+                    await _checksumService.UpdateFileChecksumRecord(
+                        filePath,
+                        gameDirectory,
+                        detectedPrefix,
+                        _currentGame.ActiveProfileId  // ← PROFILE-AWARE
+                    );
+                }
+                else
+                {
+                    // Fallback if no game context
+                    await _checksumService.UpdateFileChecksumRecord(
+                        filePath,
+                        gameDirectory,
+                        detectedPrefix
+                    );
+                }
 
                 DebugConsole.WriteSuccess($"Uploaded: {fileName}");
                 stats.UploadedCount++;
@@ -487,8 +505,11 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                 var fileInfo = new FileInfo(localFilePath);
                 if (!fileInfo.Exists) return false;
 
-                // Load stored checksum data
-                var checksumData = await _checksumService.LoadChecksumData(gameDirectory);
+                // Load stored checksum data - USE PROFILE ID
+                var checksumData = await _checksumService.LoadChecksumData(
+                    gameDirectory,
+                    _currentGame?.ActiveProfileId  // ← PROFILE-AWARE
+                );
 
                 // Load game data for Wine prefix support
                 var gameData = await ConfigManagement.GetGameData(_currentGame);
@@ -601,7 +622,7 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
 
         public async Task SaveChecksumData(GameUploadData data, Game game)
         {
-            await _checksumService.SaveChecksumData(data, game.InstallDirectory);
+            await _checksumService.SaveChecksumData(data, game.InstallDirectory, game.ActiveProfileId);
         }
 
         public async Task<string> GetFileChecksum(string filePath)
@@ -675,17 +696,22 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
 
                 // Explicitly check for checksum file and try to download it specifically if missing
                 // This covers cases where rclone filtering might have excluded it or it was somehow missed
-                string stagingChecksumPath = Path.Combine(stagingFolder, SaveFileUploadManager.ChecksumFilename);
+
+                var checksumService = new ChecksumService();
+                string correctChecksumPath = checksumService.GetChecksumFilePath(game.InstallDirectory, game.ActiveProfileId);
+                string checksumFileName = Path.GetFileName(correctChecksumPath);
+
+                string stagingChecksumPath = Path.Combine(stagingFolder, checksumFileName);
                 if (!File.Exists(stagingChecksumPath))
                 {
-                    DebugConsole.WriteWarning("Checksum file missing from bulk download - attempting explicit fetch...");
-                    string remoteChecksumPath = $"{remotePath}/{SaveFileUploadManager.ChecksumFilename}";
+                    DebugConsole.WriteWarning($"Checksum file ({checksumFileName}) missing from bulk download - attempting explicit fetch...");
+                    string remoteChecksumPath = $"{remotePath}/{checksumFileName}";
 
                     // We assume checksums.json is at the root of the remote path
                     bool checksumDownloaded = await _transferService.DownloadFileWithRetry(
                         remoteChecksumPath,
                         stagingChecksumPath,
-                        SaveFileUploadManager.ChecksumFilename,
+                        checksumFileName,
                         effectiveProvider
                     );
 
@@ -760,10 +786,12 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                 }
 
                 // Copy the cloud checksum file to the game directory so the app knows what files are tracked
+                // Copy the cloud checksum file to the game directory so the app knows what files are tracked
                 try
                 {
-                    string cloudChecksumPath = Path.Combine(stagingFolder, SaveFileUploadManager.ChecksumFilename);
-                    string localChecksumPath = Path.Combine(game.InstallDirectory, SaveFileUploadManager.ChecksumFilename);
+                    string restoredChecksumName = Path.GetFileName(checksumService.GetChecksumFilePath(game.InstallDirectory, game.ActiveProfileId));
+                    string cloudChecksumPath = Path.Combine(stagingFolder, restoredChecksumName);
+                    string localChecksumPath = checksumService.GetChecksumFilePath(game.InstallDirectory, game.ActiveProfileId);
 
                     if (File.Exists(cloudChecksumPath))
                     {
@@ -816,16 +844,17 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                 CloudProvider effectiveProvider = provider ?? await GetEffectiveProvider(game);
 
                 // First, download the checksum file to know what files are available
-                string checksumLocalSpec = Path.Combine(game.InstallDirectory, SaveFileUploadManager.ChecksumFilename);
-                string checksumRelative = PathContractor.ContractPath(checksumLocalSpec, game.InstallDirectory);
-                // Rclone needs forward slashes in remote paths
-                string checksumRemotePath = $"{remotePath}/{checksumRelative.Replace('\\', '/')}";
-                string checksumLocalPath = Path.Combine(stagingFolder, SaveFileUploadManager.ChecksumFilename);
+                var checksumService = new ChecksumService();
+                string checksumLocalSpec = checksumService.GetChecksumFilePath(game.InstallDirectory, game.ActiveProfileId);
+                string checksumFileName = Path.GetFileName(checksumLocalSpec);
+
+                string checksumRemotePath = $"{remotePath}/{checksumFileName}";
+                string checksumLocalPath = Path.Combine(stagingFolder, checksumFileName);
 
                 var checksumResult = await _transferService.DownloadFileWithRetry(
                     checksumRemotePath,
                     checksumLocalPath,
-                    SaveFileUploadManager.ChecksumFilename,
+                    checksumFileName,
                     effectiveProvider);
 
                 if (!checksumResult)
@@ -834,7 +863,7 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                 }
 
                 Dictionary<string, FileChecksumRecord> checksumFiles = null;
-                string checksumFilePath = Path.Combine(stagingFolder, SaveFileUploadManager.ChecksumFilename);
+                string checksumFilePath = Path.Combine(stagingFolder, checksumFileName);
 
                 if (File.Exists(checksumFilePath))
                 {
@@ -938,7 +967,7 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                 // Copy checksum file to game install directory for future tracking
                 try
                 {
-                    string targetChecksumPath = Path.Combine(game.InstallDirectory, SaveFileUploadManager.ChecksumFilename);
+                    string targetChecksumPath = checksumService.GetChecksumFilePath(game.InstallDirectory, game.ActiveProfileId);
                     if (File.Exists(checksumFilePath))
                     {
                         File.Copy(checksumFilePath, targetChecksumPath, overwrite: true);

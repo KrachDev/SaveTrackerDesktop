@@ -1507,18 +1507,9 @@ namespace SaveTracker.ViewModels
             try
             {
                 var game = SelectedGame.Game;
-                string gameDataFile = game.GetGameDataFile();
 
-                GameUploadData data;
-                if (File.Exists(gameDataFile))
-                {
-                    string json = await File.ReadAllTextAsync(gameDataFile);
-                    data = System.Text.Json.JsonSerializer.Deserialize<GameUploadData>(json, JsonHelper.GetOptions()) ?? new GameUploadData();
-                }
-                else
-                {
-                    data = new GameUploadData();
-                }
+                // Use profile-aware data loader
+                var data = await ConfigManagement.GetGameData(game) ?? new GameUploadData();
 
                 foreach (var filePath in filePaths)
                 {
@@ -1560,12 +1551,9 @@ namespace SaveTracker.ViewModels
                 if (selectedFiles.Count == 0) return;
 
                 var game = SelectedGame.Game;
-                string gameDataFile = game.GetGameDataFile();
 
-                if (!File.Exists(gameDataFile)) return;
-
-                string json = await File.ReadAllTextAsync(gameDataFile);
-                var data = System.Text.Json.JsonSerializer.Deserialize<GameUploadData>(json, JsonHelper.GetOptions());
+                // Use profile-aware data loader
+                var data = await ConfigManagement.GetGameData(game);
 
                 if (data == null) return;
 
@@ -1711,7 +1699,8 @@ namespace SaveTracker.ViewModels
                 TrackedFiles.Clear();
                 foreach (var file in gameUploadData.Files)
                 {
-                    if (!file.Key.Contains(SaveFileUploadManager.ChecksumFilename))
+                    // Exclude any file that looks like a SaveTracker metadata file
+                    if (!file.Key.Contains(".savetracker", StringComparison.OrdinalIgnoreCase))
                     {
                         TrackedFiles.Add(new TrackedFileViewModel(file.Value, game, gameUploadData.LastSyncStatus));
                     }

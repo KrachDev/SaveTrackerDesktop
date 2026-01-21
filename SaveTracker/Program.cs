@@ -6,6 +6,7 @@ using System.IO;
 using System.IO.Pipes;
 using System.Threading;
 using System.Threading.Tasks;
+using Avalonia.Svg.Skia;
 
 namespace SaveTracker
 {

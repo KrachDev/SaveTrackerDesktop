@@ -95,7 +95,7 @@ namespace SaveTracker.Views.Dialog
             {
                 try
                 {
-                    await Task.Delay(500, token); // Debounce
+                    await Task.Delay(800, token); // Increased debounce to 800ms for faster typing
                     if (token.IsCancellationRequested) return;
                     await CheckCloudGameExistence(name);
                 }
@@ -147,18 +147,94 @@ namespace SaveTracker.Views.Dialog
         {
             try
             {
-                // Load from local cache (FAST)
+                // Load from local cache first (FAST)
                 var cachedGames = await ConfigManagement.LoadCloudGamesAsync();
 
-                Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                if (cachedGames != null && cachedGames.Count > 0)
                 {
-                    AvailableCloudGames.Clear();
-                    foreach (var g in cachedGames) AvailableCloudGames.Add(g);
-                });
+                    // Cache exists and has data
+                    Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                    {
+                        AvailableCloudGames.Clear();
+                        foreach (var g in cachedGames) AvailableCloudGames.Add(g);
+                        DebugConsole.WriteSuccess($"Loaded {cachedGames.Count} cached cloud games");
+                    });
+                }
+                else
+                {
+                    // Cache is empty or doesn't exist - fetch from cloud
+                    DebugConsole.WriteInfo("Cloud games cache empty - fetching from provider...");
+                    await FetchCloudGamesFromProvider();
+                }
             }
             catch (Exception ex)
             {
                 DebugConsole.WriteException(ex, "Failed to load cloud suggestions from cache");
+                // Fall back to fetching from provider
+                _ = FetchCloudGamesFromProvider();
+            }
+        }
+
+        private async Task FetchCloudGamesFromProvider()
+        {
+            try
+            {
+                var config = await ConfigManagement.LoadConfigAsync();
+                if (config?.CloudConfig == null)
+                {
+                    DebugConsole.WriteWarning("Cloud config not available");
+                    return;
+                }
+
+                var provider = config.CloudConfig.Provider;
+                string configPath = RclonePathHelper.GetConfigPath(provider);
+                string remoteName = _providerHelper.GetProviderConfigName(provider);
+                string remotePath = $"{remoteName}:{SaveFileUploadManager.RemoteBaseFolder}";
+
+                DebugConsole.WriteInfo($"Fetching cloud games from: {remotePath}");
+
+                var result = await _rcloneExecutorInternal.ExecuteRcloneCommand(
+                    $"lsd \"{remotePath}\" --config \"{configPath}\" " + RcloneExecutor.GetPerformanceFlags(),
+                    TimeSpan.FromSeconds(15),
+                    allowedExitCodes: new[] { 3 }
+                );
+
+                if (result.Success && !string.IsNullOrWhiteSpace(result.Output))
+                {
+                    var lines = result.Output.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                    var games = new System.Collections.Generic.List<string>();
+
+                    foreach (var line in lines)
+                    {
+                        var parts = line.Trim().Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                        if (parts.Length >= 5)
+                        {
+                            // lsd output format: [size] [date] [time] [count] [name...]
+                            string gameName = string.Join(" ", parts.Skip(4));
+                            games.Add(gameName);
+                        }
+                    }
+
+                    // Update UI and cache
+                    Avalonia.Threading.Dispatcher.UIThread.Post(async () =>
+                    {
+                        AvailableCloudGames.Clear();
+                        foreach (var g in games) AvailableCloudGames.Add(g);
+                        
+                        // Save to cache for next time
+                        await ConfigManagement.SaveCloudGamesAsync(games);
+                        
+                        DebugConsole.WriteSuccess($"Loaded {games.Count} cloud games from provider");
+                    });
+                }
+                else
+                {
+                    DebugConsole.WriteWarning("Failed to fetch cloud games from provider");
+                }
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteException(ex, "Failed to fetch cloud games from provider");
             }
         }
 

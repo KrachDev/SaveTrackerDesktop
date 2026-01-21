@@ -12,8 +12,19 @@ namespace SaveTracker.Resources.LOGIC.Launching
     {
         public static Process? Launch(Game game)
         {
-            if (game == null || string.IsNullOrEmpty(game.ExecutablePath))
+            if (game == null)
                 throw new ArgumentNullException(nameof(game));
+
+            // If game has Steam AppId and should launch via Steam
+            if (game.LaunchViaSteam && !string.IsNullOrEmpty(game.SteamAppId))
+            {
+                DebugConsole.WriteInfo($"Launching '{game.Name}' via Steam (AppID: {game.SteamAppId})");
+                return LaunchViaSteamUrl(game.SteamAppId);
+            }
+
+            // Traditional exe-based launch
+            if (string.IsNullOrEmpty(game.ExecutablePath))
+                throw new ArgumentException("Game has no executable path configured", nameof(game));
 
             if (!File.Exists(game.ExecutablePath))
                 throw new FileNotFoundException($"Executable not found at {game.ExecutablePath}");
@@ -31,6 +42,28 @@ namespace SaveTracker.Resources.LOGIC.Launching
                 throw new PlatformNotSupportedException("OS not supported for launching.");
             }
         }
+
+        /// <summary>
+        /// Launches a game via Steam URL protocol.
+        /// </summary>
+        private static Process? LaunchViaSteamUrl(string appId)
+        {
+            try
+            {
+                var startInfo = new ProcessStartInfo
+                {
+                    FileName = $"steam://rungameid/{appId}",
+                    UseShellExecute = true
+                };
+                return Process.Start(startInfo);
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteException(ex, $"Failed to launch via Steam URL for AppID: {appId}");
+                throw;
+            }
+        }
+
 
         private static Process? LaunchWindows(Game game)
         {
