@@ -1,0 +1,239 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="using:SaveTracker.ViewModels"
+        xmlns:models="using:SaveTracker.Models"
+        mc:Ignorable="d" d:DesignWidth="950" d:DesignHeight="600"
+        x:Class="SaveTracker.Views.LegacyMigrationWindow"
+        x:DataType="vm:LegacyMigrationViewModel"
+        Icon="/Assets/avalonia-logo.ico"
+        Title="Legacy Cloud Save Migration"
+        WindowStartupLocation="CenterOwner"
+        Width="950" Height="650"
+        Background="#1E1E1E">
+
+    <Grid RowDefinitions="Auto,Auto,*,Auto">
+        <!-- Header -->
+        <Border Grid.Row="0"
+                Background="#252526"
+                Padding="15"
+                BorderBrush="#3F3F46"
+                BorderThickness="0,0,0,1">
+            <Grid ColumnDefinitions="*,Auto,Auto,Auto">
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                    <TextBlock Text="🔄 Legacy Migration"
+                               FontSize="18"
+                               FontWeight="SemiBold"
+                               Foreground="White"
+                               VerticalAlignment="Center"/>
+                    <TextBlock Text="{Binding StatusMessage}"
+                               FontSize="12"
+                               Foreground="#858585"
+                               VerticalAlignment="Center"
+                               Margin="10,0,0,0"
+                               TextWrapping="NoWrap"
+                               MaxWidth="400"/>
+                </StackPanel>
+                
+                <Button Grid.Column="1"
+                        Command="{Binding ScanForLegacyGamesCommand}"
+                        Content="🔍 Scan Cloud"
+                        IsEnabled="{Binding !IsLoading}"
+                        Margin="0,0,10,0"/>
+                        
+                <Button Grid.Column="2"
+                        Command="{Binding MigrateSelectedCommand}"
+                        Content="⬆️ Migrate Selected"
+                        IsEnabled="{Binding !IsMigrating}"
+                        Margin="0,0,10,0"
+                        Background="#0E639C"/>
+                        
+                <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="5">
+                    <Button Command="{Binding SelectAllCommand}" Content="Select All" FontSize="11" Padding="8,4"/>
+                    <Button Command="{Binding DeselectAllCommand}" Content="Deselect" FontSize="11" Padding="8,4"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Info Banner -->
+        <Border Grid.Row="1"
+                Background="#2D4A2D"
+                Padding="12"
+                Margin="10,10,10,0"
+                CornerRadius="4">
+            <StackPanel Spacing="4">
+                <TextBlock Text="About Legacy Migration" FontWeight="SemiBold" Foreground="#98C379"/>
+                <TextBlock TextWrapping="Wrap" Foreground="#AAAAAA" FontSize="12"
+                           Text="This tool finds games using the old cloud format (files at root level with .savetracker_checksums.json) and converts them to the new structured format (S T Q A folder with profile-aware checksums). Original files are kept as backup."/>
+            </StackPanel>
+        </Border>
+
+        <!-- Game List -->
+        <DataGrid Grid.Row="2"
+                  Margin="10,10,10,10"
+                  ItemsSource="{Binding LegacyGames}"
+                  IsReadOnly="False"
+                  Background="Transparent"
+                  BorderThickness="0"
+                  GridLinesVisibility="Horizontal"
+                  HorizontalGridLinesBrush="#3F3F46"
+                  HeadersVisibility="Column"
+                  RowBackground="Transparent"
+                  CanUserResizeColumns="True"
+                  CanUserSortColumns="True">
+            <DataGrid.Styles>
+                <Style Selector="DataGridColumnHeader">
+                    <Setter Property="Background" Value="#2D2D30"/>
+                    <Setter Property="Foreground" Value="#CCCCCC"/>
+                    <Setter Property="Padding" Value="10,8"/>
+                </Style>
+                <Style Selector="DataGridRow:pointerover">
+                    <Setter Property="Background" Value="#2A2A2A"/>
+                </Style>
+            </DataGrid.Styles>
+
+            <DataGrid.Columns>
+                <!-- Selection Checkbox -->
+                <DataGridTemplateColumn Header="✓" Width="40">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate x:DataType="models:LegacyGameItem">
+                            <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                      HorizontalAlignment="Center"
+                                      VerticalAlignment="Center"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+
+                <!-- Game Name -->
+                <DataGridTextColumn Header="Game" 
+                                    Binding="{Binding Name}" 
+                                    Width="*"
+                                    Foreground="White"
+                                    IsReadOnly="True"/>
+
+                <!-- File Count -->
+                <DataGridTextColumn Header="Files" 
+                                    Binding="{Binding FileCount}" 
+                                    Width="60"
+                                    Foreground="#858585"
+                                    IsReadOnly="True"/>
+
+                <!-- Size -->
+                <DataGridTextColumn Header="Size" 
+                                    Binding="{Binding FileSizeText}" 
+                                    Width="80"
+                                    Foreground="#858585"
+                                    IsReadOnly="True"/>
+
+                <!-- Status -->
+                <DataGridTemplateColumn Header="Status" Width="110">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate x:DataType="models:LegacyGameItem">
+                            <TextBlock Text="{Binding StatusText}" 
+                                       Foreground="{Binding StatusColor}"
+                                       VerticalAlignment="Center"
+                                       Margin="5,0"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+
+                <!-- Conflict Info -->
+                <DataGridTemplateColumn Header="Conflict" Width="180">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate x:DataType="models:LegacyGameItem">
+                            <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+                                <TextBlock Text="None" 
+                                           Foreground="#858585"
+                                           VerticalAlignment="Center"
+                                           IsVisible="{Binding !HasNewFormat}"/>
+                                <StackPanel Orientation="Horizontal" IsVisible="{Binding HasNewFormat}">
+                                    <TextBlock Text="⚠ " Foreground="#F0AD4E" VerticalAlignment="Center"/>
+                                    <ComboBox SelectedIndex="1"
+                                              MinWidth="120"
+                                              FontSize="11">
+                                        <ComboBoxItem Content="Keep New"/>
+                                        <ComboBoxItem Content="Merge Files"/>
+                                        <ComboBoxItem Content="Replace Old"/>
+                                    </ComboBox>
+                                </StackPanel>
+                            </StackPanel>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+
+
+                <!-- Last Updated -->
+                <DataGridTemplateColumn Header="Last Updated" Width="120">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate x:DataType="models:LegacyGameItem">
+                            <TextBlock Text="{Binding LastUpdated, StringFormat='{}{0:yyyy-MM-dd}'}" 
+                                       Foreground="#858585"
+                                       VerticalAlignment="Center"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+            </DataGrid.Columns>
+        </DataGrid>
+
+        <!-- Footer Stats -->
+        <Border Grid.Row="3"
+                Background="#252526"
+                Padding="15,10"
+                BorderBrush="#3F3F46"
+                BorderThickness="0,1,0,0">
+            <Grid ColumnDefinitions="*,Auto,Auto,Auto">
+                <StackPanel Orientation="Horizontal" Spacing="20">
+                    <TextBlock Foreground="#858585">
+                        <Run Text="Total: "/>
+                        <Run Text="{Binding TotalGames}" Foreground="White"/>
+                    </TextBlock>
+                    <TextBlock Foreground="#858585">
+                        <Run Text="Conflicts: "/>
+                        <Run Text="{Binding ConflictCount}" Foreground="#F0AD4E"/>
+                    </TextBlock>
+                    <TextBlock Foreground="#858585">
+                        <Run Text="Migrated: "/>
+                        <Run Text="{Binding MigratedCount}" Foreground="#4CC9B0"/>
+                    </TextBlock>
+                    <TextBlock Foreground="#858585">
+                        <Run Text="Failed: "/>
+                        <Run Text="{Binding FailedCount}" Foreground="#D9534F"/>
+                    </TextBlock>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Loading Overlay -->
+        <Border Grid.Row="0" Grid.RowSpan="4"
+                Background="#80000000"
+                IsVisible="{Binding IsLoading}">
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="10">
+                <TextBlock Text="Scanning cloud..."
+                           FontSize="18"
+                           Foreground="White"
+                           HorizontalAlignment="Center"/>
+                <TextBlock Text="{Binding StatusMessage}"
+                           FontSize="12"
+                           Foreground="#858585"
+                           HorizontalAlignment="Center"/>
+            </StackPanel>
+        </Border>
+        
+        <!-- Migration Overlay -->
+        <Border Grid.Row="0" Grid.RowSpan="4"
+                Background="#80000000"
+                IsVisible="{Binding IsMigrating}">
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="10">
+                <TextBlock Text="Migrating..."
+                           FontSize="18"
+                           Foreground="White"
+                           HorizontalAlignment="Center"/>
+                <TextBlock Text="{Binding StatusMessage}"
+                           FontSize="12"
+                           Foreground="#858585"
+                           HorizontalAlignment="Center"/>
+            </StackPanel>
+        </Border>
+    </Grid>
+</Window>

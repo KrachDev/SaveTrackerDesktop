@@ -141,9 +141,13 @@
                     <Button Command="{Binding OpenCloudLibraryCommand}" 
                             Content="📚 Library" 
                             Classes="MenuButton"/>
+                    <Button Command="{Binding OpenLegacyMigrationCommand}" 
+                            Content="🔄 Migrate Old Saves" 
+                            Classes="MenuButton"/>
                     <Button Command="{Binding OpenSettingsCommand}" 
                             Content="⚙️ Settings" 
                             Classes="MenuButton"/>
+
                     <Button Command="{Binding ReportIssueCommand}" 
                             Content="🐛 Report Issue" 
                             Classes="MenuButton"/>

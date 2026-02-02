@@ -59,7 +59,10 @@
   <ItemGroup>
     <Folder Include="Models\" />
     <AvaloniaResource Include="Assets\**" />
-    <Folder Include="Views\Windows\" />
+    <AvaloniaXaml Remove="Views\Windows\**" />
+    <Compile Remove="Views\Windows\**" />
+    <EmbeddedResource Remove="Views\Windows\**" />
+    <None Remove="Views\Windows\**" />
   </ItemGroup>
 
   <ItemGroup>
@@ -99,9 +102,13 @@
     <ReadLinesFromFile File="@(BuildCounterFile)">
       <Output TaskParameter="Lines" PropertyName="CurrentBuildNumber" />
     </ReadLinesFromFile>
-    <PropertyGroup>
-      <NewBuildNumber>$([MSBuild]::Add($(CurrentBuildNumber), 1))</NewBuildNumber>
-    </PropertyGroup>
+	  <PropertyGroup>
+		  <!-- Ensure CurrentBuildNumber has a default value -->
+		  <CurrentBuildNumber Condition="'$(CurrentBuildNumber)' == ''">0</CurrentBuildNumber>
+
+		  <!-- Increment using MSBuild arithmetic -->
+		  <NewBuildNumber>$([MSBuild]::Add($(CurrentBuildNumber), 1))</NewBuildNumber>
+	  </PropertyGroup>
     <WriteLinesToFile File="$(BuildCounterPath)" Lines="$(NewBuildNumber)" Overwrite="true" />
     <WriteLinesToFile File="$(BuildInfoPath)" Lines="namespace SaveTracker.Resources.SAVE_SYSTEM { public static class BuildInfo { public const int BuildNumber = $(NewBuildNumber)%3B } }" Overwrite="true" />
     <Message Text="Incremented Build Number to $(NewBuildNumber)" Importance="high" />

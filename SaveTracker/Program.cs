@@ -40,6 +40,9 @@ namespace SaveTracker
             // Start the background listener for future args
             Task.Run(StartNamedPipeServer);
 
+            // Start the IPC Command Server for external addons
+            Task.Run(() => SaveTracker.Resources.LOGIC.IPC.IpcServer.StartAsync());
+
             // Start Avalonia normally
             BuildAvaloniaApp()
                 .StartWithClassicDesktopLifetime(args);

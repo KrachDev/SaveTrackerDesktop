@@ -3,6 +3,8 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
+using Avalonia.Platform.Storage;
+using MsBox.Avalonia;
 using Newtonsoft.Json;
 using SaveTracker.Resources.HELPERS;
 using System;
@@ -391,19 +393,24 @@ namespace SaveTracker
         {
             try
             {
-                var dialog = new SaveFileDialog
-                {
-                    Title = "Export Blacklist",
-                    DefaultExtension = "json",
-                    Filters = new List<FileDialogFilter>
+                var topLevel = TopLevel.GetTopLevel(this);
+
+                var file = await topLevel.StorageProvider.SaveFilePickerAsync(
+                    new FilePickerSaveOptions
                     {
-                        new FileDialogFilter { Name = "JSON Files", Extensions = { "json" } }
+                        Title = "Export Blacklist",
+                        DefaultExtension = "json",
+                        FileTypeChoices = new[]
+                        {
+                    new FilePickerFileType("JSON Files")
+                    {
+                        Patterns = new[] { "*.json" }
                     }
-                };
+                        }
+                    }
+                );
 
-                var result = await dialog.ShowAsync(this.VisualRoot as Window);
-
-                if (!string.IsNullOrEmpty(result))
+                if (file != null)
                 {
                     var data = new
                     {
@@ -413,15 +420,18 @@ namespace SaveTracker
                         Keywords = _keywords.ToList()
                     };
 
-                    string json = JsonConvert.SerializeObject(data, Formatting.Indented);
-                    await File.WriteAllTextAsync(result, json);
+                    var json = JsonConvert.SerializeObject(data, Formatting.Indented);
 
-                    DebugConsole.WriteSuccess($"Exported to: {result}");
+                    await File.WriteAllTextAsync(file.Path.LocalPath, json);
+
+                    var box = MessageBoxManager.GetMessageBoxStandard("File Path", file.Path.LocalPath);
+                    await box.ShowAsync();
                 }
             }
             catch (Exception ex)
             {
-                DebugConsole.WriteException(ex, "Failed to export blacklist");
+                var box = MessageBoxManager.GetMessageBoxStandard("Error", ex.Message);
+                await box.ShowAsync();
             }
         }
 

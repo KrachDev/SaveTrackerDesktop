@@ -6,6 +6,7 @@ namespace SaveTracker.Resources.HELPERS
     public static class DebugConsole
     {
         private static bool _isEnabled = true;
+        private static readonly object _lock = new();
 
         // Constants for colors (kept for mapped logic if needed in future, but mapping to ConsoleColor now)
         private const string COLOR_DEFAULT = "#D4D4D4";
@@ -67,22 +68,25 @@ namespace SaveTracker.Resources.HELPERS
         private static void Log(string message, string title, ConsoleColor color)
         {
             if (!_isEnabled) return;
-            try
+            lock (_lock)
             {
-                string timestamp = DateTime.Now.ToString("HH:mm:ss.fff");
+                try
+                {
+                    string timestamp = DateTime.Now.ToString("HH:mm:ss.fff");
 
-                // Write Timestamp and Title in default/darker color
-                Console.ForegroundColor = ConsoleColor.DarkGray;
-                Console.Write($"[{timestamp} | {title}] ");
+                    // Write Timestamp and Title in default/darker color
+                    Console.ForegroundColor = ConsoleColor.DarkGray;
+                    Console.Write($"[{timestamp} | {title}] ");
 
-                // Write Message in specific color
-                Console.ForegroundColor = color;
-                Console.WriteLine(message);
+                    // Write Message in specific color
+                    Console.ForegroundColor = color;
+                    Console.WriteLine(message);
 
-                // Reset
-                Console.ResetColor();
+                    // Reset
+                    Console.ResetColor();
+                }
+                catch { }
             }
-            catch { }
         }
 
         /// <summary>

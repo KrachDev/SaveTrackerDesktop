@@ -233,10 +233,17 @@ namespace SaveTracker.Resources.Logic
                     string checksumLocalFullPath = _checksumService.GetChecksumFilePath(gameDirectory, game.ActiveProfileId);
                     string checksumFileName = Path.GetFileName(checksumLocalFullPath);
 
+                    var gameData = await ConfigManagement.GetGameData(game);
+                    string? detectedPrefix = gameData?.DetectedPrefix;
+
                     // Get the relative path that would be used for upload (contracted path)
-                    // For checksum file it is just the filename at root
-                    string checksumRemotePath = $"{remoteBasePath}/{checksumFileName}";
-                    string checksumLocalPath = Path.Combine(tempFolder, checksumFileName);
+                    string relativeChecksumPath = PathContractor.ContractPath(checksumLocalFullPath, gameDirectory, detectedPrefix).Replace('\\', '/');
+                    string checksumRemotePath = $"{remoteBasePath}/{relativeChecksumPath}";
+                    string checksumLocalPath = Path.Combine(tempFolder, relativeChecksumPath);
+
+                    // Create local folder if needed
+                    string? localDir = Path.GetDirectoryName(checksumLocalPath);
+                    if (!string.IsNullOrEmpty(localDir)) Directory.CreateDirectory(localDir);
 
                     DebugConsole.WriteInfo($"Downloading checksum from: {checksumRemotePath}");
 
@@ -248,6 +255,23 @@ namespace SaveTracker.Resources.Logic
                         checksumFileName,
                         effectiveProvider
                     );
+
+                    // Fallback to legacy checksum name if profile-specific failed
+                    if (!downloaded)
+                    {
+                        string legacyChecksumName = ".savetracker_checksums.json";
+                        string legacyRelativePath = relativeChecksumPath.Replace(checksumFileName, legacyChecksumName);
+                        string legacyRemotePath = $"{remoteBasePath}/{legacyRelativePath}";
+                        
+                        DebugConsole.WriteInfo($"Attempting legacy checksum fetch: {legacyRelativePath}");
+                        
+                        downloaded = await transferService.DownloadFileWithRetry(
+                            legacyRemotePath,
+                            checksumLocalPath, // Save it to the same local path for deserialization
+                            legacyChecksumName,
+                            effectiveProvider
+                        );
+                    }
 
                     if (!downloaded || !File.Exists(checksumLocalPath))
                     {

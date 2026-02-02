@@ -12,8 +12,10 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
 {
     public class RcloneTransferService
     {
-        // Relaxed regex to match "12%" or " 12%" or ", 12%"
+        // Regex to match "12%" and "1.2 MiB/s"
         private static readonly Regex ProgressRegex = new Regex(@"(\d+)%", RegexOptions.Compiled);
+        private static readonly Regex SpeedRegex = new Regex(@"([\d\.]+\s*[a-zA-Z]+/s)", RegexOptions.Compiled);
+        private static readonly Regex FileProgressRegex = new Regex(@"\*\s+(.*?):\s+(\d+)%", RegexOptions.Compiled);
         private readonly RcloneExecutor _executor = new RcloneExecutor();
         private readonly int _maxRetries = 3;
         private readonly TimeSpan _retryDelay = TimeSpan.FromSeconds(2);
@@ -24,7 +26,7 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             string remotePath,
             string fileName,
             CloudProvider provider,
-            IProgress<double>? progress = null)
+            IProgress<RcloneProgressUpdate>? progress = null)
         {
             for (int attempt = 1; attempt <= _maxRetries; attempt++)
             {
@@ -42,10 +44,30 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                         allowedExitCodes: null,
                         onOutput: (line) =>
                         {
-                            var match = ProgressRegex.Match(line);
-                            if (match.Success && double.TryParse(match.Groups[1].Value, out double percent))
+                            var progressMatch = ProgressRegex.Match(line);
+                            var speedMatch = SpeedRegex.Match(line);
+                            var fileMatch = FileProgressRegex.Match(line);
+
+                            if (progressMatch.Success && double.TryParse(progressMatch.Groups[1].Value, out double percent))
                             {
-                                progress?.Report(percent);
+                                string? speed = speedMatch.Success ? speedMatch.Groups[1].Value : null;
+                                progress?.Report(new RcloneProgressUpdate
+                                {
+                                    Percent = percent,
+                                    Speed = speed,
+                                    CurrentFile = fileName
+                                });
+
+                                if (speed != null && ((int)percent % 10 == 0 || percent > 99))
+                                {
+                                    DebugConsole.WriteDebug($"Progress: {percent:0}% | Speed: {speed}");
+                                }
+                            }
+                            else if (fileMatch.Success)
+                            {
+                                string fileName = fileMatch.Groups[1].Value;
+                                string filePercent = fileMatch.Groups[2].Value;
+                                DebugConsole.WriteDebug($"[Transfer] {fileName}: {filePercent}%");
                             }
                         }
                     );
@@ -87,7 +109,7 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             string remoteRoot,
             List<string> relativeFilePaths,
             CloudProvider provider,
-            IProgress<double>? progress = null)
+            IProgress<RcloneProgressUpdate>? progress = null)
         {
             // Create a temporary file list for rclone
             string listFilePath = System.IO.Path.GetRandomFileName();
@@ -123,10 +145,36 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                             allowedExitCodes: null,
                             onOutput: (line) =>
                             {
-                                var match = ProgressRegex.Match(line);
-                                if (match.Success && double.TryParse(match.Groups[1].Value, out double percent))
+                                var progressMatch = ProgressRegex.Match(line);
+                                var speedMatch = SpeedRegex.Match(line);
+                                var fileMatch = FileProgressRegex.Match(line);
+
+                                if (progressMatch.Success && double.TryParse(progressMatch.Groups[1].Value, out double percent))
                                 {
-                                    progress?.Report(percent);
+                                    string? speed = speedMatch.Success ? speedMatch.Groups[1].Value : null;
+                                    string? currentFile = fileMatch.Success ? fileMatch.Groups[1].Value : null;
+
+                                    progress?.Report(new RcloneProgressUpdate
+                                    {
+                                        Percent = percent,
+                                        Speed = speed,
+                                        CurrentFile = currentFile
+                                    });
+
+                                    if (speed != null && ((int)percent % 10 == 0 || percent > 99))
+                                    {
+                                        DebugConsole.WriteDebug($"Batch Progress: {percent:0}% | Speed: {speed}");
+                                    }
+                                }
+                                else if (fileMatch.Success)
+                                {
+                                    string fileName = fileMatch.Groups[1].Value;
+                                    string filePercent = fileMatch.Groups[2].Value;
+                                    // Only log file start or significant progress to avoid spam
+                                    if (filePercent == "0" || filePercent == "100" || int.Parse(filePercent) % 50 == 0)
+                                    {
+                                        DebugConsole.WriteDebug($"[Transfer] {fileName}: {filePercent}%");
+                                    }
                                 }
                             }
                         );
@@ -182,7 +230,7 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             string localPath,
             string fileName,
             CloudProvider provider,
-            IProgress<double>? progress = null)
+            IProgress<RcloneProgressUpdate>? progress = null)
         {
             for (int attempt = 1; attempt <= _maxRetries; attempt++)
             {
@@ -200,10 +248,23 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                         allowedExitCodes: null,
                         onOutput: (line) =>
                         {
-                            var match = ProgressRegex.Match(line);
-                            if (match.Success && double.TryParse(match.Groups[1].Value, out double percent))
+                            var progressMatch = ProgressRegex.Match(line);
+                            var speedMatch = SpeedRegex.Match(line);
+
+                            if (progressMatch.Success && double.TryParse(progressMatch.Groups[1].Value, out double percent))
                             {
-                                progress?.Report(percent);
+                                string? speed = speedMatch.Success ? speedMatch.Groups[1].Value : null;
+                                progress?.Report(new RcloneProgressUpdate
+                                {
+                                    Percent = percent,
+                                    Speed = speed,
+                                    CurrentFile = fileName
+                                });
+
+                                if (speed != null && ((int)percent % 10 == 0 || percent > 99))
+                                {
+                                    DebugConsole.WriteDebug($"Download Progress: {percent:0}% | Speed: {speed}");
+                                }
                             }
                         }
                     );
@@ -240,7 +301,7 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             return false;
         }
 
-        public async Task<bool> DownloadDirectory(string remotePath, string localPath, CloudProvider provider, IProgress<double>? progress = null)
+        public async Task<bool> DownloadDirectory(string remotePath, string localPath, CloudProvider provider, IProgress<RcloneProgressUpdate>? progress = null)
         {
             try
             {
@@ -254,10 +315,26 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                     allowedExitCodes: null,
                     onOutput: (line) =>
                     {
-                        var match = ProgressRegex.Match(line);
-                        if (match.Success && double.TryParse(match.Groups[1].Value, out double percent))
+                        var progressMatch = ProgressRegex.Match(line);
+                        var speedMatch = SpeedRegex.Match(line);
+                        var fileMatch = FileProgressRegex.Match(line);
+
+                        if (progressMatch.Success && double.TryParse(progressMatch.Groups[1].Value, out double percent))
                         {
-                            progress?.Report(percent);
+                            string? speed = speedMatch.Success ? speedMatch.Groups[1].Value : null;
+                            string? currentFile = fileMatch.Success ? fileMatch.Groups[1].Value : null;
+
+                            progress?.Report(new RcloneProgressUpdate
+                            {
+                                Percent = percent,
+                                Speed = speed,
+                                CurrentFile = currentFile ?? "Downloading files..."
+                            });
+
+                            if (speed != null && ((int)percent % 20 == 0 || percent > 99))
+                            {
+                                DebugConsole.WriteDebug($"Download Progress: {percent:0}% | Speed: {speed}");
+                            }
                         }
                     }
                 );

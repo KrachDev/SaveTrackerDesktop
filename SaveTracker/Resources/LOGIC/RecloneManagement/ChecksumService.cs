@@ -39,9 +39,8 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
         }
 
         /// <summary>
-        /// Gets the checksum file path. ALWAYS uses profile-specific naming now.
-        /// If no profileId, uses DEFAULT profile ID.
-        /// Detects and migrates legacy .savetracker_checksums.json to new scheme.
+        /// Gets the checksum file path using the profile ID.
+        /// The profile ID is converted to a readable filename.
         /// </summary>
         public string GetChecksumFilePath(string gameDirectory, string? profileId = null)
         {
@@ -54,42 +53,71 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                 profileId = "DEFAULT_PROFILE_ID";
             }
 
-            // UNIFIED NAMING: ALL profiles use .savetracker_profile_<ID>.json
-            // Note: SanitizeProfileId handles DEFAULT_PROFILE_ID specially
-            string sanitized = SanitizeProfileId(profileId);
-            string profileChecksumFilename = $"{ProfileChecksumFilenamePrefix}{sanitized}{ProfileChecksumFilenameSuffix}";
+            // For DEFAULT_PROFILE_ID, always use "default"
+            string profileName = profileId.Equals("DEFAULT_PROFILE_ID", StringComparison.OrdinalIgnoreCase)
+                ? "default"
+                : GetSanitizedProfileName(profileId);  // For GUIDs and custom IDs
+
+            // UNIFIED NAMING: ALL profiles use .savetracker_profile_<NAME>.json
+            string profileChecksumFilename = $"{ProfileChecksumFilenamePrefix}{profileName}{ProfileChecksumFilenameSuffix}";
             string profilePath = Path.Combine(gameDirectory, profileChecksumFilename);
-            
-            DebugConsole.WriteDebug($"[Checksum] Using profile-specific file for {profileId}: {profileChecksumFilename}");
+
             return profilePath;
         }
 
         /// <summary>
-        /// Sanitizes profile ID for use in filenames (removes special characters)
+        /// Sanitizes a profile ID (usually a GUID) into a readable filename
+        /// Keeps only alphanumeric characters and underscores
         /// </summary>
-        private static string SanitizeProfileId(string profileId)
+        private static string GetSanitizedProfileName(string profileId)
+        {
+            if (string.IsNullOrEmpty(profileId))
+                return "profile";
+
+            // Keep only alphanumeric characters - removes hyphens, underscores, etc.
+            string sanitized = System.Text.RegularExpressions.Regex.Replace(
+                profileId.ToLowerInvariant(),
+                "[^a-z0-9]",  // Keep ONLY alphanumeric
+                ""
+            ).Trim();
+
+            // Limit to 24 characters to keep filenames reasonable
+            if (sanitized.Length > 24)
+            {
+                sanitized = sanitized.Substring(0, 24);
+            }
+
+            return string.IsNullOrEmpty(sanitized) ? "profile" : sanitized;
+        }
+
+        /// <summary>
+        /// Gets the human-readable profile name from profile ID
+        /// DEPRECATED - use GetSanitizedProfileName instead
+        /// </summary>
+        private static string GetProfileNameFromId(string profileId)
         {
             if (string.IsNullOrEmpty(profileId))
                 return "default";
-            
+
             // Handle special case for DEFAULT_PROFILE_ID
             if (profileId.Equals("DEFAULT_PROFILE_ID", StringComparison.OrdinalIgnoreCase))
                 return "default";
-            
-            // For GUIDs and other IDs: keep only alphanumeric characters
-            // Remove hyphens, underscores, and special characters
+
+            // For custom profiles: sanitize the name but keep it readable
+            // Remove only invalid file name characters, keep spaces and numbers
             string sanitized = System.Text.RegularExpressions.Regex.Replace(
-                profileId.ToLowerInvariant(), 
-                "[^a-z0-9]", 
+                profileId.ToLowerInvariant(),
+                @"[^\w\s-]",  // Keep word chars, spaces, and hyphens
                 ""
-            );
-            
-            // Limit to 16 characters to keep filenames reasonable
-            if (sanitized.Length > 16)
-            {
-                sanitized = sanitized.Substring(0, 16);
-            }
-            
+            ).Trim();
+
+            // If we have spaces, replace with underscores for cleaner filenames
+            sanitized = sanitized.Replace(" ", "_");
+
+            // If completely empty after sanitization, use a fallback
+            if (string.IsNullOrEmpty(sanitized))
+                return "profile";
+
             return sanitized;
         }
 
@@ -124,12 +152,12 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                 {
                     // Copy legacy file to profile-specific location
                     File.Copy(legacyPath, profilePath, overwrite: false);
-                    
+
                     DebugConsole.WriteSuccess($"[Checksum Migration] Successfully migrated checksum file to profile {profileId}");
-                    
+
                     // Optional: Delete legacy file after successful migration to all profiles
                     // For now, keep it for safety
-                    
+
                     return true;
                 }
                 catch (Exception ex)
@@ -195,7 +223,7 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                         using var writer = new StreamWriter(stream);
                         await writer.WriteAsync(json);
                         await writer.FlushAsync();
-                        
+
                         DebugConsole.WriteSuccess($"[Checksum Migration] Migrated legacy file to DEFAULT profile: {Path.GetFileName(defaultProfilePath)}");
                         migratedCount++;
                     }

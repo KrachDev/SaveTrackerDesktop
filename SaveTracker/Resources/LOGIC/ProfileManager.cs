@@ -48,7 +48,15 @@ namespace SaveTracker.Resources.LOGIC
                 throw new Exception("Profile already exists.");
             }
 
-            var newProfile = new Profile { Name = name, IsDefault = false };
+            // Use profile name as ID (sanitized for filesystem safety)
+            string profileId = SanitizeProfileName(name);
+            
+            var newProfile = new Profile 
+            { 
+                Name = name, 
+                IsDefault = false,
+                Id = profileId  // Use name-based ID instead of GUID
+            };
             config.Profiles.Add(newProfile);
             await ConfigManagement.SaveConfigAsync(config);
             DebugConsole.WriteSuccess($"Created new profile: {name}");
@@ -75,7 +83,7 @@ namespace SaveTracker.Resources.LOGIC
             // 1. SAFETY CHECK: Is Game Running?
             if (IsGameRunning(game))
             {
-                throw new InvalidOperationException("Cannot switch profiles while the game is running. Please close the game first.");
+                DebugConsole.WriteWarning("Cannot switch profiles while the game is running. Please close the game first.");
             }
 
             var config = await ConfigManagement.LoadConfigAsync();
@@ -103,7 +111,7 @@ namespace SaveTracker.Resources.LOGIC
 
             var quarantine = new QuarantineManager(game.InstallDirectory);
 
-            // 2. Load Manifests
+            // 2. Load Manifests - NOTE: Pass profile ID, not name
             var currentManifest = await LoadOrBuildManifest(game, currentProfile);
             var targetManifest = await LoadManifest(game, targetProfile);
 
@@ -128,92 +136,94 @@ namespace SaveTracker.Resources.LOGIC
                 backupPaths.Add(fullBackupPath);
             }
 
-            // 4. Deactivate Current (Move Active -> Backup)
-            foreach (var file in currentManifest.Files.ToList())
+            // 4. Deactivate Current (Move Active -> Backup) - run on thread pool to avoid UI blocking
+            await Task.Run(() =>
             {
-                string fullActivePath = Path.Combine(game.InstallDirectory, file.OriginalPath);
-                string fullBackupPath = Path.Combine(game.InstallDirectory, file.BackupPath);
-
-                if (File.Exists(fullActivePath))
-                {
-                    // Update Hash before backup? Optional.
-                    try
-                    {
-                        // Ensure backup directory exists (if nested)
-                        string backupDir = Path.GetDirectoryName(fullBackupPath);
-                        if (!string.IsNullOrEmpty(backupDir) && !Directory.Exists(backupDir))
-                            Directory.CreateDirectory(backupDir);
-
-                        // Use overwrite to handle edge cases
-                        File.Move(fullActivePath, fullBackupPath, overwrite: true);
-                        DebugConsole.WriteDebug($"Deactivated: {file.OriginalPath}");
-                        file.LastModified = DateTime.Now;
-                    }
-                    catch (Exception ex)
-                    {
-                        DebugConsole.WriteError($"CRITICAL: Failed to deactivate {file.OriginalPath}: {ex.Message}");
-                        throw new InvalidOperationException($"Profile switch aborted. Failed to deactivate {file.OriginalPath}. Your save data is safe but profile switch incomplete.", ex);
-                    }
-                }
-                else
-                {
-                    DebugConsole.WriteWarning($"File tracked in manifest not found during deactivation: {file.OriginalPath}");
-                }
-            }
-
-            // Save Current Manifest immediately to record the state change
-            await SaveManifest(game, currentProfile, currentManifest);
-
-            // 5. Activate Target (Move Backup -> Active)
-            if (targetManifest != null && targetManifest.Files.Count > 0)
-            {
-                foreach (var file in targetManifest.Files)
+                foreach (var file in currentManifest.Files.ToList())
                 {
                     string fullActivePath = Path.Combine(game.InstallDirectory, file.OriginalPath);
                     string fullBackupPath = Path.Combine(game.InstallDirectory, file.BackupPath);
 
-                    // Safety: Check if Active Path is blocked by an ORPHAN
                     if (File.Exists(fullActivePath))
                     {
-                        quarantine.QuarantineFile(fullActivePath, $"Blocking restoration of {targetProfile.Name}'s {file.OriginalPath}");
-                    }
-
-                    if (File.Exists(fullBackupPath))
-                    {
-                        // SAFETY: Do not manage system files
-                        if (IsSystemFile(file.OriginalPath))
-                        {
-                            DebugConsole.WriteWarning($"Skipping system file during activation: {file.OriginalPath}");
-                            continue;
-                        }
-
                         try
                         {
-                            string activeDir = Path.GetDirectoryName(fullActivePath);
-                            if (!string.IsNullOrEmpty(activeDir) && !Directory.Exists(activeDir))
-                                Directory.CreateDirectory(activeDir);
+                            string backupDir = Path.GetDirectoryName(fullBackupPath);
+                            if (!string.IsNullOrEmpty(backupDir) && !Directory.Exists(backupDir))
+                                Directory.CreateDirectory(backupDir);
 
-                            File.Move(fullBackupPath, fullActivePath, overwrite: true);
-                            DebugConsole.WriteDebug($"Activated: {file.OriginalPath}");
+                            File.Move(fullActivePath, fullBackupPath, overwrite: true);
+                            DebugConsole.WriteDebug($"Deactivated: {file.OriginalPath}");
+                            file.LastModified = DateTime.Now;
                         }
                         catch (Exception ex)
                         {
-                            DebugConsole.WriteError($"Failed to restore {file.OriginalPath}: {ex.Message}");
-                            // Don't throw here—continue best effort to restore other files
+                            DebugConsole.WriteError($"CRITICAL: Failed to deactivate {file.OriginalPath}: {ex.Message}");
+                            throw new InvalidOperationException($"Profile switch aborted. Failed to deactivate {file.OriginalPath}. Your save data is safe but profile switch incomplete.", ex);
                         }
                     }
                     else
                     {
-                        DebugConsole.WriteWarning($"Backup file missing for target profile: {file.BackupPath}");
+                        DebugConsole.WriteWarning($"File tracked in manifest not found during deactivation: {file.OriginalPath}");
                     }
                 }
-            }
-            else
-            {
-                DebugConsole.WriteInfo("Target profile is new/empty. Starting fresh.");
-            }
+            });
 
-            // 6. Update Game Config
+            // Save Current Manifest immediately to record the state change
+            await SaveManifest(game, currentProfile, currentManifest);
+
+            // 5. Activate Target (Move Backup -> Active) - run on thread pool to avoid UI blocking
+            await Task.Run(() =>
+            {
+                if (targetManifest != null && targetManifest.Files.Count > 0)
+                {
+                    foreach (var file in targetManifest.Files)
+                    {
+                        string fullActivePath = Path.Combine(game.InstallDirectory, file.OriginalPath);
+                        string fullBackupPath = Path.Combine(game.InstallDirectory, file.BackupPath);
+
+                        // Safety: Check if Active Path is blocked by an ORPHAN
+                        if (File.Exists(fullActivePath))
+                        {
+                            quarantine.QuarantineFile(fullActivePath, $"Blocking restoration of {targetProfile.Name}'s {file.OriginalPath}");
+                        }
+
+                        if (File.Exists(fullBackupPath))
+                        {
+                            // SAFETY: Do not manage system files
+                            if (IsSystemFile(file.OriginalPath))
+                            {
+                                DebugConsole.WriteWarning($"Skipping system file during activation: {file.OriginalPath}");
+                                continue;
+                            }
+
+                            try
+                            {
+                                string activeDir = Path.GetDirectoryName(fullActivePath);
+                                if (!string.IsNullOrEmpty(activeDir) && !Directory.Exists(activeDir))
+                                    Directory.CreateDirectory(activeDir);
+
+                                File.Move(fullBackupPath, fullActivePath, overwrite: true);
+                                DebugConsole.WriteDebug($"Activated: {file.OriginalPath}");
+                            }
+                            catch (Exception ex)
+                            {
+                                DebugConsole.WriteError($"Failed to restore {file.OriginalPath}: {ex.Message}");
+                            }
+                        }
+                        else
+                        {
+                            DebugConsole.WriteWarning($"Backup file missing for target profile: {file.BackupPath}");
+                        }
+                    }
+                }
+                else
+                {
+                    DebugConsole.WriteInfo("Target profile is new/empty. Starting fresh.");
+                }
+            });
+
+            // 6. Update Game Config - CRITICAL: Use the profile's ID, not name
             game.ActiveProfileId = targetProfile.Id;
             await ConfigManagement.SaveGameAsync(game);
 
@@ -238,14 +248,17 @@ namespace SaveTracker.Resources.LOGIC
         // Helpers for Manifests
         private string GetManifestPath(Game game, Profile profile)
         {
-            // Store in GameDir/.ST_PROFILES using only ProfileId for consistent lookups
+            // Store profile manifests (metadata about which files belong to this profile)
+            // in a hidden .ST_PROFILES directory for clean organization
             string profileDir = Path.Combine(game.InstallDirectory, ".ST_PROFILES");
             if (!Directory.Exists(profileDir))
             {
                 Directory.CreateDirectory(profileDir);
                 File.SetAttributes(profileDir, File.GetAttributes(profileDir) | FileAttributes.Hidden);
             }
-            // Use only ProfileId to avoid name-change issues
+            
+            // Use ProfileId as manifest filename
+            // This allows us to find the manifest even if the profile name changes
             return Path.Combine(profileDir, $"profile_{profile.Id}.json");
         }
 
@@ -310,6 +323,13 @@ namespace SaveTracker.Resources.LOGIC
                             foreach (var contractPath in checksumData.Files.Keys)
                             {
                                 string fullPath = PathContractor.ExpandPath(contractPath, game.InstallDirectory, gameData?.DetectedPrefix);
+
+                                // Skip system files (checksums, etc.)
+                                if (IsSystemFile(contractPath)) 
+                                {
+                                    DebugConsole.WriteDebug($"Skipping system file: {contractPath}");
+                                    continue;
+                                }
 
                                 // We only add it to the manifest if it currently exists
                                 if (File.Exists(fullPath))
@@ -534,10 +554,11 @@ namespace SaveTracker.Resources.LOGIC
 
             string fileName = Path.GetFileName(path);
 
-            // Internal metadata files ONLY
-            if (fileName.Equals(SaveFileUploadManager.ChecksumFilename, StringComparison.OrdinalIgnoreCase)) return true;
+            // Internal metadata files ONLY - MUST SKIP THESE DURING PROFILE SWITCHING
+            if (fileName.StartsWith(".savetracker_profile_", StringComparison.OrdinalIgnoreCase)) return true;
+            if (fileName.Equals(".savetracker_checksums.json", StringComparison.OrdinalIgnoreCase)) return true;
             if (path.Contains(".ST_PROFILES", StringComparison.OrdinalIgnoreCase)) return true;
-            if (path.Contains(".savetracker", StringComparison.OrdinalIgnoreCase)) return true;
+            if (path.Contains(".ST_PROFILE.", StringComparison.OrdinalIgnoreCase)) return true;
 
             // DO NOT filter DLLs/EXEs indiscriminately—they may be part of game saves
             // (e.g., packed executables, mod DLLs that are save state)

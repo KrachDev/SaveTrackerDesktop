@@ -187,7 +187,7 @@ namespace SaveTracker.Views
             }
         }
 
-        private void EnsureWindowVisible()
+        public void EnsureWindowVisible()
         {
             if (!this.IsVisible)
             {

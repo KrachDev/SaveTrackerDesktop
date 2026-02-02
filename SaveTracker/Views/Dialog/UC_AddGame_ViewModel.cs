@@ -215,15 +215,14 @@ namespace SaveTracker.Views.Dialog
                         }
                     }
 
-                    // Update UI and cache
-                    Avalonia.Threading.Dispatcher.UIThread.Post(async () =>
+                    // Save to cache first (synchronously, off UI thread)
+                    await ConfigManagement.SaveCloudGamesAsync(games);
+
+                    // Update UI on UI thread
+                    await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
                     {
                         AvailableCloudGames.Clear();
                         foreach (var g in games) AvailableCloudGames.Add(g);
-                        
-                        // Save to cache for next time
-                        await ConfigManagement.SaveCloudGamesAsync(games);
-                        
                         DebugConsole.WriteSuccess($"Loaded {games.Count} cloud games from provider");
                     });
                 }

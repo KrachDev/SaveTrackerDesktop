@@ -232,16 +232,28 @@
                             </Expander.Header>
                             <StackPanel Spacing="12" Margin="10">
                                 <StackPanel Spacing="8">
+									<TextBlock Text="⚠️"
+									  FontSize="20"
+									  VerticalAlignment="Top"/>
+									<StackPanel Grid.Column="1"
+											   VerticalAlignment="Center"
+											   Spacing="4">
+										<TextBlock Text="Important Notice!"
+												   FontWeight="Bold"
+												   Foreground="#E3A008"
+												   FontSize="13"/>
+										<TextBlock Text="The data I collect is purely statistical. You can opt out using the checkbox above and delete your data using the Delete button."
+												   FontSize="11"
+												   Foreground="#CCCCCC"
+												   TextWrapping="WrapWithOverflow"/>
+									</StackPanel>
                                     <TextBlock Text="✅ Anonymous device ID (SHA256 hash)" 
                                                FontSize="12" 
                                                Foreground="#10B981"/>
                                     <TextBlock Text="✅ Game names (no paths or directories)" 
                                                FontSize="12" 
                                                Foreground="#10B981"/>
-                                    <TextBlock Text="✅ File counts (no file names or paths)" 
-                                               FontSize="12" 
-                                               Foreground="#10B981"/>
-                                    <TextBlock Text="✅ Play duration and timestamps" 
+                                    <TextBlock Text="✅ Tracked File counts (no file names or paths)" 
                                                FontSize="12" 
                                                Foreground="#10B981"/>
                                     

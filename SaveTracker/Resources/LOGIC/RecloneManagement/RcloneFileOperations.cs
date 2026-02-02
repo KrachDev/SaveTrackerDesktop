@@ -120,6 +120,7 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             UploadStats stats,
             Game game = null,
             CloudProvider? provider = null,
+            IProgress<RcloneProgressUpdate>? progress = null,
             bool force = false)
         {
             // Use provided game or fall back to constructor game
@@ -192,7 +193,7 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                 DebugConsole.WriteInfo($"UPLOADING: {fileName}");
 
                 CloudProvider effectiveProvider = provider ?? await GetEffectiveProvider(game);
-                bool uploadSuccess = await _transferService.UploadFileWithRetry(filePath, remotePath, fileName, effectiveProvider);
+                bool uploadSuccess = await _transferService.UploadFileWithRetry(filePath, remotePath, fileName, effectiveProvider, progress);
 
                 if (uploadSuccess)
                 {
@@ -223,7 +224,7 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             UploadStats stats,
             Game game = null,
             CloudProvider? provider = null,
-            IProgress<double>? progress = null,
+            IProgress<RcloneProgressUpdate>? progress = null,
             bool force = false)
         {
             // Use provided game or fall back to constructor game
@@ -342,7 +343,11 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                     int currentCount = Interlocked.Increment(ref processedCount);
                     if (currentCount % 10 == 0 || currentCount == filePaths.Count)
                     {
-                        progress?.Report((double)currentCount / filePaths.Count * 40);
+                        progress?.Report(new RcloneProgressUpdate
+                        {
+                            Percent = (double)currentCount / filePaths.Count * 40,
+                            CurrentFile = "Analyzing files..."
+                        });
                     }
                 });
             });
@@ -360,7 +365,7 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             if (internalFilesToBatch.Count == 0 && externalFilesToSingle.Count == 0)
             {
                 DebugConsole.WriteSuccess("All files up to date. No upload needed.");
-                progress?.Report(100);
+                progress?.Report(new RcloneProgressUpdate { Percent = 100, CurrentFile = "Done" });
                 return;
             }
 
@@ -372,16 +377,21 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                 DebugConsole.WriteSeparator('-', 40);
                 DebugConsole.WriteInfo($"Batch uploading {internalFilesToBatch.Count} internal files ({batchUploadSize / 1024.0:F2} KB)...");
 
-                progress?.Report(40);
+                progress?.Report(new RcloneProgressUpdate { Percent = 40, CurrentFile = "Starting batch upload..." });
 
                 // Execute batch upload
                 // Internal files go to remoteBasePath/%GAMEPATH%/
                 string batchRemotePath = $"{remoteBasePath}/%GAMEPATH%";
 
                 // Create progress reporter that maps rclone's 0-100 to our 40-70 range
-                var batchProgress = new Progress<double>(percent =>
+                var batchProgress = new Progress<RcloneProgressUpdate>(update =>
                 {
-                    progress?.Report(40 + (percent * 0.3)); // 40-70%
+                    progress?.Report(new RcloneProgressUpdate
+                    {
+                        Percent = 40 + (update.Percent * 0.3), // 40-70%
+                        Speed = update.Speed,
+                        CurrentFile = update.CurrentFile
+                    });
                 });
 
                 bool success = await _transferService.UploadBatchAsync(
@@ -406,54 +416,98 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                     stats.FailedCount += internalFilesToBatch.Count;
                 }
 
-                progress?.Report(70);
+                progress?.Report(new RcloneProgressUpdate { Percent = 70, CurrentFile = "Batch upload complete" });
             }
             else
             {
-                progress?.Report(70);
+                progress?.Report(new RcloneProgressUpdate { Percent = 70, CurrentFile = "No internal files to upload" });
             }
 
             // 2. Process Single (External Files) - 70-100% of progress
             if (externalFilesToSingle.Count > 0)
             {
                 DebugConsole.WriteSeparator('-', 40);
-                DebugConsole.WriteInfo($"Uploading {externalFilesToSingle.Count} external files individually...");
+                DebugConsole.WriteInfo($"Uploading {externalFilesToSingle.Count} external files in parallel...");
 
                 int externalProcessed = 0;
+                using var semaphore = new System.Threading.SemaphoreSlim(8); // Allow 8 concurrent uploads
+                var uploadTasks = new List<Task>();
+
                 foreach (var filePath in externalFilesToSingle)
                 {
-                    // Reuse detectedPrefix from outer scope
-                    string contractedPath = PathContractor.ContractPath(filePath, gameDirectory, detectedPrefix);
-                    // Rclone needs forward slashes in remote paths, even though we store backslashes in JSON
-                    // Remote path must include the folder structure defined by the contracted path
-                    string remotePath = $"{remoteBasePath}/{contractedPath.Replace('\\', '/')}";
-                    string fileName = Path.GetFileName(filePath);
-
-                    DebugConsole.WriteInfo($"Relayed upload for external file: {fileName}");
-
-                    bool success = await _transferService.UploadFileWithRetry(
-                        filePath,
-                        remotePath,
-                        fileName,
-                        effectiveProvider);
-
-                    if (success)
+                    uploadTasks.Add(Task.Run(async () =>
                     {
-                        await HandleSuccessfulUpload(filePath, gameDirectory, stats, detectedPrefix);
-                    }
-                    else
-                    {
-                        DebugConsole.WriteError($"Failed to upload external file: {fileName}");
-                        stats.FailedCount++;
-                    }
+                        await semaphore.WaitAsync();
+                        try
+                        {
+                            // Reuse detectedPrefix from outer scope
+                            string contractedPath = PathContractor.ContractPath(filePath, gameDirectory, detectedPrefix);
+                            // Rclone needs forward slashes in remote paths, even though we store backslashes in JSON
+                            // Remote path must include the folder structure defined by the contracted path
+                            string remotePath = $"{remoteBasePath}/{contractedPath.Replace('\\', '/')}";
+                            string fileName = Path.GetFileName(filePath);
 
-                    externalProcessed++;
-                    progress?.Report(70 + ((double)externalProcessed / externalFilesToSingle.Count * 30)); // 70-100%
+                            // Create progress reporter for individual file to report to batch progress
+                            var fileProgress = new Progress<RcloneProgressUpdate>(update =>
+                            {
+                                // Scale: 70-100% of progress allocated to external files
+                                double baseProgress = 70;
+                                double range = 30;
+                                double perFileRange = range / externalFilesToSingle.Count;
+                                // Note: externalProcessed is incremented AFTER completion, so for in-progress files 
+                                // we might want to use a more complex calculation, but for now using the completion count 
+                                // plus the current file's progress is visible enough.
+                                // However, accessing externalProcessed here is race-prone if not carefully handled.
+                                // Simplified approach: just show current file status without aggressive global % updates per file chunk
+                                // OR: use Interlocked.Read if we want to include completed count.
+
+                                int completed = externalProcessed; // snapshot
+                                double currentFileBase = baseProgress + (completed * perFileRange);
+
+                                progress?.Report(new RcloneProgressUpdate
+                                {
+                                    Percent = currentFileBase + (update.Percent * perFileRange / 100),
+                                    Speed = update.Speed,
+                                    CurrentFile = fileName // Use original fileName for better clarity
+                                });
+                            });
+
+                            bool success = await _transferService.UploadFileWithRetry(
+                                filePath,
+                                remotePath,
+                                fileName,
+                                effectiveProvider,
+                                fileProgress);
+
+                            if (success)
+                            {
+                                await HandleSuccessfulUpload(filePath, gameDirectory, stats, detectedPrefix);
+                            }
+                            else
+                            {
+                                DebugConsole.WriteError($"Failed to upload external file: {fileName}");
+                                stats.FailedCount++;
+                            }
+
+                            int newCount = System.Threading.Interlocked.Increment(ref externalProcessed);
+                            progress?.Report(new RcloneProgressUpdate
+                            {
+                                Percent = 70 + ((double)newCount / externalFilesToSingle.Count * 30),
+                                CurrentFile = $"Uploaded {newCount}/{externalFilesToSingle.Count} external files..."
+                            }); // 70-100%
+                        }
+                        finally
+                        {
+                            semaphore.Release();
+                        }
+                    }));
                 }
+
+                await Task.WhenAll(uploadTasks);
             }
             else
             {
-                progress?.Report(100);
+                progress?.Report(new RcloneProgressUpdate { Percent = 100, CurrentFile = "Done" });
             }
         }
 
@@ -672,7 +726,7 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             return await _transferService.RenameFolder(oldRemoteBasePath, newRemoteBasePath, effectiveProvider);
         }
 
-        public async Task<bool> DownloadWithChecksumAsync(string remotePath, Game game, CloudProvider? provider = null, IProgress<double>? progress = null)
+        public async Task<bool> DownloadWithChecksumAsync(string remotePath, Game game, CloudProvider? provider = null, IProgress<RcloneProgressUpdate>? progress = null)
         {
             string stagingFolder = Path.Combine(Path.GetTempPath(), "SaveTracker_Download_" + Guid.NewGuid().ToString("N"));
 
@@ -701,19 +755,42 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                 string correctChecksumPath = checksumService.GetChecksumFilePath(game.InstallDirectory, game.ActiveProfileId);
                 string checksumFileName = Path.GetFileName(correctChecksumPath);
 
-                string stagingChecksumPath = Path.Combine(stagingFolder, checksumFileName);
+                string relativeChecksumPath = PathContractor.ContractPath(correctChecksumPath, game.InstallDirectory, detectedPrefix).Replace('\\', '/');
+                string stagingChecksumPath = Path.Combine(stagingFolder, relativeChecksumPath);
                 if (!File.Exists(stagingChecksumPath))
                 {
-                    DebugConsole.WriteWarning($"Checksum file ({checksumFileName}) missing from bulk download - attempting explicit fetch...");
-                    string remoteChecksumPath = $"{remotePath}/{checksumFileName}";
+                    DebugConsole.WriteWarning($"Checksum file ({relativeChecksumPath}) missing - attempting fallback checks...");
 
-                    // We assume checksums.json is at the root of the remote path
+                    // 1. Try explicit fetch of the profile-specific name
+                    string remoteChecksumPath = $"{remotePath}/{relativeChecksumPath}";
+
+                    // Create directory in staging if it doesn't exist (e.g. %GAMEPATH% subfolder)
+                    string? stagingDir = Path.GetDirectoryName(stagingChecksumPath);
+                    if (!string.IsNullOrEmpty(stagingDir)) Directory.CreateDirectory(stagingDir);
+
                     bool checksumDownloaded = await _transferService.DownloadFileWithRetry(
                         remoteChecksumPath,
                         stagingChecksumPath,
                         checksumFileName,
                         effectiveProvider
                     );
+
+                    // 2. Fallback to legacy checksum name if profile-specific failed
+                    if (!checksumDownloaded)
+                    {
+                        string legacyChecksumName = ".savetracker_checksums.json";
+                        string legacyRelativePath = relativeChecksumPath.Replace(checksumFileName, legacyChecksumName);
+                        string legacyRemotePath = $"{remotePath}/{legacyRelativePath}";
+
+                        DebugConsole.WriteInfo($"Attempting legacy checksum fetch: {legacyRelativePath}");
+
+                        checksumDownloaded = await _transferService.DownloadFileWithRetry(
+                            legacyRemotePath,
+                            stagingChecksumPath, // Still save it to the expected local path
+                            legacyChecksumName,
+                            effectiveProvider
+                        );
+                    }
 
                     if (checksumDownloaded)
                         DebugConsole.WriteSuccess("Successfully recovered checksum file.");

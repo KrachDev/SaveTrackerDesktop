@@ -160,20 +160,38 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                 );
                 DebugConsole.WriteInfo($"Downloading to: {zipPath}");
 
-                using (var client = new WebClient())
-                {
-                    client.DownloadProgressChanged += (s, e) =>
-                    {
-                        if (e.ProgressPercentage % 10 == 0)
-                        {
-                            DebugConsole.WriteDebug(
-                                $"Download progress: {e.ProgressPercentage}% ({e.BytesReceived:N0}/{e.TotalBytesToReceive:N0} bytes)"
-                            );
-                        }
-                    };
+                using var httpClient = new HttpClient();
 
-                    await client.DownloadFileTaskAsync(downloadUrl, zipPath);
+                using var response = await httpClient.GetAsync(downloadUrl, HttpCompletionOption.ResponseHeadersRead);
+                response.EnsureSuccessStatusCode();
+
+                var totalBytes = response.Content.Headers.ContentLength ?? -1L;
+                var canReportProgress = totalBytes != -1;
+
+                await using var contentStream = await response.Content.ReadAsStreamAsync();
+                await using var fileStream = new FileStream(zipPath, FileMode.Create, FileAccess.Write, FileShare.None);
+
+                var buffer = new byte[81920];
+                long totalRead = 0;
+                int read;
+                int lastProgress = 0;
+
+                while ((read = await contentStream.ReadAsync(buffer)) > 0)
+                {
+                    await fileStream.WriteAsync(buffer.AsMemory(0, read));
+                    totalRead += read;
+
+                    if (canReportProgress)
+                    {
+                        var progress = (int)(totalRead * 100 / totalBytes);
+                        if (progress >= lastProgress + 10)
+                        {
+                            lastProgress = progress;
+                            DebugConsole.WriteDebug($"{progress}% ({totalRead:N0}/{totalBytes:N0} bytes)");
+                        }
+                    }
                 }
+
 
                 DebugConsole.WriteSuccess(
                     $"Download completed: {new FileInfo(zipPath).Length:N0} bytes"

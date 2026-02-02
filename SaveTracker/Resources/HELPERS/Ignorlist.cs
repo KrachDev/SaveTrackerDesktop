@@ -81,7 +81,14 @@ namespace SaveTracker.Resources.HELPERS
             // Additional common directories
             Path.Combine(UserProfile, @"AppData\Local\CrashDumps"),
             Path.Combine(UserProfile, @"AppData\Local\Logs"),
+            Path.Combine(UserProfile, @"AppData\Local\Crashes"),
+            Path.Combine(UserProfile, @"AppData\Local\Telemetry"),
             Path.Combine(UserProfile, @"AppData\Local\VirtualStore"),
+            "Logs",
+            "Cache",
+            "ShaderCache",
+            "webcache",
+            "Intermediate",
         };
 
         // Fast file extension and name filters
@@ -106,7 +113,13 @@ namespace SaveTracker.Resources.HELPERS
             ".symbols",
             ".debug",
             ".parc",
-            ".exe"
+            ".exe",
+            ".sqlite",
+            ".db",
+            ".txt",
+            ".ini",
+            ".xml",
+            ".zip"
         };
 
         public static readonly HashSet<string> IgnoredFileNames = new HashSet<string>(
@@ -120,18 +133,34 @@ namespace SaveTracker.Resources.HELPERS
             "swapfile.sys",
             "bootmgfw.efi",
             "ntuser.dat",
-            "ntuser.pol"
+            "ntuser.pol",
+            "AppOptions.txt",
+            "GraphicsOptions.txt",
+            "UserOptions.txt",
+            "SoundOpts.txt",
+            "EOSOptions.txt",
+            "InputSettings.json",
+            "Database.log",
+            "Profile.csv",
+            "UIWarnings.csv",
+            "Operation.csv"
         };
 
         // Simple keyword-based filters for obvious non-saves
         public static readonly string[] IgnoredKeywords =
         {
-            "cache",
+            "telemetry",
+            "metrics",
+            "\\cache\\",
+            "\\logs\\",
+            "\\crash\\",
+            "\\webcache\\",
+            "\\intermediate\\",
+            "\\shadercache\\",
+            "cach",
             "temp",
-            "log",
-            "crash",
+            "crach",
             "dump",
-            "shader",
             "debug",
             "thumbnail",
             "preview",
@@ -143,6 +172,9 @@ namespace SaveTracker.Resources.HELPERS
             "sentry",
             "sentrynative",
             "event",
+            "telemetry",
+            "metrics",
+            "mods",
             ".savetracker_checksums.json",
             ".ST_PROFILE.",
             ".ST_PROFILES"

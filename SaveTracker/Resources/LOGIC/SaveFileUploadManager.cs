@@ -130,13 +130,14 @@ namespace SaveTracker.Resources.Logic
             await session.InitializeAsync();
 
             var fileManager = new UploadFileManager(context.SaveFiles);
-            
+
             // Pass the active profile ID to ChecksumFileManager so it uses profile-specific checksum files
             string? profileId = context.Game.ActiveProfileId;
             var checksumManager = new ChecksumFileManager(context.Game, profileId);
 
             // Prepare files
             fileManager.ValidateFiles();
+            DebugConsole.WriteInfo("step 1 tracking ====================");
             await checksumManager.PrepareChecksumFileAsync(fileManager.ValidFiles);
 
             // Notify upload start
@@ -149,6 +150,7 @@ namespace SaveTracker.Resources.Logic
 
             try
             {
+                DebugConsole.WriteInfo("step 2 uploading ====================");
                 await PerformUploadAsync(
                     session,
                     fileManager,
@@ -158,6 +160,15 @@ namespace SaveTracker.Resources.Logic
                 );
 
                 session.Complete();
+                DebugConsole.WriteInfo("step 3 ======================done");
+
+                // Summary statistics block
+                DebugConsole.WriteInfo("=================");
+                DebugConsole.WriteInfo($"Total files tracked: {fileManager.ValidFiles.Count + (checksumManager.HasChecksumFile ? 1 : 0)}");
+                DebugConsole.WriteInfo($"Total files uploaded: {session.Stats.UploadedCount}");
+                DebugConsole.WriteInfo($"Total size: {FormatBytes(session.Stats.UploadedSize)}");
+                DebugConsole.WriteInfo($"Total time: {session.TotalTime:mm\\:ss}");
+                DebugConsole.WriteInfo("=================");
 
                 var result = new UploadResult
                 {
@@ -197,10 +208,7 @@ namespace SaveTracker.Resources.Logic
             CancellationToken cancellationToken,
             bool force = false)
         {
-            DebugConsole.WriteInfo("DEBUG: ENTERING PerformUploadAsync");
-
             // Phase 1: Upload save files
-            DebugConsole.WriteInfo("DEBUG: Calling UploadSaveFilesAsync");
             await UploadSaveFilesAsync(
                 session,
                 fileManager.ValidFiles,
@@ -209,13 +217,17 @@ namespace SaveTracker.Resources.Logic
             );
 
             // Phase 2: Upload checksum file
-            DebugConsole.WriteInfo("DEBUG: Calling UploadChecksumFileAsync");
             await UploadChecksumFileAsync(
                 session,
                 checksumManager,
                 cancellationToken
             );
-            DebugConsole.WriteInfo("DEBUG: EXITING PerformUploadAsync");
+
+            // Phase 3: Check and upload icon (Best effort, non-blocking failure)
+            await CheckAndUploadIconAsync(
+                session,
+                cancellationToken
+            );
         }
 
         #endregion
@@ -239,13 +251,26 @@ namespace SaveTracker.Resources.Logic
             // Use the new batch process for faster uploads
             try
             {
+                // Create a progress reporter for the batch process
+                var batchProgress = new Progress<RcloneProgressUpdate>(update =>
+                {
+                    ReportProgress(new UploadProgressInfo
+                    {
+                        Status = "Uploading save files...",
+                        CurrentFile = update.CurrentFile,
+                        Speed = update.Speed,
+                        TotalFiles = validFiles.Count,
+                        ProcessedFiles = (int)(validFiles.Count * update.Percent / 100),
+                    });
+                });
+
                 await _rcloneFileOperations.ProcessBatch(
                     validFiles,
                     session.RemoteBasePath,
                     session.Stats,
                     session.Context.Game,
                     session.Context.Provider,
-                    null,
+                    batchProgress,
                     force
                 );
                 DebugConsole.WriteInfo("DEBUG: ProcessBatch returned");
@@ -265,6 +290,7 @@ namespace SaveTracker.Resources.Logic
         {
             string fileName = Path.GetFileName(file);
 
+            // Initial progress report for the file
             ReportProgress(new UploadProgressInfo
             {
                 Status = $"Uploading {fileName}...",
@@ -275,12 +301,25 @@ namespace SaveTracker.Resources.Logic
 
             try
             {
+                var fileProgress = new Progress<RcloneProgressUpdate>(update =>
+                {
+                    ReportProgress(new UploadProgressInfo
+                    {
+                        Status = $"Uploading {fileName}...",
+                        CurrentFile = fileName,
+                        Speed = update.Speed,
+                        TotalFiles = totalFiles,
+                        ProcessedFiles = currentIndex
+                    });
+                });
+
                 await _rcloneFileOperations.ProcessFile(
                     file,
                     session.RemoteBasePath,
                     session.Stats,
                     session.Context.Game,
-                    session.Context.Provider
+                    session.Context.Provider,
+                    fileProgress
                 );
 
                 DebugConsole.WriteSuccess($"✓ {fileName} uploaded successfully");
@@ -329,7 +368,8 @@ namespace SaveTracker.Resources.Logic
                     session.Stats,
                     session.Context.Game,
                     session.Context.Provider,
-                    true // Force upload
+                    progress: null, // No progress for checksum file
+                    force: true
                 );
 
                 DebugConsole.WriteSuccess("✓ Checksum file uploaded successfully");
@@ -337,6 +377,80 @@ namespace SaveTracker.Resources.Logic
             catch (Exception ex)
             {
                 DebugConsole.WriteError($"✗ Failed to upload checksum file: {ex.Message}");
+            }
+        }
+
+        #endregion
+
+        #region Phase 3: Icon Upload
+
+        private async Task CheckAndUploadIconAsync(
+            UploadSession session,
+            CancellationToken cancellationToken)
+        {
+            try
+            {
+                // Define remote icon path (at game root)
+                string providerPrefix = _cloudProviderHelper.GetProviderConfigName(session.Context.Provider);
+                string sanitizedGameName = SanitizeGameName(session.Context.Game.Name);
+                string gameRootPath = $"{providerPrefix}:{RemoteBaseFolder}/{sanitizedGameName}";
+                string remoteIconPath = $"{gameRootPath}/icon.png";
+
+                // Check if icon exists using a local executor
+                var executor = new RcloneExecutor();
+                string configPath = RclonePathHelper.GetConfigPath(session.Context.Provider);
+
+                var checkResult = await executor.ExecuteRcloneCommand(
+                    $"ls \"{remoteIconPath}\" --config \"{configPath}\"",
+                    TimeSpan.FromSeconds(5)
+                );
+
+                if (checkResult.Success && !string.IsNullOrWhiteSpace(checkResult.Output))
+                {
+                    // Icon exists, skip
+                    return;
+                }
+
+                // Icon missing, extract locally
+                DebugConsole.WriteInfo("Icon missing in cloud, extracting from executable...");
+                string exePath = session.Context.Game.ExecutablePath;
+                if (string.IsNullOrEmpty(exePath) || !File.Exists(exePath)) return;
+
+                byte[]? iconData = Misc.ExtractIconDataFromExe(exePath);
+                if (iconData == null)
+                {
+                    DebugConsole.WriteInfo("No icon data extracted.");
+                    return;
+                }
+
+                // Save to temp file
+                string tempIconPath = Path.Combine(Path.GetTempPath(), $"icon_{Guid.NewGuid()}.png");
+                try
+                {
+                    using (var ms = new MemoryStream(iconData))
+                    using (var bitmap = new System.Drawing.Bitmap(ms))
+                    {
+                        bitmap.Save(tempIconPath, System.Drawing.Imaging.ImageFormat.Png);
+                    }
+
+                    // Upload
+                    // Use `copyto` to ensure name is icon.png
+                    await executor.ExecuteRcloneCommand(
+                        $"copyto \"{tempIconPath}\" \"{remoteIconPath}\" --config \"{configPath}\"",
+                        TimeSpan.FromSeconds(30)
+                    );
+
+                    DebugConsole.WriteSuccess("Uploaded game icon to cloud.");
+                }
+                finally
+                {
+                    if (File.Exists(tempIconPath)) File.Delete(tempIconPath);
+                }
+            }
+            catch (Exception ex)
+            {
+                // Non-critical, just log warning
+                DebugConsole.WriteWarning($"Failed to upload icon: {ex.Message}");
             }
         }
 
@@ -369,6 +483,19 @@ namespace SaveTracker.Resources.Logic
             using var stream = File.OpenRead(filePath);
             byte[] hash = sha256.ComputeHash(stream);
             return BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
+        }
+
+        private static string FormatBytes(long bytes)
+        {
+            string[] Suffix = { "B", "KB", "MB", "GB", "TB" };
+            int i;
+            double dblSByte = bytes;
+            for (i = 0; i < Suffix.Length && bytes >= 1024; i++, bytes /= 1024)
+            {
+                dblSByte = bytes / 1024.0;
+            }
+
+            return $"{dblSByte:0.##} {Suffix[i]}";
         }
 
         #endregion
@@ -477,6 +604,7 @@ namespace SaveTracker.Resources.Logic
     {
         public string Status { get; set; }
         public string CurrentFile { get; set; }
+        public string? Speed { get; set; }
         public int TotalFiles { get; set; }
         public int ProcessedFiles { get; set; }
         public int PercentComplete => TotalFiles > 0 ? (ProcessedFiles * 100 / TotalFiles) : 0;

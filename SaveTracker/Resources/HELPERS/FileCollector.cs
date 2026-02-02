@@ -118,17 +118,10 @@ namespace SaveTracker.Resources.HELPERS
 
                 foreach (var keyword in Ignorlist.IgnoredKeywords)
                 {
-                    if (lowerFileName.Contains(keyword))
+                    if (lowerPath.Contains(keyword) || lowerFileName.Contains(keyword))
                     {
                         if (shouldLog)
-                            //DebugConsole.WriteWarning($"Skipped (Keyword in Filename '{keyword}'): {filePath}");
-                            return true;
-                    }
-
-                    if (lowerPath.Contains($"{Path.DirectorySeparatorChar}{keyword}{Path.DirectorySeparatorChar}"))
-                    {
-                        if (shouldLog)
-                            //DebugConsole.WriteWarning($"Skipped (Keyword in Path '{keyword}'): {filePath}");
+                            //DebugConsole.WriteWarning($"Skipped (Keyword Match '{keyword}'): {filePath}");
                             return true;
                     }
                 }

@@ -8,6 +8,7 @@ using SaveTracker.Resources.Logic.RecloneManagement;
 using SaveTracker.Resources.Logic.AutoUpdater;
 using SaveTracker.Resources.LOGIC;
 using SaveTracker.Resources.LOGIC.Launching;
+using SaveTracker.Resources.LOGIC.IPC;
 
 using SaveTracker.Resources.SAVE_SYSTEM;
 using SaveTracker.Views;
@@ -151,7 +152,7 @@ namespace SaveTracker.ViewModels
 
         partial void OnIsLaunchEnabledChanged(bool value)
         {
-            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
             {
                 LaunchGameCommand.NotifyCanExecuteChanged();
                 OpenProfileManagerCommand.NotifyCanExecuteChanged();
@@ -160,11 +161,31 @@ namespace SaveTracker.ViewModels
 
         partial void OnIsSyncEnabledChanged(bool value)
         {
-            SyncNowCommand.NotifyCanExecuteChanged();
+            Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                SyncNowCommand.NotifyCanExecuteChanged();
+            });
         }
 
         [ObservableProperty]
         private bool _isSyncing;
+
+        partial void OnIsSyncingChanged(bool value)
+        {
+            // Update IPC State (simplified, assuming upload for now or generally busy)
+            // Precise distinction between upload/download would require more granular state in VM
+            // but IsSyncing covers the "busy" state.
+            if (value)
+            {
+                CommandHandler.CurrentSyncOperation = "Syncing";
+            }
+            else
+            {
+                CommandHandler.IsCurrentlyUploading = false;
+                CommandHandler.IsCurrentlyDownloading = false;
+                CommandHandler.CurrentSyncOperation = null;
+            }
+        }
 
         [ObservableProperty]
         private string _syncButtonText = "☁️ Sync Now";
@@ -220,6 +241,9 @@ namespace SaveTracker.ViewModels
 
         // Smart Sync Integration
         public event Func<SmartSyncViewModel, Task>? OnSmartSyncRequested;
+
+        // Legacy Migration
+        public event Action? OnLegacyMigrationRequested;
 
         // ========== DEBUG HELPER METHODS ==========
         public int GetAddGameRequestedSubscriberCount() => OnAddGameRequested?.GetInvocationList().Length ?? 0;
@@ -419,7 +443,8 @@ namespace SaveTracker.ViewModels
         {
             if (value != null)
             {
-                _ = LoadGameDetailsAsync(value);
+                // Run game details loading on background thread to prevent UI freeze
+                _ = Task.Run(() => LoadGameDetailsAsync(value));
             }
             else
             {
@@ -443,40 +468,43 @@ namespace SaveTracker.ViewModels
             {
                 var game = gameViewModel.Game;
                 var data = await ConfigManagement.GetGameData(game);
-                GameTitleText = game.Name;
 
-                // Check if data exists before accessing properties
-                if (data != null && data.PlayTime != TimeSpan.Zero)
-                    GamePlayTimeText = "Play Time: " + data.PlayTime.ToString(@"hh\:mm\:ss");
-                else
-                    GamePlayTimeText = "Play Time: Never";
-                GamePathText = $"Install Path: {game.InstallDirectory}";
-                IsLaunchEnabled = true;
+                // UI updates must be on the UI thread
+                await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(async () =>
+                {
+                    GameTitleText = game.Name;
 
-                // Load icon
-                GameIcon = Misc.ExtractIconFromExe(game.ExecutablePath);
+                    // Check if data exists before accessing properties
+                    if (data != null && data.PlayTime != TimeSpan.Zero)
+                        GamePlayTimeText = "Play Time: " + data.PlayTime.ToString(@"hh\:mm\:ss");
+                    else
+                        GamePlayTimeText = "Play Time: Never";
+                    GamePathText = $"Install Path: {game.InstallDirectory}";
+                    IsLaunchEnabled = true;
 
-                // Check if sync is available
-                // Always enable to allow checking for cloud saves (user request for fresh installs)
-                IsSyncEnabled = true; // Was: (bool)await ConfigManagement.HasData(game);
+                    // Load icon
+                    GameIcon = Misc.ExtractIconFromExe(game.ExecutablePath);
 
-                // Load tracked files
-                await UpdateTrackedListAsync(game);
-                // Load game-specific settings
-                await LoadGameSettingsAsync(game);
-                InitializeGameProperties(game);
-                // Update profile display
-                await UpdateProfileDisplayAsync(game);
+                    // Check if sync is available
+                    IsSyncEnabled = true;
 
-                // Clear cloud files (load on demand when tab is selected)
-                CloudFiles.Clear();
-                CloudFilesCountText = "Click refresh to load";
+                    // Load tracked files
+                    await UpdateTrackedListAsync(game);
+                    // Load game-specific settings
+                    await LoadGameSettingsAsync(game);
+                    InitializeGameProperties(game);
+                    // Update profile display
+                    await UpdateProfileDisplayAsync(game);
 
-                // Notify commands to update
-                LaunchGameCommand.NotifyCanExecuteChanged();
-                SyncNowCommand.NotifyCanExecuteChanged();
+                    // Clear cloud files
+                    CloudFiles.Clear();
+                    CloudFilesCountText = "Click refresh to load";
+
+                    // Notify commands to update
+                    LaunchGameCommand.NotifyCanExecuteChanged();
+                    SyncNowCommand.NotifyCanExecuteChanged();
+                });
             }
-
             catch (Exception ex)
             {
                 DebugConsole.WriteException(ex, "Error loading game details");
@@ -538,6 +566,37 @@ namespace SaveTracker.ViewModels
             catch (Exception ex)
             {
                 DebugConsole.WriteException(ex, "Failed to open cloud library");
+            }
+        }
+
+        [RelayCommand]
+        private void OpenLegacyMigration()
+        {
+            try
+            {
+                var mainWindow = Avalonia.Application.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop
+                   ? desktop.MainWindow
+                   : null;
+
+                if (mainWindow != null)
+                {
+                    if (!mainWindow.IsVisible)
+                    {
+                        mainWindow.Show();
+                    }
+                    if (mainWindow.WindowState == WindowState.Minimized)
+                    {
+                        mainWindow.WindowState = WindowState.Normal;
+                    }
+                    mainWindow.Activate();
+
+                    var window = new SaveTracker.Views.LegacyMigrationWindow();
+                    window.ShowDialog(mainWindow);
+                }
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteException(ex, "Failed to open legacy migration window");
             }
         }
 
@@ -1022,6 +1081,10 @@ namespace SaveTracker.ViewModels
                 IsLaunchEnabled = false;
                 SyncStatusText = "Tracking...";
 
+                // Update IPC State
+                CommandHandler.IsCurrentlyTracking = true;
+                CommandHandler.CurrentlyTrackingGame = game.Name;
+
                 // Start tracking (standard mode)
                 // We don't await this so UI remains responsive
                 _trackingTask = Task.Run(async () =>
@@ -1060,6 +1123,10 @@ namespace SaveTracker.ViewModels
                         {
                             IsLaunchEnabled = true;
                             SyncStatusText = "Idle";
+
+                            // Update IPC State
+                            CommandHandler.IsCurrentlyTracking = false;
+                            CommandHandler.CurrentlyTrackingGame = null;
                         }
                     });
                 });
@@ -1069,6 +1136,10 @@ namespace SaveTracker.ViewModels
                 DebugConsole.WriteException(ex, "Failed to launch game");
                 IsLaunchEnabled = true;
                 SyncStatusText = "Idle";
+
+                // Update IPC State
+                CommandHandler.IsCurrentlyTracking = false;
+                CommandHandler.CurrentlyTrackingGame = null;
             }
         }
 

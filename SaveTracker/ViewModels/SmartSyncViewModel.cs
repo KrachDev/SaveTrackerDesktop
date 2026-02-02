@@ -251,8 +251,17 @@ namespace SaveTracker.ViewModels
                     string realChecksumPath = checksumService.GetChecksumFilePath(gameDirectory, _game.ActiveProfileId);
                     string realChecksumName = Path.GetFileName(realChecksumPath);
 
-                    string checksumRemotePath = $"{remotePath}/{realChecksumName}";
-                    string checksumLocalPath = Path.Combine(tempFolder, realChecksumName);
+                    var gameData = await ConfigManagement.GetGameData(_game);
+                    string? detectedPrefix = gameData?.DetectedPrefix;
+
+                    // Get the relative path that would be used for upload (contracted path)
+                    string relativeChecksumPath = PathContractor.ContractPath(realChecksumPath, gameDirectory, detectedPrefix).Replace('\\', '/');
+                    string checksumRemotePath = $"{remotePath}/{relativeChecksumPath}";
+                    string checksumLocalPath = Path.Combine(tempFolder, relativeChecksumPath);
+
+                    // Create local folder if needed
+                    string? localDir = Path.GetDirectoryName(checksumLocalPath);
+                    if (!string.IsNullOrEmpty(localDir)) Directory.CreateDirectory(localDir);
 
                     var transferService = new RcloneTransferService();
                     bool downloaded = await transferService.DownloadFileWithRetry(
@@ -261,6 +270,23 @@ namespace SaveTracker.ViewModels
                         realChecksumName,
                         provider
                     );
+
+                    // Fallback to legacy checksum name if profile-specific failed
+                    if (!downloaded)
+                    {
+                        string legacyChecksumName = ".savetracker_checksums.json";
+                        string legacyRelativePath = relativeChecksumPath.Replace(realChecksumName, legacyChecksumName);
+                        string legacyRemotePath = $"{remotePath}/{legacyRelativePath}";
+                        
+                        DebugConsole.WriteInfo($"Attempting legacy checksum fetch: {legacyRelativePath}");
+                        
+                        downloaded = await transferService.DownloadFileWithRetry(
+                            legacyRemotePath,
+                            checksumLocalPath, // Save it to the same local path for deserialization
+                            legacyChecksumName,
+                            provider
+                        );
+                    }
 
                     if (downloaded && File.Exists(checksumLocalPath))
                     {
@@ -470,18 +496,19 @@ namespace SaveTracker.ViewModels
                             OperationLog.Add($"[{DateTime.Now:HH:mm:ss}] Downloading from {remotePath}...");
                         });
 
-                        var progress = new Progress<double>(percent =>
+                        var progress = new Progress<RcloneProgressUpdate>(update =>
                         {
                             Dispatcher.UIThread.Post(() =>
                             {
-                                ProgressValue = percent;
-                                LoadingMessage = $"Downloading... {percent:F0}%";
+                                ProgressValue = update.Percent;
+                                LoadingMessage = $"Downloading... {update.Percent:F0}%";
+                                Speed = update.Speed ?? "";
 
                                 // Simple progress indicator for download
-                                if (percent < 100)
+                                if (update.Percent < 100)
                                 {
-                                    CurrentFile = "Downloading files...";
-                                    FileProgress = $"{percent:F0}%";
+                                    CurrentFile = update.CurrentFile ?? "Downloading files...";
+                                    FileProgress = $"{update.Percent:F0}%";
                                 }
                                 else
                                 {
@@ -672,21 +699,27 @@ namespace SaveTracker.ViewModels
                         // Create progress reporter with file-level granularity
                         int totalFiles = trackedFiles.Count;
 
-                        var progress = new Progress<double>(percent =>
+                        var progress = new Progress<RcloneProgressUpdate>(update =>
                         {
                             Dispatcher.UIThread.Post(() =>
                             {
-                                ProgressValue = percent;
+                                ProgressValue = update.Percent;
+                                Speed = update.Speed ?? "";
 
-                                // Calculate which file we're on based on overall progress
-                                int estimatedFileIndex = (int)(percent / 100.0 * totalFiles);
-                                if (estimatedFileIndex >= totalFiles) estimatedFileIndex = totalFiles - 1;
-
-                                if (estimatedFileIndex >= 0 && estimatedFileIndex < totalFiles)
+                                // RcloneProgressUpdate now includes the actual filename being processed
+                                if (update.Percent < 100)
                                 {
-                                    string filename = Path.GetFileName(trackedFiles[estimatedFileIndex]);
-                                    CurrentFile = filename;
+                                    CurrentFile = update.CurrentFile ?? "Uploading...";
+
+                                    // Calculate which file we're on for the count display
+                                    int estimatedFileIndex = (int)(update.Percent / 100.0 * totalFiles);
+                                    if (estimatedFileIndex >= totalFiles) estimatedFileIndex = totalFiles - 1;
                                     FileProgress = $"({estimatedFileIndex + 1}/{totalFiles})";
+                                }
+                                else
+                                {
+                                    CurrentFile = "Upload complete!";
+                                    FileProgress = "";
                                 }
                             });
                         });
@@ -731,7 +764,8 @@ namespace SaveTracker.ViewModels
                                 stats,
                                 _game,
                                 config.CloudConfig.Provider,
-                                true // Force upload
+                                progress: null, // No detailed progress for metadata
+                                force: true
                             );
                             await Dispatcher.UIThread.InvokeAsync(() =>
                            {
