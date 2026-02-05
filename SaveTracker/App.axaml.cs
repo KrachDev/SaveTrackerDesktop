@@ -123,7 +123,112 @@ namespace SaveTracker
                         DebugConsole.WriteWarning($"Background analytics upload failed: {ex.Message}");
                     }
                 });
+
+                // Cloud Library Cache specific startup logic
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        var cacheService = SaveTracker.Resources.Logic.RecloneManagement.CloudLibraryCacheService.Instance;
+                        string metadataPath = SaveTracker.Resources.Logic.RecloneManagement.CloudLibraryCacheService.MetadataPath;
+
+                        // Check if cache exists
+                        bool cacheExists = System.IO.File.Exists(metadataPath);
+
+                        if (!cacheExists)
+                        {
+                            // If no cache, start caching immediately (but still in background to not block startup)
+                            DebugConsole.WriteInfo("[CloudCache] No local cache found. Starting initial cache build...");
+                            if (await NetworkHelper.IsInternetAvailableAsync())
+                            {
+                                var summary = await cacheService.RefreshCacheAsync();
+                                
+                                // Show App ID input dialog if needed
+                                if (summary?.NeedsInputCount > 0)
+                                {
+                                    var gamesNeedingInput = await cacheService.GetGamesNeedingAppIdAsync();
+                                    await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(async () =>
+                                    {
+                                        var dialogVm = new AppIdEntryViewModel(gamesNeedingInput.ToArray());
+                                        var dialog = new Views.Dialog.AppIdEntryWindow(dialogVm);
+
+                                        // Try to find a parent window
+                                        Window? parent = null;
+                                        if (Avalonia.Application.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop)
+                                        {
+                                            parent = desktop.Windows.FirstOrDefault(w => w.IsActive) ?? desktop.MainWindow;
+                                        }
+
+                                        var result = await dialog.ShowDialog<bool?>(parent);
+
+                                        if (result == true)
+                                        {
+                                            DebugConsole.WriteInfo("[CloudCache] Processing manual App IDs from startup...");
+                                            foreach (var game in dialogVm.Games)
+                                            {
+                                                if (!string.IsNullOrWhiteSpace(game.AppId))
+                                                {
+                                                    await cacheService.SetManualAppId(game.GameName, game.AppId);
+                                                    await cacheService.RetryAchievementProcessing(game.GameName);
+                                                }
+                                            }
+                                        }
+                                    });
+                                }
+                            }
+                        }
+                        else
+                        {
+                            // If cache exists, wait 10 minutes before refreshing
+                            await Task.Delay(TimeSpan.FromMinutes(10));
+
+                            if (await NetworkHelper.IsInternetAvailableAsync())
+                            {
+                                DebugConsole.WriteInfo("[CloudCache] Starting scheduled cache refresh (10 min after startup)");
+                                var summary = await cacheService.RefreshCacheAsync();
+                                
+                                // Show App ID input dialog if needed
+                                if (summary?.NeedsInputCount > 0)
+                                {
+                                    var gamesNeedingInput = await cacheService.GetGamesNeedingAppIdAsync();
+                                    await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(async () =>
+                                    {
+                                        var dialogVm = new AppIdEntryViewModel(gamesNeedingInput.ToArray());
+                                        var dialog = new Views.Dialog.AppIdEntryWindow(dialogVm);
+
+                                        // Try to find a parent window
+                                        Window? parent = null;
+                                        if (Avalonia.Application.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop)
+                                        {
+                                            parent = desktop.Windows.FirstOrDefault(w => w.IsActive) ?? desktop.MainWindow;
+                                        }
+
+                                        var result = await dialog.ShowDialog<bool?>(parent);
+
+                                        if (result == true)
+                                        {
+                                            DebugConsole.WriteInfo("[CloudCache] Processing manual App IDs from scheduled refresh...");
+                                            foreach (var game in dialogVm.Games)
+                                            {
+                                                if (!string.IsNullOrWhiteSpace(game.AppId))
+                                                {
+                                                    await cacheService.SetManualAppId(game.GameName, game.AppId);
+                                                    await cacheService.RetryAchievementProcessing(game.GameName);
+                                                }
+                                            }
+                                        }
+                                    });
+                                }
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        DebugConsole.WriteWarning($"Background cloud cache refresh failed: {ex.Message}");
+                    }
+                });
             }
+
 
             base.OnFrameworkInitializationCompleted();
         }

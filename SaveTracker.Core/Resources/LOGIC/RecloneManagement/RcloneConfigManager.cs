@@ -169,7 +169,7 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                 string configPath = RclonePathHelper.GetConfigPath(provider);
 
                 // Kill any existing rclone processes to avoid port conflicts
-                KillExistingRcloneProcesses();
+                await KillExistingRcloneProcessesAsync();
 
                 // Migrate legacy config if it exists
                 await MigrateLegacyConfigIfNeeded(provider);
@@ -345,30 +345,33 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
         /// <summary>
         /// Kills any running rclone processes to free up ports (e.g. 53682)
         /// </summary>
-        private void KillExistingRcloneProcesses()
+        private async Task KillExistingRcloneProcessesAsync()
         {
             try
             {
-                var processes = Process.GetProcessesByName("rclone");
-                if (processes.Length > 0)
+                await Task.Run(() =>
                 {
-                    DebugConsole.WriteInfo($"Found {processes.Length} running rclone process(es). Terminating...");
-                    foreach (var p in processes)
+                    var processes = Process.GetProcessesByName("rclone");
+                    if (processes.Length > 0)
                     {
-                        try
+                        DebugConsole.WriteInfo($"Found {processes.Length} running rclone process(es). Terminating...");
+                        foreach (var p in processes)
                         {
-                            if (!p.HasExited)
+                            try
                             {
-                                p.Kill();
-                                p.WaitForExit(1000);
+                                if (!p.HasExited)
+                                {
+                                    p.Kill();
+                                    p.WaitForExit(1000); // Safe to block here since we are inside Task.Run
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                DebugConsole.WriteWarning($"Failed to kill rclone process {p.Id}: {ex.Message}");
                             }
                         }
-                        catch (Exception ex)
-                        {
-                            DebugConsole.WriteWarning($"Failed to kill rclone process {p.Id}: {ex.Message}");
-                        }
                     }
-                }
+                });
             }
             catch (Exception ex)
             {

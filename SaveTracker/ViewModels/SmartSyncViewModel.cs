@@ -139,7 +139,7 @@ namespace SaveTracker.ViewModels
                 {
                     try
                     {
-                        var bitmap = Misc.ExtractIconFromExe(_game.ExecutablePath);
+                        var bitmap = UiHelpers.ExtractIconFromExe(_game.ExecutablePath);
                         await Dispatcher.UIThread.InvokeAsync(() =>
                         {
                             GameIconBitmap = bitmap;

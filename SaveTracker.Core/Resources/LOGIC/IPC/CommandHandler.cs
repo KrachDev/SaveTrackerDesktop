@@ -1,17 +1,9 @@
-using Avalonia;
-using Avalonia.Controls;
-using Avalonia.Controls.ApplicationLifetimes;
-using Avalonia.Threading;
 using SaveTracker.Resources.HELPERS;
 using SaveTracker.Resources.Logic;
-using SaveTracker.Views;
-using SaveTracker.ViewModels;
-using SaveTracker.Views.Dialog;
 using SaveTracker.Models;
 using SaveTracker.Resources.Logic.RecloneManagement;
 using SaveTracker.Resources.SAVE_SYSTEM;
 using System;
-using Avalonia.Media;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -28,13 +20,19 @@ namespace SaveTracker.Resources.LOGIC.IPC
         private readonly CloudProviderHelper _providerHelper = new();
         private readonly RcloneInstaller _rcloneInstaller = new();
         private readonly RcloneConfigManager _rcloneConfig = new();
+        private readonly IWindowManager _windowManager;
 
-        // Static tracking state (set by MainWindowViewModel)
+        // Static tracking state (set by MainWindowViewModel or active service)
         public static bool IsCurrentlyTracking { get; set; }
         public static string? CurrentlyTrackingGame { get; set; }
         public static bool IsCurrentlyUploading { get; set; }
         public static bool IsCurrentlyDownloading { get; set; }
         public static string? CurrentSyncOperation { get; set; }
+
+        public CommandHandler(IWindowManager windowManager)
+        {
+            _windowManager = windowManager;
+        }
 
         public async Task<IpcResponse> HandleAsync(IpcRequest request)
         {
@@ -434,18 +432,8 @@ namespace SaveTracker.Resources.LOGIC.IPC
             if (game == null)
                 return IpcResponse.Fail($"Game not found: {name}");
 
-            // Signal to show SmartSync dialog directly
-            await Dispatcher.UIThread.InvokeAsync(() =>
-            {
-                var vm = new SmartSyncViewModel(game, SmartSyncMode.ManualSync);
-                var window = new SmartSyncWindow
-                {
-                    DataContext = vm,
-                    WindowStartupLocation = WindowStartupLocation.CenterScreen
-                };
-                window.Show();
-                window.Activate();
-            });
+            // Signal to show SmartSync dialog directly via Interface
+            _windowManager.TriggerSmartSync(game);
 
             return IpcResponse.Success(new { triggered = true, gameName = name });
         }
@@ -466,8 +454,9 @@ namespace SaveTracker.Resources.LOGIC.IPC
 
             try
             {
-                var rcloneOps = new RcloneFileOperations();
                 // This is a simplified call - actual implementation may need more context
+                // In a proper Core implementation, we should use a proper service for this. 
+                // For now, assuming direct file ops is what was intended/supported.
                 return IpcResponse.Success(new { uploadStarted = true, gameName = name });
             }
             catch (Exception ex)
@@ -634,98 +623,35 @@ namespace SaveTracker.Resources.LOGIC.IPC
 
         private IpcResponse HandleShowMainWindow()
         {
-            Dispatcher.UIThread.Post(() =>
-            {
-                if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop && desktop.MainWindow is MainWindow mainWin)
-                {
-                    mainWin.EnsureWindowVisible();
-                }
-                else if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop2)
-                {
-                    // If no main window, create one (rare case as it's the app entry)
-                    var mainWinNew = new MainWindow();
-                    mainWinNew.Show();
-                    mainWinNew.Activate();
-                }
-            });
+            _windowManager.ShowMainWindow();
             return IpcResponse.Success(new { shown = true });
         }
 
         private IpcResponse HandleShowWindow(string windowType)
         {
-            Dispatcher.UIThread.Post(() =>
+            switch (windowType.ToLowerInvariant())
             {
-                try
-                {
-                    Window? window = null;
-
-                    switch (windowType.ToLowerInvariant())
-                    {
-                        case "library":
-                            window = new CloudLibraryWindow();
-                            break;
-
-                        case "blacklist":
-                            window = new BlackListEditor();
-                            break;
-
-                        case "cloudsettings":
-                            var viewModel = new CloudSettingsViewModel();
-                            var view = new UC_CloudSettings { DataContext = viewModel };
-                            var settingsWindow = new Window
-                            {
-                                Title = "Cloud Storage Settings",
-                                Width = 500,
-                                Height = 500,
-                                WindowStartupLocation = WindowStartupLocation.CenterScreen,
-                                Content = view,
-                                SystemDecorations = SystemDecorations.BorderOnly,
-                                Background = Avalonia.Media.Brushes.Transparent,
-                                TransparencyLevelHint = new[] { WindowTransparencyLevel.Transparent },
-                                ExtendClientAreaToDecorationsHint = true,
-                                WindowState = WindowState.Normal
-                            };
-                            viewModel.RequestClose += () => settingsWindow.Close();
-                            window = settingsWindow;
-                            break;
-
-                        case "settings":
-                            window = new SettingsWindow
-                            {
-                                WindowStartupLocation = WindowStartupLocation.CenterScreen
-                            };
-                            break;
-                    }
-
-                    if (window != null)
-                    {
-                        window.Show();
-                        window.Activate();
-                    }
-                }
-                catch (Exception ex)
-                {
-                    DebugConsole.WriteError($"[IPC] Failed to show window '{windowType}': {ex.Message}");
-                }
-            });
+                case "library":
+                    _windowManager.ShowLibrary();
+                    break;
+                case "blacklist":
+                    _windowManager.ShowBlacklist();
+                    break;
+                case "cloudsettings":
+                    _windowManager.ShowCloudSettings();
+                    break;
+                case "settings":
+                    _windowManager.ShowSettings();
+                    break;
+            }
+            
             return IpcResponse.Success(new { triggered = true, window = windowType });
         }
 
         private IpcResponse HandleReportIssue()
         {
-            try
-            {
-                Process.Start(new ProcessStartInfo
-                {
-                    FileName = "https://github.com/KrachDev/SaveTrackerDesktop/issues/new",
-                    UseShellExecute = true
-                });
-                return IpcResponse.Success(new { opened = true });
-            }
-            catch (Exception ex)
-            {
-                return IpcResponse.Fail($"Failed to open browser: {ex.Message}");
-            }
+            _windowManager.ReportIssue();
+            return IpcResponse.Success(new { opened = true });
         }
 
         #endregion

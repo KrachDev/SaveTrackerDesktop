@@ -83,13 +83,17 @@
     <PackageReference Include="Ico.Reader" Version="1.1.5" />
 
     <PackageReference Include="MessageBox.Avalonia" Version="3.3.0" />
-    <PackageReference Include="Microsoft.Diagnostics.Tracing.TraceEvent" Version="3.1.28" />
+    <PackageReference Include="Microsoft.Diagnostics.Tracing.TraceEvent" Version="3.1.29" />
     <PackageReference Include="Microsoft.Toolkit.Uwp.Notifications" Version="7.1.3" />
     <PackageReference Include="Markdown.Avalonia" Version="11.0.2" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
     <PackageReference Include="PeNet" Version="5.1.0" />
-    <PackageReference Include="System.Management" Version="10.0.0" />
+    <PackageReference Include="System.Management" Version="10.0.2" />
     <PackageReference Include="Avalonia.Svg.Skia" Version="11.2.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SaveTracker.Core\SaveTracker.Core.csproj" />
   </ItemGroup>
   <Target Name="AutoIncrementBuildNumber" BeforeTargets="BeforeBuild">
     <PropertyGroup>

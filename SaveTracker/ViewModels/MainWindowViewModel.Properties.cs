@@ -520,7 +520,7 @@ namespace SaveTracker.ViewModels
                     await OnGameAddedAsync(game);
                 }
 
-                _notificationService?.Show("Steam Import", $"Successfully imported {importedGames.Count} games from Steam.", Avalonia.Controls.Notifications.NotificationType.Success);
+                _notificationService?.Show("Steam Import", $"Successfully imported {importedGames.Count} games from Steam.", SaveTracker.Resources.HELPERS.NotificationType.Success);
             }
         }
 
@@ -727,7 +727,7 @@ namespace SaveTracker.ViewModels
                 SelectedGame.Name = newName;
                 SelectedGame.InstallDirectory = game.InstallDirectory;
                 SelectedGame.ExecutablePath = game.ExecutablePath;
-                SelectedGame.Icon = Misc.ExtractIconFromExe(game.ExecutablePath);
+                SelectedGame.Icon = UiHelpers.ExtractIconFromExe(game.ExecutablePath);
 
                 // Update Watcher
                 var updatedGamesList = await ConfigManagement.LoadAllGamesAsync();
@@ -745,7 +745,7 @@ namespace SaveTracker.ViewModels
                 await ConfigManagement.SaveGameData(game, gameData);
 
                 DebugConsole.WriteSuccess($"Game properties updated for: {game.Name}");
-                _notificationService?.Show("Success", "Game properties saved successfully.", Avalonia.Controls.Notifications.NotificationType.Success);
+                _notificationService?.Show("Success", "Game properties saved successfully.", SaveTracker.Resources.HELPERS.NotificationType.Success);
             }
             catch (Exception ex)
             {

@@ -9,6 +9,7 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Collections.Generic;
+using System.IO;
 
 namespace SaveTracker.ViewModels
 {
@@ -23,8 +24,20 @@ namespace SaveTracker.ViewModels
         [ObservableProperty]
         private string _statusMessage = "Ready";
 
+        [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(TotalPlayTimeFormatted))]
+        private TimeSpan _totalPlayTime = TimeSpan.Zero;
+
+        [ObservableProperty]
+        private string _cloudStorageQuota = "Checking...";
+
+        public string TotalPlayTimeFormatted => TotalPlayTime.TotalHours >= 1
+            ? $"{(int)TotalPlayTime.TotalHours}h {TotalPlayTime.Minutes}m"
+            : $"{TotalPlayTime.Minutes}m";
+
         private readonly RcloneExecutor _rcloneExecutor = new RcloneExecutor();
         private readonly CloudProviderHelper _providerHelper = new CloudProviderHelper();
+        private readonly CloudLibraryCacheService _cacheService = CloudLibraryCacheService.Instance;
 
         public CloudLibraryViewModel()
         {
@@ -50,45 +63,64 @@ namespace SaveTracker.ViewModels
                 {
                     try
                     {
-                        // 1. Get Local Games
-                        // Only load raw game data here, no icons yet
+                        // Dictionary to hold final merged items
+                        var mergedGames = new Dictionary<string, LibraryGameItem>(StringComparer.OrdinalIgnoreCase);
+
+                        // STEP 1: Try to load from cache first for instant display of cloud games
+                        var cache = await _cacheService.GetCacheAsync();
+                        if (cache?.Games?.Any() == true)
+                        {
+                            await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                                StatusMessage = $"Loading {cache.Games.Count} cached games...");
+
+                            await LoadFromCacheAsync(cache, mergedGames);
+
+                            DebugConsole.WriteInfo($"[CloudLibrary] Loaded {cache.Games.Count} games from cache");
+                        }
+
+                        // STEP 2: Load local games
+                        await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                            StatusMessage = "Scanning local games...");
+
                         var localGames = await ConfigManagement.LoadAllGamesAsync();
-                        var tempGameData = new List<(Game game, byte[]? iconData)>();
 
                         // Heavy I/O work (icon extraction) in background
                         foreach (var game in localGames)
                         {
                             byte[]? iconData = Misc.ExtractIconDataFromExe(game.ExecutablePath);
-                            tempGameData.Add((game, iconData));
-                        }
 
-                        // Dictionary to hold final items
-                        var mergedGames = new Dictionary<string, LibraryGameItem>(StringComparer.OrdinalIgnoreCase);
-
-                        // Create ViewModels on UI thread (safe for Bitmap/ObservableObject)
-                        await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
-                        {
-                            foreach (var (game, iconData) in tempGameData)
+                            await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
                             {
                                 Avalonia.Media.Imaging.Bitmap? icon = null;
                                 if (iconData != null)
                                 {
-                                    try { using (var ms = new System.IO.MemoryStream(iconData)) icon = new Avalonia.Media.Imaging.Bitmap(ms); } catch { }
+                                    try { using (var ms = new MemoryStream(iconData)) icon = new Avalonia.Media.Imaging.Bitmap(ms); } catch { }
                                 }
 
-                                mergedGames[game.Name] = new LibraryGameItem
+                                if (mergedGames.TryGetValue(game.Name, out var existing))
                                 {
-                                    Name = game.Name,
-                                    IsInstalled = true,
-                                    LocalPath = game.InstallDirectory,
-                                    Icon = icon
-                                    // Cloud status unknown yet
-                                };
-                            }
-                        });
+                                    // Update existing cloud-only entry with local info
+                                    existing.IsInstalled = true;
+                                    existing.LocalPath = game.InstallDirectory;
+                                    if (icon != null) existing.Icon = icon;
+                                }
+                                else
+                                {
+                                    // Add new local-only game
+                                    mergedGames[game.Name] = new LibraryGameItem
+                                    {
+                                        Name = game.Name,
+                                        IsInstalled = true,
+                                        LocalPath = game.InstallDirectory,
+                                        Icon = icon
+                                    };
+                                }
+                            });
+                        }
 
-                        // 2. Get Cloud Games
-                        await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => StatusMessage = "Fetching cloud list...");
+                        // STEP 3: Check cloud for any games not in cache (fresh scan)
+                        await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                            StatusMessage = "Checking cloud...");
 
                         var config = await ConfigManagement.LoadConfigAsync();
                         var provider = config.CloudConfig.Provider;
@@ -117,7 +149,7 @@ namespace SaveTracker.ViewModels
                                     }
                                     else
                                     {
-                                        // New cloud-only item
+                                        // New cloud-only item not in cache
                                         await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
                                         {
                                             mergedGames[name] = new LibraryGameItem
@@ -132,20 +164,37 @@ namespace SaveTracker.ViewModels
                             }
                         }
 
-                        // 3. Populate Collection on UI Thread
+                        // Get Quota
+                        try
+                        {
+                            var quota = await _rcloneExecutor.GetCloudQuotaAsync(provider);
+                            if (quota != null)
+                            {
+                                await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                                {
+                                    CloudStorageQuota = $"Storage: {Misc.FormatFileSize(quota.Value.Used)} / {Misc.FormatFileSize(quota.Value.Total)}";
+                                });
+                            }
+                        }
+                        catch { /* Ignore quota check errors */ }
+
+                        // STEP 4: Populate Collection on UI Thread
                         await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
                         {
+                            LibraryGames.Clear();
                             foreach (var item in mergedGames.Values.OrderBy(g => g.Name))
                             {
                                 LibraryGames.Add(item);
                             }
+
+                            // Calculate total playtime
+                            TotalPlayTime = LibraryGames.Aggregate(TimeSpan.Zero, (sum, game) => sum + game.PlayTime);
+
                             StatusMessage = $"Loaded {LibraryGames.Count} games ({LibraryGames.Count(g => g.IsInCloud)} in cloud)";
                         });
 
-                        // 4. Background: Scan and Load Cloud Icons
-                        // We don't await this so the UI unblocks immediately
-                        _ = ScanAndDownloadCloudIconsAsync(remotePath, configPath, mergedGames);
-
+                        // Legacy icon scanning removed to prevent rate limits.
+                        // Icons are now handled by the centralized CloudLibraryCacheService.
                     }
                     catch (Exception ex)
                     {
@@ -171,102 +220,46 @@ namespace SaveTracker.ViewModels
             }
         }
 
-        private async Task ScanAndDownloadCloudIconsAsync(
-            string remoteBasePath,
-            string configPath,
-            Dictionary<string, LibraryGameItem> itemsMap)
+        /// <summary>
+        /// Load games from cache into the merged dictionary
+        /// </summary>
+        private async Task LoadFromCacheAsync(CloudLibraryCache cache, Dictionary<string, LibraryGameItem> mergedGames)
         {
-            try
+            await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
             {
-                // Recursive scan for all icon.png files
-                // Output format will be like "GameName/icon.png" or "GameName/SubFolder/icon.png"
-                // We only care about root "GameName/icon.png" usually, but let's see.
-                // The remoteBasePath is "remote:SaveTrackerCloudSave"
-                // So lsf will return paths relative to that.
-
-                var result = await _rcloneExecutor.ExecuteRcloneCommand(
-                    $"lsf \"{remoteBasePath}\" --recursive --files-only --include \"*/icon.png\" --config \"{configPath}\" " + RcloneExecutor.GetPerformanceFlags(),
-                    TimeSpan.FromSeconds(30)
-                );
-
-                if (!result.Success || string.IsNullOrWhiteSpace(result.Output))
-                    return;
-
-                var lines = result.Output.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-                var gamesWithIcons = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-                foreach (var line in lines)
+                foreach (var entry in cache.Games)
                 {
-                    // line is like "GameName/icon.png"
-                    // We need to extract "GameName"
-                    var parts = line.Trim().Split('/');
-                    if (parts.Length == 2 && parts[1].Equals("icon.png", StringComparison.OrdinalIgnoreCase))
+                    // Load icon from cache if available
+                    Avalonia.Media.Imaging.Bitmap? icon = null;
+                    var iconPath = entry.CachedIconPath ?? _cacheService.GetIconPath(entry.Name);
+
+                    if (iconPath != null && File.Exists(iconPath))
                     {
-                        gamesWithIcons.Add(parts[0]);
-                    }
-                }
-
-                // Identify items that need an icon (Have cloud icon, but no execution icon)
-                var iconsToFetch = itemsMap.Values
-                    .Where(i => i.Icon == null && gamesWithIcons.Contains(i.Name))
-                    .ToList();
-
-                if (!iconsToFetch.Any())
-                    return;
-
-                await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
-                {
-                    StatusMessage = $"Found {iconsToFetch.Count} cloud icons. Downloading...";
-                });
-
-                // Download icons one by one (or with limited concurrency)
-                foreach (var item in iconsToFetch)
-                {
-                    try
-                    {
-                        string remoteIconPath = $"{remoteBasePath}/{item.Name}/icon.png";
-                        string tempFile = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"st_icon_{Guid.NewGuid()}.png");
-
-                        var downloadResult = await _rcloneExecutor.ExecuteRcloneCommand(
-                            $"copyto \"{remoteIconPath}\" \"{tempFile}\" --config \"{configPath}\"",
-                            TimeSpan.FromSeconds(20)
-                        );
-
-                        if (downloadResult.Success && System.IO.File.Exists(tempFile))
+                        try
                         {
-                            await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
-                            {
-                                try
-                                {
-                                    using (var fs = System.IO.File.OpenRead(tempFile))
-                                    {
-                                        item.Icon = new Avalonia.Media.Imaging.Bitmap(fs);
-                                    }
-                                }
-                                catch { /* Ignore bitmap load error */ }
-                            });
+                            using var fs = File.OpenRead(iconPath);
+                            icon = new Avalonia.Media.Imaging.Bitmap(fs);
                         }
+                        catch { /* Ignore icon load error */ }
+                    }
 
-                        // Cleanup
-                        if (System.IO.File.Exists(tempFile))
-                            System.IO.File.Delete(tempFile);
-                    }
-                    catch (Exception ex)
+                    mergedGames[entry.Name] = new LibraryGameItem
                     {
-                        DebugConsole.WriteWarning($"Failed to fetch icon for {item.Name}: {ex.Message}");
-                    }
+                        Name = entry.Name,
+                        IsInCloud = true,
+                        IsInstalled = false, // Will be updated when we scan local games
+                        PlayTime = entry.PlayTime,
+                        TotalSize = entry.TotalSize,
+                        FileCount = entry.FileCount,
+                        Icon = icon
+                    };
                 }
 
-                await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
-                {
-                    StatusMessage = "Ready";
-                });
-            }
-            catch (Exception ex)
-            {
-                DebugConsole.WriteException(ex, "ScanAndDownloadCloudIconsAsync Error");
-            }
+                // Initial total playtime from cache
+                TotalPlayTime = mergedGames.Values.Aggregate(TimeSpan.Zero, (sum, game) => sum + game.PlayTime);
+            });
         }
+
     }
 
     public partial class LibraryGameItem : ObservableObject
@@ -286,6 +279,18 @@ namespace SaveTracker.ViewModels
         [ObservableProperty]
         private Avalonia.Media.Imaging.Bitmap? _icon;
 
+        [ObservableProperty]
+        private TimeSpan _playTime = TimeSpan.Zero;
+
+        [ObservableProperty]
+        [NotifyPropertyChangedFor(nameof(TotalSizeFormatted))]
+        private long _totalSize = 0;
+
+        public string TotalSizeFormatted => Misc.FormatFileSize(TotalSize);
+
+        [ObservableProperty]
+        private int _fileCount = 0;
+
         public string StatusText => (IsInstalled, IsInCloud) switch
         {
             (true, true) => "Installed & Synced",
@@ -301,5 +306,14 @@ namespace SaveTracker.ViewModels
             (false, true) => "#007ACC", // Blue
             _ => "Red"
         };
+
+        /// <summary>
+        /// Formatted playtime string (e.g., "2h 30m" or "45m")
+        /// </summary>
+        public string PlayTimeFormatted => PlayTime.TotalHours >= 1
+            ? $"{(int)PlayTime.TotalHours}h {PlayTime.Minutes}m"
+            : PlayTime.TotalMinutes >= 1
+                ? $"{(int)PlayTime.TotalMinutes}m"
+                : PlayTime == TimeSpan.Zero ? "" : "< 1m";
     }
 }

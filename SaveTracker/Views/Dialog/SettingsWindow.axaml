@@ -3,6 +3,7 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:vm="using:SaveTracker.ViewModels"
+        xmlns:dialog="using:SaveTracker.Views.Dialog"
         mc:Ignorable="d" 
         d:DesignWidth="900" 
         d:DesignHeight="650"
@@ -123,6 +124,12 @@
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
+
+            <!-- Cloud Storage Tab -->
+            <TabItem Header="☁️ Cloud Storage">
+                <dialog:UC_CloudSettings DataContext="{Binding CloudSettings}"/>
+            </TabItem>
+
 
             <!-- Analytics Tab -->
             <TabItem Header="📊 Analytics">

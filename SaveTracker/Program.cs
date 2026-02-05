@@ -1,103 +1,74 @@
 ﻿using Avalonia;
-using Avalonia.Threading;
+
 using System;
-using System.Diagnostics;
 using System.IO;
 using System.IO.Pipes;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using Avalonia.Svg.Skia;
 
 namespace SaveTracker
 {
-    internal sealed class Program
+    internal class Program
     {
-        // 1. Unique ID for your app.
-        private const string UniqueAppName = "SaveTracker_SingleInstance_Mutex_ID";
-        private const string PipeName = "SaveTracker_Pipe_Channel";
-
+        // Mutex for single instance check
         private static Mutex? _mutex;
+        private const string MutexName = "Global\\SaveTracker_SingleInstance_Mutex";
 
-        // 2. An event other parts of your app can listen to
-        public static event Action<string[]>? FilesDropped;
-
+        // Initialization code. Don't use any Avalonia, third-party APIs or any
+        // SynchronizationContext-reliant code before AppMain is called: things aren't initialized
+        // yet and stuff might break.
         [STAThread]
         public static void Main(string[] args)
         {
-            // 3. Check if an instance is already running
-            bool isNewInstance;
-            _mutex = new Mutex(true, UniqueAppName, out isNewInstance);
+            // Ensure only one instance is running
+            bool createdNew;
+            _mutex = new Mutex(true, MutexName, out createdNew);
 
-            if (!isNewInstance)
+            if (!createdNew)
             {
-                // --- SECOND INSTANCE ---
-                // App is already running. Send args to it and close.
-                SendArgsToRunningInstance(args);
+                // App is already running!
+                // Attempt to send arguments to the existing instance via Named Pipe
+                SendArgsToExistingInstance(args);
+
+                // Exit this new instance
                 return;
             }
 
-            // --- FIRST INSTANCE ---
-            // Start the background listener for future args
-            Task.Run(StartNamedPipeServer);
-
-            // Start the IPC Command Server for external addons
-            Task.Run(() => SaveTracker.Resources.LOGIC.IPC.IpcServer.StartAsync());
-
-            // Start Avalonia normally
-            BuildAvaloniaApp()
-                .StartWithClassicDesktopLifetime(args);
-
-            // Release mutex when app closes
-            _mutex.ReleaseMutex();
-        }
-
-        // --- LOGIC TO SEND ARGS (CLIENT) ---
-        private static void SendArgsToRunningInstance(string[] args)
-        {
-            if (args.Length == 0) return;
-
             try
             {
-                using var client = new NamedPipeClientStream(".", PipeName, PipeDirection.Out);
-                client.Connect(1000); // Wait 1 sec for connection
+                // Start the IPC Command Server and inject the Avalonia Window Manager
+                var windowManager = new AvaloniaWindowManager();
+                Task.Run(() => SaveTracker.Resources.LOGIC.IPC.IpcServer.StartAsync(windowManager));
 
-                using var writer = new StreamWriter(client);
-                // We join args with a specific separator to send them over the pipe
-                writer.Write(string.Join("|||", args));
-                writer.Flush();
+                BuildAvaloniaApp()
+                    .StartWithClassicDesktopLifetime(args);
             }
-            catch (Exception) { /* Ignore errors if main app is unresponsive */ }
+            finally
+            {
+                _mutex.ReleaseMutex();
+            }
         }
 
-        // --- LOGIC TO RECEIVE ARGS (SERVER) ---
-        private static void StartNamedPipeServer()
+        private static void SendArgsToExistingInstance(string[] args)
         {
-            while (true)
+            try
             {
-                try
-                {
-                    using var server = new NamedPipeServerStream(PipeName, PipeDirection.In);
-                    server.WaitForConnection();
+                // If we were launched with arguments (e.g. "showmainwindow"), pass them to the running instance
+                string command = args.Length > 0 ? string.Join(" ", args) : "showmainwindow";
 
-                    using var reader = new StreamReader(server);
-                    var text = reader.ReadToEnd();
-                    var args = text.Split(new[] { "|||" }, StringSplitOptions.RemoveEmptyEntries);
+                // Simple client to send command to the existing server
+                using var client = new NamedPipeClientStream(".", "SaveTracker_Command_Pipe", PipeDirection.InOut);
+                client.Connect(1000);
 
-                    // Send to UI Thread
-                    Dispatcher.UIThread.InvokeAsync(() =>
-                    {
-                        // Trigger the event!
-                        FilesDropped?.Invoke(args);
-
-                        // Optional: Bring window to front (requires reference to MainWindow)
-                        if (Application.Current?.ApplicationLifetime is
-                            Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop)
-                        {
-                            desktop.MainWindow?.Activate();
-                        }
-                    });
-                }
-                catch { /* Handle server errors/restarts */ }
+                // Send simple JSON command
+                var json = $"{{\"id\":\"wake_dup\",\"command\":\"{command}\"}}";
+                byte[] bytes = Encoding.UTF8.GetBytes(json);
+                client.Write(bytes, 0, bytes.Length);
+            }
+            catch (Exception)
+            {
+                // Ignore errors if we can't notify the other instance
             }
         }
 
@@ -107,5 +78,6 @@ namespace SaveTracker
                 .UsePlatformDetect()
                 .WithInterFont()
                 .LogToTrace();
+
     }
 }

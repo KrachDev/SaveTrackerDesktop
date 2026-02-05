@@ -1,4 +1,7 @@
+using Avalonia;
+using Avalonia.Controls;
 using CommunityToolkit.Mvvm.ComponentModel;
+using SaveTracker.Models;
 using CommunityToolkit.Mvvm.Input;
 using SaveTracker.Resources.HELPERS;
 using SaveTracker.Resources.Logic.RecloneManagement;
@@ -55,21 +58,38 @@ namespace SaveTracker.ViewModels
         private async void InitializeAsync()
         {
             await CheckRcloneStatusAsync();
-            LoadProviders();
-        }
-
-        private void LoadProviders()
-        {
-            Providers.Clear();
-            var supported = _providerHelper.GetSupportedProviders();
-            foreach (var provider in supported)
-            {
-                Providers.Add(new CloudProviderDisplay(provider, _providerHelper.GetProviderDisplayName(provider)));
+                await LoadProvidersAsync();
             }
 
-            // Default selection (try to load from config if possible, otherwise default to first)
-            SelectedProvider = Providers.FirstOrDefault();
-        }
+            private async Task LoadProvidersAsync()
+            {
+                Providers.Clear();
+                var supported = _providerHelper.GetSupportedProviders();
+                foreach (var provider in supported)
+                {
+                    Providers.Add(new CloudProviderDisplay(provider, _providerHelper.GetProviderDisplayName(provider)));
+                }
+
+                // Try to load from config, otherwise default to first
+                try
+                {
+                    var config = await ConfigManagement.LoadConfigAsync();
+                    if (config?.CloudConfig?.Provider != null)
+                    {
+                        var savedProvider = Providers.FirstOrDefault(p => p.Provider == config.CloudConfig.Provider);
+                        SelectedProvider = savedProvider ?? Providers.FirstOrDefault();
+                    }
+                    else
+                    {
+                        SelectedProvider = Providers.FirstOrDefault();
+                    }
+                }
+                catch
+                {
+                    // If config loading fails, default to first provider
+                    SelectedProvider = Providers.FirstOrDefault();
+                }
+            }
 
         private async Task CheckRcloneStatusAsync()
         {
@@ -187,7 +207,11 @@ namespace SaveTracker.ViewModels
 
             try
             {
-                bool success = await _rcloneInstaller.SetupConfigAsync(SelectedProvider.Provider);
+                // Run configuration in background to avoid freezing UI during browser wait
+                bool success = await Task.Run(async () =>
+                {
+                    return await _rcloneInstaller.SetupConfigAsync(SelectedProvider.Provider);
+                });
 
                 if (success)
                 {
@@ -202,7 +226,7 @@ namespace SaveTracker.ViewModels
                         await ConfigManagement.SaveConfigAsync(config);
                     }
 
-                    RequestClose?.Invoke();
+                    Avalonia.Threading.Dispatcher.UIThread.Post(() => RequestClose?.Invoke());
                 }
                 else
                 {
@@ -223,6 +247,93 @@ namespace SaveTracker.ViewModels
         private bool CanConfigure()
         {
             return SelectedProvider != null && IsRcloneInstalled;
+        }
+
+        [RelayCommand]
+        private async Task ForceUpdateCacheAsync()
+        {
+            if (IsBusy) return;
+
+            IsBusy = true;
+            StatusMessage = "Forcing cloud cache update...";
+
+            try
+            {
+                var cacheService = CloudLibraryCacheService.Instance;
+
+                // Run in background thread to avoid locking UI
+                AchievementCacheSummary? summary = null;
+                await Task.Run(async () =>
+                {
+                    summary = await cacheService.RefreshCacheAsync(new Progress<string>(status =>
+                    {
+                        // Update status message on UI thread
+                        Avalonia.Threading.Dispatcher.UIThread.Post(() => StatusMessage = status);
+                    }));
+                });
+
+                if (summary != null && summary.NeedsInputCount > 0)
+                {
+                    StatusMessage = $"Found {summary.NeedsInputCount} games missing AppID. Waiting for input...";
+
+                    await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(async () =>
+                    {
+                        var games = summary.Results
+                                    .Where(r => r.Status == "NeedsInput")
+                                    .Select(r => r.GameName)
+                                    .ToArray();
+
+                        var dialogVm = new AppIdEntryViewModel(games);
+                        var dialog = new SaveTracker.Views.Dialog.AppIdEntryWindow(dialogVm);
+
+                        // Try to find a parent window
+                        Window? parent = null;
+                        if (Avalonia.Application.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop)
+                        {
+                            parent = desktop.Windows.FirstOrDefault(w => w.IsActive) ?? desktop.MainWindow;
+                        }
+
+                        var result = await dialog.ShowDialog<bool>(parent!);
+
+                        if (result)
+                        {
+                            StatusMessage = "Processing manual App IDs...";
+                            int processed = 0;
+                            foreach (var game in dialogVm.Games)
+                            {
+                                if (!string.IsNullOrWhiteSpace(game.AppId))
+                                {
+                                    await cacheService.SetManualAppId(game.GameName, game.AppId);
+                                    await cacheService.RetryAchievementProcessing(game.GameName);
+                                    processed++;
+                                }
+                            }
+                            StatusMessage = $"Updated {processed} games with manual App IDs.";
+                        }
+                        else
+                        {
+                            StatusMessage = "Manual App ID entry skipped.";
+                        }
+                    });
+                }
+                else
+                {
+                    StatusMessage = "Cloud cache updated successfully!";
+                }
+
+                await Task.Delay(2000); // Show success message for a moment
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteException(ex, "Failed to force update cloud cache");
+                StatusMessage = "Failed to update cache.";
+            }
+            finally
+            {
+                IsBusy = false;
+                if (StatusMessage.Contains("successfully") || StatusMessage.Contains("Updated"))
+                    StatusMessage = "";
+            }
         }
 
         [RelayCommand]

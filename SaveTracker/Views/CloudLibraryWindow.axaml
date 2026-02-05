@@ -31,6 +31,26 @@
                                Foreground="#858585"
                                VerticalAlignment="Center"
                                Margin="10,0,0,0"/>
+                               
+                     <Border Background="#333333" CornerRadius="4" Padding="8,2" Margin="20,0,0,0" VerticalAlignment="Center">
+                        <StackPanel Orientation="Horizontal" Spacing="5">
+                            <TextBlock Text="⏱️" VerticalAlignment="Center"/>
+                             <TextBlock Text="{Binding TotalPlayTimeFormatted}" 
+                                       Foreground="#4CC9B0" 
+                                       FontWeight="Bold"
+                                       VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Border>
+
+                     <Border Background="#333333" CornerRadius="4" Padding="8,2" Margin="10,0,0,0" VerticalAlignment="Center">
+                        <StackPanel Orientation="Horizontal" Spacing="5">
+                           <TextBlock Text="☁️" VerticalAlignment="Center"/>
+                             <TextBlock Text="{Binding CloudStorageQuota}" 
+                                       Foreground="#4CC9B0" 
+                                       FontWeight="Bold"
+                                       VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Border>
                 </StackPanel>
                 
                 <Button Grid.Column="1"
@@ -82,6 +102,18 @@
                                     Binding="{Binding Name}" 
                                     Width="*"
                                     Foreground="White"/>
+
+                <!-- Size -->
+                <DataGridTextColumn Header="Size" 
+                                    Binding="{Binding TotalSizeFormatted}" 
+                                    Width="80"
+                                    Foreground="#CCCCCC"/>
+
+                <!-- Playtime -->
+                <DataGridTextColumn Header="Playtime" 
+                                    Binding="{Binding PlayTimeFormatted}" 
+                                    Width="100"
+                                    Foreground="#4CC9B0"/>
 
                 <!-- Status Text -->
                 <DataGridTemplateColumn Header="Status" Width="150">

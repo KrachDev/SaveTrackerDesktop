@@ -32,6 +32,7 @@ namespace SaveTracker.Resources.HELPERS
             @"C:\Tmp",
             @"C:\Windows\Temp",
             // Graphics card caches and drivers
+            Path.Combine(UserProfile, @"AppData\Local\AMD\D3DSCache"),
             Path.Combine(UserProfile, @"AppData\Local\AMD\VkCache"),
             Path.Combine(UserProfile, @"AppData\Local\AMD\DxCache"),
             Path.Combine(UserProfile, @"AppData\Local\AMD"),
@@ -96,7 +97,10 @@ namespace SaveTracker.Resources.HELPERS
             StringComparer.OrdinalIgnoreCase
         ) {
             ".tmp",
+            ".preload",
+            ".cache",
             ".log",
+            ".rptq",
             ".dmp",
             ".crash",
             ".old",
@@ -173,6 +177,9 @@ namespace SaveTracker.Resources.HELPERS
             "sentrynative",
             "event",
             "telemetry",
+            "Windows",
+            "Crashes",
+            "Microsoft",
             "metrics",
             "mods",
             ".savetracker_checksums.json",

@@ -193,6 +193,35 @@ namespace SaveTracker.Resources.Logic
             }
         }
 
+        // Helper to get remote file ModTime using lsjson
+        private async Task<DateTime?> GetRemoteFileModTime(string remotePath, CloudProvider provider)
+        {
+            try
+            {
+                var configPath = RclonePathHelper.GetConfigPath(provider);
+                // Use lsjson to get specific file metadata
+                // Note: lsjson on a full path usually returns the file info
+                var command = $"lsjson \"{remotePath}\" --config \"{configPath}\" --no-mimetype --files-only " + RcloneExecutor.GetPerformanceFlags();
+
+                var result = await new RcloneExecutor().ExecuteRcloneCommand(command, TimeSpan.FromSeconds(15));
+                if (!result.Success || string.IsNullOrWhiteSpace(result.Output)) return null;
+
+                var items = JsonConvert.DeserializeObject<List<RcloneFileItem>>(result.Output);
+                return items?.FirstOrDefault()?.ModTime;
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteDebug($"Failed to get remote ModTime for {remotePath}: {ex.Message}");
+                return null;
+            }
+        }
+
+        // Inner class for lsjson parsing
+        private class RcloneFileItem
+        {
+            public DateTime ModTime { get; set; }
+        }
+
         /// <summary>
         /// Download and read cloud checksum file to get PlayTime
         /// </summary>
@@ -213,7 +242,78 @@ namespace SaveTracker.Resources.Logic
 
                 DebugConsole.WriteInfo($"Checking cloud for: {remoteBasePath}");
 
-                // Check if cloud save exists
+                // Determine file names
+                string gameDirectory = game.InstallDirectory;
+                string checksumLocalFullPath = _checksumService.GetChecksumFilePath(gameDirectory, game.ActiveProfileId);
+                string checksumFileName = Path.GetFileName(checksumLocalFullPath);
+
+                var gameData = await ConfigManagement.GetGameData(game);
+                string? detectedPrefix = gameData?.DetectedPrefix;
+                string relativeChecksumPath = PathContractor.ContractPath(checksumLocalFullPath, gameDirectory, detectedPrefix).Replace('\\', '/');
+
+                string primaryRemotePath = $"{remoteBasePath}/{relativeChecksumPath}";
+                string legacyChecksumName = ".savetracker_checksums.json";
+                string legacyRelativePath = relativeChecksumPath.Replace(checksumFileName, legacyChecksumName);
+                string legacyRemotePath = $"{remoteBasePath}/{legacyRelativePath}";
+
+                // === OPTIMIZATION: Check Local Cache First ===
+                try
+                {
+                    var cacheDir = CloudLibraryCacheService.Instance.GetGameCacheDirectory(game.Name);
+                    if (Directory.Exists(cacheDir))
+                    {
+                        // Check Primary Name
+                        string cachedPrimary = Path.Combine(cacheDir, checksumFileName);
+                        if (File.Exists(cachedPrimary))
+                        {
+                            var modTime = await GetRemoteFileModTime(primaryRemotePath, effectiveProvider);
+                            if (modTime.HasValue)
+                            {
+                                var localInfo = new FileInfo(cachedPrimary);
+                                // Allow 2s tolerance for timestamp precision differences
+                                if (Math.Abs((localInfo.LastWriteTime - modTime.Value).TotalSeconds) < 2)
+                                {
+                                    DebugConsole.WriteSuccess($"Cache HIT: Using local cached checksum for {checksumFileName}");
+                                    string json = await File.ReadAllTextAsync(cachedPrimary);
+                                    var data = JsonConvert.DeserializeObject<GameUploadData>(json);
+                                    return data?.PlayTime;
+                                }
+                                else
+                                {
+                                    DebugConsole.WriteInfo($"Cache MISS: Remote {checksumFileName} is newer/different.");
+                                }
+                            }
+                        }
+
+                        // Check Legacy Name if Primary didn't match (or wasn't checked)
+                        // Note: If Primary existed efficiently, we returned above. 
+                        // If Primary remote check failed (null), we might check legacy remote.
+
+                        string cachedLegacy = Path.Combine(cacheDir, legacyChecksumName);
+                        if (File.Exists(cachedLegacy))
+                        {
+                            var modTime = await GetRemoteFileModTime(legacyRemotePath, effectiveProvider);
+                            if (modTime.HasValue)
+                            {
+                                var localInfo = new FileInfo(cachedLegacy);
+                                if (Math.Abs((localInfo.LastWriteTime - modTime.Value).TotalSeconds) < 2)
+                                {
+                                    DebugConsole.WriteSuccess($"Cache HIT: Using local cached checksum for {legacyChecksumName}");
+                                    string json = await File.ReadAllTextAsync(cachedLegacy);
+                                    var data = JsonConvert.DeserializeObject<GameUploadData>(json);
+                                    return data?.PlayTime;
+                                }
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    DebugConsole.WriteWarning($"Cache optimization check failed: {ex.Message}");
+                }
+                // =============================================
+
+                // Check if cloud save exists (Directory check)
                 bool cloudExists = await _rcloneOps.CheckCloudSaveExistsAsync(remoteBasePath, effectiveProvider);
                 if (!cloudExists)
                 {
@@ -227,30 +327,18 @@ namespace SaveTracker.Resources.Logic
 
                 try
                 {
-                    // The checksum file is uploaded with path contraction
-                    string gameDirectory = game.InstallDirectory;
-                    // Use profile-aware path
-                    string checksumLocalFullPath = _checksumService.GetChecksumFilePath(gameDirectory, game.ActiveProfileId);
-                    string checksumFileName = Path.GetFileName(checksumLocalFullPath);
-
-                    var gameData = await ConfigManagement.GetGameData(game);
-                    string? detectedPrefix = gameData?.DetectedPrefix;
-
-                    // Get the relative path that would be used for upload (contracted path)
-                    string relativeChecksumPath = PathContractor.ContractPath(checksumLocalFullPath, gameDirectory, detectedPrefix).Replace('\\', '/');
-                    string checksumRemotePath = $"{remoteBasePath}/{relativeChecksumPath}";
                     string checksumLocalPath = Path.Combine(tempFolder, relativeChecksumPath);
 
                     // Create local folder if needed
                     string? localDir = Path.GetDirectoryName(checksumLocalPath);
                     if (!string.IsNullOrEmpty(localDir)) Directory.CreateDirectory(localDir);
 
-                    DebugConsole.WriteInfo($"Downloading checksum from: {checksumRemotePath}");
+                    DebugConsole.WriteInfo($"Downloading checksum from: {primaryRemotePath}");
 
                     // Use RcloneTransferService for reliable download with retry
                     var transferService = new RcloneTransferService();
                     bool downloaded = await transferService.DownloadFileWithRetry(
-                        checksumRemotePath,
+                        primaryRemotePath,
                         checksumLocalPath,
                         checksumFileName,
                         effectiveProvider
@@ -259,12 +347,8 @@ namespace SaveTracker.Resources.Logic
                     // Fallback to legacy checksum name if profile-specific failed
                     if (!downloaded)
                     {
-                        string legacyChecksumName = ".savetracker_checksums.json";
-                        string legacyRelativePath = relativeChecksumPath.Replace(checksumFileName, legacyChecksumName);
-                        string legacyRemotePath = $"{remoteBasePath}/{legacyRelativePath}";
-                        
                         DebugConsole.WriteInfo($"Attempting legacy checksum fetch: {legacyRelativePath}");
-                        
+
                         downloaded = await transferService.DownloadFileWithRetry(
                             legacyRemotePath,
                             checksumLocalPath, // Save it to the same local path for deserialization

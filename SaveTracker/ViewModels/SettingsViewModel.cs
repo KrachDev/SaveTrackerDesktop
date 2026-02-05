@@ -56,8 +56,12 @@ namespace SaveTracker.ViewModels
 
         private UpdateInfo? _latestUpdateInfo;
 
+        [ObservableProperty]
+        private CloudSettingsViewModel _cloudSettings;
+
         public SettingsViewModel()
         {
+            CloudSettings = new CloudSettingsViewModel();
             LoadSettings();
 
             // Get current version

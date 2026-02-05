@@ -1,12 +1,6 @@
-﻿using Avalonia;
-using Avalonia.Controls;
-using Avalonia.Media.Imaging;
-using Avalonia.Platform;
-using Ico.Reader;
-using MsBox.Avalonia.Enums;
+﻿using Ico.Reader;
 using SaveTracker.Resources.Logic;
 using SaveTracker.Resources.Logic.RecloneManagement;
-
 using SaveTracker.Resources.SAVE_SYSTEM;
 using System;
 using System.Collections.Generic;
@@ -90,87 +84,10 @@ namespace SaveTracker.Resources.HELPERS
             if (name.Contains('\uFFFD') || name.All(c => !char.IsLetterOrDigit(c))) return false;
             return true;
         }
-        public static ListBoxItem CreateGame(Game game)
+
+        public static byte[]? ExtractIconFromExe(string exePath)
         {
-            var item = new ListBoxItem();
-            var border = new Border
-            {
-                Padding = new Avalonia.Thickness(10, 8),
-                CornerRadius = new CornerRadius(4)
-            };
-            var grid = new Grid();
-            grid.ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto");
-
-            // Left icon (exe icon)
-            Image iconImage = new Image
-            {
-                Width = 40,
-                Height = 40,
-                Stretch = Avalonia.Media.Stretch.Uniform,
-            };
-
-            // Try to load exe icon
-            var iconBitmap = ExtractIconFromExe(game.ExecutablePath);
-            iconImage.Source = iconBitmap;
-
-            var iconBorder = new Border
-            {
-                Width = 40,
-                Height = 40,
-                Background = Avalonia.Media.Brushes.Black,
-                CornerRadius = new CornerRadius(4),
-                Margin = new Avalonia.Thickness(0, 0, 10, 0),
-                Child = iconImage
-            };
-            Grid.SetColumn(iconBorder, 0);
-            grid.Children.Add(iconBorder);
-
-            // Middle stackpanel
-            var stackPanel = new StackPanel
-            {
-                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center
-            };
-            Grid.SetColumn(stackPanel, 1);
-            stackPanel.Children.Add(new TextBlock
-            {
-                Text = game.Name,
-                FontWeight = Avalonia.Media.FontWeight.SemiBold
-            });
-            stackPanel.Children.Add(new TextBlock
-            {
-                Text = $"Last tracked: {game.LastTracked}",
-                FontSize = 11,
-                Foreground = Avalonia.Media.Brushes.Gray
-            });
-            grid.Children.Add(stackPanel);
-
-            // Right indicator
-            var indicator = new Border
-            {
-                Background = Avalonia.Media.Brushes.Gray,
-                CornerRadius = new CornerRadius(10),
-                Width = 10,
-                Height = 10,
-                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center
-            };
-            Grid.SetColumn(indicator, 2);
-            grid.Children.Add(indicator);
-
-            border.Child = grid;
-            item.Content = border;
-            item.Tag = game;
-            return item;
-        }
-
-        public static Bitmap? ExtractIconFromExe(string exePath)
-        {
-            var data = ExtractIconDataFromExe(exePath);
-            if (data == null) return null;
-
-            using (var ms = new MemoryStream(data))
-            {
-                return new Bitmap(ms);
-            }
+             return ExtractIconDataFromExe(exePath);
         }
 
         public static byte[]? ExtractIconDataFromExe(string exePath)

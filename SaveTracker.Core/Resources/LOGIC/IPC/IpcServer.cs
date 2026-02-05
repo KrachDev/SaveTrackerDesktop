@@ -20,15 +20,13 @@ namespace SaveTracker.Resources.LOGIC.IPC
         private static CancellationTokenSource? _cts;
         private static CommandHandler? _handler;
 
-
-
         /// <summary>
         /// Starts the IPC server in a background loop
         /// </summary>
-        public static async Task StartAsync(CancellationToken cancellationToken = default)
+        public static async Task StartAsync(IWindowManager windowManager, CancellationToken cancellationToken = default)
         {
             _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            _handler = new CommandHandler();
+            _handler = new CommandHandler(windowManager);
 
             DebugConsole.WriteInfo("[IPC] Starting command server on pipe: " + PipeName);
 

@@ -1,0 +1,7 @@
+C:\Users\Kracher\source\repos\KrachDev\SaveTrackerDesktop\SaveTracker.Core\Resources\LOGIC\CloudLibraryCacheService.cs(744,39): error CS0103: The name 'Helpers' does not exist in the current context [C:\Users\Kracher\source\repos\KrachDev\SaveTrackerDesktop\SaveTracker.Core\SaveTracker.Core.csproj]
+
+Build FAILED.
+    71 Warning(s)
+    1 Error(s)
+
+Time Elapsed 00:00:01.12

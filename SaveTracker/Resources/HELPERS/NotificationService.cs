@@ -3,19 +3,12 @@ using Avalonia.Controls;
 using System;
 using System.Threading.Tasks;
 using Avalonia.Threading;
-#if WINDOWS
 using Microsoft.Toolkit.Uwp.Notifications;
-#endif
 using SaveTracker.Resources.SAVE_SYSTEM;
+using SaveTracker.Resources.HELPERS;
 
 namespace SaveTracker.Resources.HELPERS
 {
-    public interface INotificationService
-    {
-        void Show(string title, string message, NotificationType type = NotificationType.Information);
-        Task ShowAsync(string title, string message, NotificationType type = NotificationType.Information);
-    }
-
     public class NotificationService : INotificationService
     {
         private readonly WindowNotificationManager? _windowNotificationManager;
@@ -32,7 +25,6 @@ namespace SaveTracker.Resources.HELPERS
             // Register the app for Windows notifications
             if (OperatingSystem.IsWindowsVersionAtLeast(10, 0, 17763))
             {
-#if WINDOWS
                 try
                 {
                     ToastNotificationManagerCompat.OnActivated += toastArgs =>
@@ -47,7 +39,6 @@ namespace SaveTracker.Resources.HELPERS
                 {
                     DebugConsole.WriteException(ex, "Failed to register Windows toast notifications");
                 }
-#endif
             }
         }
 
@@ -84,7 +75,8 @@ namespace SaveTracker.Resources.HELPERS
                     DebugConsole.WriteInfo("Showing in-app notification");
                     await Dispatcher.UIThread.InvokeAsync(() =>
                     {
-                        _windowNotificationManager.Show(new Notification(title, message, type));
+                        var avaloniaType = MapToAvaloniaType(type);
+                        _windowNotificationManager.Show(new Notification(title, message, avaloniaType));
                     });
                 }
                 // Otherwise, show native Windows toast notification
@@ -111,11 +103,23 @@ namespace SaveTracker.Resources.HELPERS
             }
         }
 
+        private Avalonia.Controls.Notifications.NotificationType MapToAvaloniaType(NotificationType type)
+        {
+            return type switch
+            {
+                NotificationType.Information => Avalonia.Controls.Notifications.NotificationType.Information,
+                NotificationType.Success => Avalonia.Controls.Notifications.NotificationType.Success,
+                NotificationType.Warning => Avalonia.Controls.Notifications.NotificationType.Warning,
+                NotificationType.Error => Avalonia.Controls.Notifications.NotificationType.Error,
+                _ => Avalonia.Controls.Notifications.NotificationType.Information
+            };
+        }
+
         private void ShowLinuxNotification(string title, string message, NotificationType type)
         {
             try
             {
-                // Map Avalonia NotificationType to standard Linux icon names
+                // Map NotificationType to standard Linux icon names
                 string iconName = type switch
                 {
                     NotificationType.Error => "dialog-error",
@@ -138,13 +142,9 @@ namespace SaveTracker.Resources.HELPERS
                 info.ArgumentList.Add(iconName);
                 info.ArgumentList.Add("-a");
                 info.ArgumentList.Add("SaveTracker");
-                // info.ArgumentList.Add("-t"); // Optional: duration
-                // info.ArgumentList.Add("5000");
 
                 using (var process = System.Diagnostics.Process.Start(info))
                 {
-                    // Fire and forget, or wait? notify-send is quick.
-                    // waiting ensures we know if it failed to start (exception) or exit code.
                     process?.WaitForExit(1000);
                 }
 
@@ -152,42 +152,36 @@ namespace SaveTracker.Resources.HELPERS
             }
             catch (Exception ex)
             {
-                DebugConsole.WriteException(ex, "Failed to dispatch Linux notification (notify-send). Ensure 'libnotify-bin' or equivalent is installed.");
+                DebugConsole.WriteException(ex, "Failed to dispatch Linux notification (notify-send).");
             }
         }
 
         private void ShowWindowsToast(string title, string message, NotificationType type)
         {
-#if WINDOWS
-            try
+            if (OperatingSystem.IsWindowsVersionAtLeast(10, 0, 17763))
             {
-                DebugConsole.WriteInfo($"Building Windows toast: {title}");
+                try
+                {
+                    DebugConsole.WriteInfo($"Building Windows toast: {title}");
 
-                // Build the toast notification
-                var toastBuilder = new ToastContentBuilder()
-                    .AddText(title)
-                    .AddText(message);
+                    var toastBuilder = new ToastContentBuilder()
+                        .AddText(title)
+                        .AddText(message);
 
-                // Don't try to add app logo override as it requires packaged app
-                // Just show simple toast
+                    toastBuilder.Show();
 
-                DebugConsole.WriteInfo("Calling toastBuilder.Show()");
-
-                // Show the toast
-                toastBuilder.Show();
-
-                DebugConsole.WriteSuccess($"Windows toast notification shown: {title}");
+                    DebugConsole.WriteSuccess($"Windows toast notification shown: {title}");
+                }
+                catch (Exception ex)
+                {
+                    DebugConsole.WriteException(ex, "Failed to show Windows toast notification");
+                    DebugConsole.WriteInfo($"[Notification] {title}: {message}");
+                }
             }
-            catch (Exception ex)
+            else
             {
-                DebugConsole.WriteException(ex, "Failed to show Windows toast notification");
-                // Final fallback to debug console
-                DebugConsole.WriteInfo($"[Notification] {title}: {message}");
+                DebugConsole.WriteInfo($"[Notification - Non-Windows] {title}: {message}");
             }
-#else
-            // Fallback for non-Windows platforms
-            DebugConsole.WriteInfo($"[Notification - Non-Windows] {title}: {message}");
-#endif
         }
     }
 }

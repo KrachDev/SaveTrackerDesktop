@@ -43,33 +43,37 @@ namespace SaveTracker.Resources.HELPERS
                 try
                 {
                     var data = ConfigManagement.GetGameData(_game).Result;
+                    var blacklist = data.Blacklist;
                     if (data?.Blacklist != null && data.Blacklist.Count > 0)
                     {
-                        foreach (var blacklistItem in data.Blacklist)
+                        blacklist = data.Blacklist;
+                    }
+                    
+
+                    foreach (var blacklistItem in blacklist)
+                    {
+                        // Get the path from the FileChecksumRecord
+                        string blacklistPath = blacklistItem.Value?.Path;
+                        if (string.IsNullOrEmpty(blacklistPath))
+                            continue;
+
+                        // Normalize blacklist path once per iteration
+                        string normalizedBlacklist = blacklistPath.Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar);
+
+                        // Combined exact path match
+                        if (string.Equals(normalizedPath, normalizedBlacklist, StringComparison.OrdinalIgnoreCase))
                         {
-                            // Get the path from the FileChecksumRecord
-                            string blacklistPath = blacklistItem.Value?.Path;
-                            if (string.IsNullOrEmpty(blacklistPath))
-                                continue;
+                            if (shouldLog)
+                                DebugConsole.WriteWarning($"Skipped (Game Blacklist - Exact): {filePath}");
+                            return true;
+                        }
 
-                            // Normalize blacklist path once per iteration
-                            string normalizedBlacklist = blacklistPath.Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar);
-
-                            // Combined exact path match
-                            if (string.Equals(normalizedPath, normalizedBlacklist, StringComparison.OrdinalIgnoreCase))
-                            {
-                                if (shouldLog)
-                                    //DebugConsole.WriteWarning($"Skipped (Game Blacklist - Exact): {filePath}");
-                                    return true;
-                            }
-
-                            // Check if file is within blacklisted directory
-                            if (normalizedPath.StartsWith(normalizedBlacklist + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
-                            {
-                                if (shouldLog)
-                                    //DebugConsole.WriteWarning($"Skipped (Game Blacklist - Directory): {filePath}");
-                                    return true;
-                            }
+                        // Check if file is within blacklisted directory
+                        if (normalizedPath.StartsWith(normalizedBlacklist + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                        {
+                            if (shouldLog)
+                                DebugConsole.WriteWarning($"Skipped (Game Blacklist - Directory): {filePath}");
+                            return true;
                         }
                     }
                 }
@@ -89,7 +93,7 @@ namespace SaveTracker.Resources.HELPERS
                         normalizedPath.Equals(ignoredDir, StringComparison.OrdinalIgnoreCase))
                     {
                         if (shouldLog)
-                            // DebugConsole.WriteWarning($"Skipped (System Directory): {filePath}");
+                            DebugConsole.WriteWarning($"Skipped (System Directory): {filePath}");
                             return true;
                     }
                 }
@@ -101,14 +105,14 @@ namespace SaveTracker.Resources.HELPERS
                 if (Ignorlist.IgnoredFileNames.Contains(fileName))
                 {
                     if (shouldLog)
-                        //DebugConsole.WriteWarning($"Skipped (Ignored Filename): {filePath}");
+                        DebugConsole.WriteWarning($"Skipped (Ignored Filename): {filePath}");
                         return true;
                 }
 
                 if (Ignorlist.IgnoredExtensions.Contains(fileExtension))
                 {
                     if (shouldLog)
-                        //DebugConsole.WriteWarning($"Skipped (Ignored Extension): {filePath}");
+                        DebugConsole.WriteWarning($"Skipped (Ignored Extension): {filePath}");
                         return true;
                 }
 
@@ -121,7 +125,7 @@ namespace SaveTracker.Resources.HELPERS
                     if (lowerPath.Contains(keyword) || lowerFileName.Contains(keyword))
                     {
                         if (shouldLog)
-                            //DebugConsole.WriteWarning($"Skipped (Keyword Match '{keyword}'): {filePath}");
+                            DebugConsole.WriteWarning($"Skipped (Keyword Match '{keyword}'): {filePath}");
                             return true;
                     }
                 }
@@ -130,7 +134,7 @@ namespace SaveTracker.Resources.HELPERS
                 if (IsObviousSystemFile(fileName))
                 {
                     if (shouldLog)
-                        //DebugConsole.WriteWarning($"Skipped (System File Heuristic): {filePath}");
+                        DebugConsole.WriteWarning($"Skipped (System File Heuristic): {filePath}");
                         return true;
                 }
 
@@ -142,7 +146,7 @@ namespace SaveTracker.Resources.HELPERS
             {
                 if (shouldLog)
                 {
-                    //DebugConsole.WriteWarning($"Skipped (Path Processing Error): {filePath} - {ex.Message}");
+                    DebugConsole.WriteWarning($"Skipped (Path Processing Error): {filePath} - {ex.Message}");
                 }
                 return false;
             }

@@ -73,7 +73,25 @@
                                    Foreground="#858585" 
                                    TextWrapping="Wrap"/>
                     </StackPanel>
+
                 </Border>
+
+                <!-- Cloud Cache Section -->
+                <Border Background="#2D2D30" CornerRadius="4" Padding="15">
+                    <StackPanel Spacing="15">
+                        <TextBlock Text="Cloud Library Cache" FontWeight="SemiBold" Foreground="#CCCCCC"/>
+                        
+                        <TextBlock Text="Local cache speeds up loading time for the Cloud Library. Force update if you suspect data is out of sync." 
+                                   Foreground="#858585" TextWrapping="Wrap" FontSize="12"/>
+
+                        <Button Command="{Binding ForceUpdateCacheCommand}" 
+                                Content="Force Update Cache" 
+                                HorizontalAlignment="Stretch"
+                                HorizontalContentAlignment="Center"
+                                Padding="10"/>
+                    </StackPanel>
+                </Border>
+
 
             </StackPanel>
 

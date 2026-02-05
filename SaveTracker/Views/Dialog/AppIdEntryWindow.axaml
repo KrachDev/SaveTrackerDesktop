@@ -1,0 +1,56 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="using:SaveTracker.ViewModels"
+        x:Class="SaveTracker.Views.Dialog.AppIdEntryWindow"
+        Title="Missing App IDs"
+        Width="500" Height="400"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        ExtendClientAreaToDecorationsHint="True"
+        ExtendClientAreaChromeHints="NoChrome"
+        ExtendClientAreaTitleBarHeightHint="-1"
+        Background="#1E1E1E"
+        Foreground="White">
+
+    <Design.DataContext>
+        <vm:AppIdEntryViewModel />
+    </Design.DataContext>
+
+    <Grid RowDefinitions="Auto,*,Auto" Margin="20" x:DataType="vm:AppIdEntryViewModel">
+        <!-- Header -->
+        <StackPanel Grid.Row="0" Margin="0,0,0,15">
+            <TextBlock Text="Missing Steam App IDs" FontSize="18" FontWeight="Bold" Margin="0,10,0,5"/>
+            <TextBlock Text="The following games need a Steam App ID to sync achievements correctly. Please enter them below." 
+                       TextWrapping="Wrap" Opacity="0.8" FontSize="14"/>
+        </StackPanel>
+
+        <!-- Game List -->
+        <Border Grid.Row="1" Background="#252525" CornerRadius="5" Padding="5">
+            <DataGrid ItemsSource="{Binding Games}" 
+                      AutoGenerateColumns="False" 
+                      GridLinesVisibility="Horizontal"
+                      Background="Transparent"
+                      RowBackground="Transparent"
+                      x:DataType="vm:AppIdEntryViewModel">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="Game Name" Binding="{Binding GameName}" Width="*" IsReadOnly="True"/>
+                    <DataGridTemplateColumn Header="App ID" Width="120">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate x:DataType="vm:GameAppIdEntry">
+                                <TextBox Text="{Binding AppId}" Margin="5,2" Watermark="123456"/>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                </DataGrid.Columns>
+            </DataGrid>
+        </Border>
+
+        <!-- Footer Buttons -->
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10" Margin="0,15,0,0">
+            <Button Command="{Binding CancelCommand}" Content="Skip / Cancel" Width="100"/>
+            <Button Command="{Binding ConfirmCommand}" Content="Save &amp; Continue" Width="140" Classes="accent"/>
+        </StackPanel>
+    </Grid>
+</Window>

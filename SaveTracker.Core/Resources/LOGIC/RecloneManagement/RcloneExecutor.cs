@@ -34,6 +34,8 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 CreateNoWindow = hideWindow,
+                StandardOutputEncoding = System.Text.Encoding.UTF8,
+                StandardErrorEncoding = System.Text.Encoding.UTF8,
                 // Performance improvements
                 WindowStyle = ProcessWindowStyle.Hidden,
                 ErrorDialog = false
@@ -163,6 +165,37 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
         {
             return "--no-check-certificate --timeout 10s --contimeout 5s --retries 1 --low-level-retries 1";
         }
+
+        public async Task<(long Used, long Total, long Free)?> GetCloudQuotaAsync(CloudProvider provider)
+        {
+            try
+            {
+                string configPath = RclonePathHelper.GetConfigPath(provider);
+                string remoteName = new CloudProviderHelper().GetProviderConfigName(provider);
+
+                // Use --json to get structured output
+                string command = $"about \"{remoteName}:\" --json --config \"{configPath}\" {GetPerformanceFlags()}";
+
+                // Some providers might support 'about' but not return all fields, or strictly require root path.
+                // Box usually supports it.
+
+                var result = await ExecuteRcloneCommand(command, TimeSpan.FromSeconds(15));
+
+                if (result.Success && !string.IsNullOrWhiteSpace(result.Output))
+                {
+                    var data = System.Text.Json.JsonSerializer.Deserialize<RcloneAboutData>(result.Output, JsonHelper.GetOptions());
+                    if (data != null)
+                    {
+                        return (data.Used, data.Total, data.Free);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteDebug($"Failed to fetch cloud quota: {ex.Message}");
+            }
+            return null;
+        }
     }
 }
 public class RcloneResult
@@ -171,4 +204,12 @@ public class RcloneResult
     public string Output { get; set; } = string.Empty;
     public string Error { get; set; } = string.Empty;
     public int ExitCode { get; set; }
+}
+
+public class RcloneAboutData
+{
+    public long Total { get; set; }
+    public long Used { get; set; }
+    public long Free { get; set; }
+    public long Trash { get; set; }
 }

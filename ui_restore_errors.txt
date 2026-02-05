@@ -1,0 +1,9 @@
+  Determining projects to restore...
+C:\Users\Kracher\source\repos\KrachDev\SaveTrackerDesktop\SaveTracker\SaveTracker.csproj : error NU1605: Warning As Error: Detected package downgrade: Microsoft.Diagnostics.Tracing.TraceEvent from 3.1.29 to 3.1.28. Reference the package directly from the project to select a different version. 
+C:\Users\Kracher\source\repos\KrachDev\SaveTrackerDesktop\SaveTracker\SaveTracker.csproj : error NU1605:  SaveTracker -> SaveTracker.Core -> Microsoft.Diagnostics.Tracing.TraceEvent (>= 3.1.29) 
+C:\Users\Kracher\source\repos\KrachDev\SaveTrackerDesktop\SaveTracker\SaveTracker.csproj : error NU1605:  SaveTracker -> Microsoft.Diagnostics.Tracing.TraceEvent (>= 3.1.28)
+C:\Users\Kracher\source\repos\KrachDev\SaveTrackerDesktop\SaveTracker\SaveTracker.csproj : error NU1605: Warning As Error: Detected package downgrade: System.Management from 10.0.2 to 10.0.0. Reference the package directly from the project to select a different version. 
+C:\Users\Kracher\source\repos\KrachDev\SaveTrackerDesktop\SaveTracker\SaveTracker.csproj : error NU1605:  SaveTracker -> SaveTracker.Core -> System.Management (>= 10.0.2) 
+C:\Users\Kracher\source\repos\KrachDev\SaveTrackerDesktop\SaveTracker\SaveTracker.csproj : error NU1605:  SaveTracker -> System.Management (>= 10.0.0)
+  Failed to restore C:\Users\Kracher\source\repos\KrachDev\SaveTrackerDesktop\SaveTracker\SaveTracker.csproj (in 381 ms).
+  1 of 2 projects are up-to-date for restore.

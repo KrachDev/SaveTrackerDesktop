@@ -37,7 +37,7 @@ namespace SaveTracker.ViewModels
 
             try
             {
-                _icon = Misc.ExtractIconFromExe(game.ExecutablePath);
+                _icon = UiHelpers.ExtractIconFromExe(game.ExecutablePath);
             }
             catch
             {

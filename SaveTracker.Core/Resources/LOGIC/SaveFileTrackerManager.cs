@@ -387,13 +387,18 @@ namespace SaveTracker.Resources.LOGIC
                 _isTracking = true;
                 _trackingStartUtc = DateTime.UtcNow;
 
-                // Start background tasks
-                StartBackgroundProcessing();
 
-                SetupLinuxFileTracking();
+                if (System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Linux))
+                {
+                    SetupLinuxFileTracking();
+
+                }
 
                 if (System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))
                 {
+                    // Start background tasks
+                    StartBackgroundProcessing();
+
                     DebugConsole.WriteSuccess("ETW tracking started successfully");
 
                     // CRITICAL: Give child processes a moment to spawn
@@ -419,11 +424,11 @@ namespace SaveTracker.Resources.LOGIC
                 {
                     DebugConsole.WriteInfo("Loading previously tracked files from checksums...");
                     var checksumService = new SaveTracker.Resources.Logic.RecloneManagement.ChecksumService();
-                    
+
                     // Ensure legacy file is migrated to profile-specific naming first
                     string profileId = _game.ActiveProfileId ?? "DEFAULT_PROFILE_ID";
                     await checksumService.MigrateFromLegacyIfNeeded(_game.InstallDirectory, profileId);
-                    
+
                     // Now load the checksums with profile awareness
                     var checksumData = await checksumService.LoadChecksumData(_game.InstallDirectory, profileId);
 
@@ -471,15 +476,16 @@ namespace SaveTracker.Resources.LOGIC
                 {
                     if (_isTracking && !_isDisposed)
                     {
-                        // DEBUG: Log every process start to debug detection logic
-                        // Only log if potentially relevant (parent is tracked, or related to our tracking)
+                        // Only track child processes if their parent is already tracked
+                        // This prevents tracking launcher helpers like EpicWebHelper, SteamWebHelper, etc.
                         bool parentTracked = _processMonitor != null && _processMonitor.IsTracked(data.ParentID);
                         if (parentTracked)
                         {
                             DebugConsole.WriteDebug($"[ETW-PROC] Process Start: {data.ProcessName} ({data.ProcessID}) - Parent: {data.ParentID} (TRACKED)");
+                            _processMonitor?.HandleNewProcess(data.ProcessID, data.ParentID);
                         }
-
-                        _processMonitor?.HandleNewProcess(data.ProcessID, data.ParentID);
+                        // Note: Directory-based fallback scanning in ProcessMonitor still catches
+                        // legitimate game processes that spawn later via periodic scans
                     }
                 }
                 catch (Exception ex)
@@ -962,7 +968,7 @@ namespace SaveTracker.Resources.LOGIC
         /// <summary>
         /// Updates PlayTime in both GameUploadData.json (per-game config) AND checksums.json.
         /// CRITICAL: Smart Sync reads from checksums.json, so both must be updated atomically.
-        /// Also adds tracked files to checksum data so they appear in Smart Sync.
+        /// NOTE: File checksums are updated AFTER successful upload in HandleSuccessfulUpload().
         /// </summary>
         private async Task UpdatePlayTimeAsync(TimeSpan sessionDuration)
         {
@@ -977,8 +983,6 @@ namespace SaveTracker.Resources.LOGIC
 
                 var oldPlayTime = data.PlayTime;
                 data.PlayTime += sessionDuration;
-                // REMOVED: Unsafe direct write that conflicts with ChecksumService
-                // await ConfigManagement.SaveGameData(_game, data);
 
                 // 2. CRITICAL: Update checksums.json in game install directory
                 // This is what Smart Sync reads via SmartSyncService.GetLocalPlayTimeAsync()!
@@ -988,84 +992,23 @@ namespace SaveTracker.Resources.LOGIC
                 // Load existing data safely - USE PROFILE ID from active profile
                 var checksumData = await checksumService.LoadChecksumData(_game.InstallDirectory, _game.ActiveProfileId);
 
-                // Update PlayTime
-                checksumData.PlayTime = data.PlayTime; // Set to total
+                // Update PlayTime ONLY - file checksums are updated AFTER successful upload
+                // in RcloneFileOperations.HandleSuccessfulUpload() to prevent race conditions
+                checksumData.PlayTime = data.PlayTime;
                 checksumData.LastUpdated = DateTime.Now;
-
-                // 3. Add tracked files to checksum data so they appear in Smart Sync
-                var uploadList = GetUploadList();
-                DebugConsole.WriteInfo($"Processing {uploadList.Count} tracked file(s) for checksum data...");
-                int filesAdded = 0;
-                int filesSkipped = 0;
-                foreach (var filePath in uploadList)
-                {
-                    try
-                    {
-                        if (!File.Exists(filePath))
-                        {
-                            DebugConsole.WriteDebug($"Skipping {Path.GetFileName(filePath)}: file no longer exists");
-                            filesSkipped++;
-                            continue;
-                        }
-
-                        // Contract the path to portable format
-                        string portablePath = PathContractor.ContractPath(filePath, _game.InstallDirectory);
-
-                        // Skip if already exists
-                        if (checksumData.Files.ContainsKey(portablePath))
-                        {
-                            DebugConsole.WriteDebug($"Skipping {Path.GetFileName(filePath)}: already in checksum data");
-                            filesSkipped++;
-                            continue;
-                        }
-
-                        // Compute checksum and add to checksum data
-                        string checksum = await checksumService.GetFileChecksum(filePath);
-                        if (string.IsNullOrEmpty(checksum))
-                        {
-                            DebugConsole.WriteWarning($"Could not compute checksum for {Path.GetFileName(filePath)} - skipping");
-                            filesSkipped++;
-                            continue;
-                        }
-
-                        var fileInfo = new FileInfo(filePath);
-                        checksumData.Files[portablePath] = new SaveTracker.Resources.Logic.RecloneManagement.FileChecksumRecord
-                        {
-                            Path = portablePath,
-                            Checksum = checksum,
-                            FileSize = fileInfo.Length,
-                            LastUpload = DateTime.UtcNow,
-                            LastWriteTime = fileInfo.LastWriteTimeUtc
-                        };
-                        DebugConsole.WriteDebug($"Added {Path.GetFileName(filePath)} to checksum data (path: {portablePath})");
-                        filesAdded++;
-                    }
-                    catch (Exception ex)
-                    {
-                        DebugConsole.WriteWarning($"Failed to add tracked file {Path.GetFileName(filePath)} to checksum: {ex.Message}");
-                        filesSkipped++;
-                    }
-                }
 
                 // SAVE WITH PROFILE ID - THIS IS CRITICAL!
                 await checksumService.SaveChecksumData(checksumData, _game.InstallDirectory, _game.ActiveProfileId);
 
+                var uploadList = GetUploadList();
                 DebugConsole.WriteSuccess(
-                    $"PlayTime committed for '{_game.Name}': {oldPlayTime} + {sessionDuration} = {data.PlayTime} (saved to both config and checksums)"
+                    $"PlayTime committed for '{_game.Name}': {oldPlayTime} + {sessionDuration} = {data.PlayTime}"
                 );
-                if (filesAdded > 0)
-                {
-                    DebugConsole.WriteSuccess($"Added {filesAdded} tracked file(s) to checksum data for Smart Sync (skipped {filesSkipped})");
-                }
-                else if (uploadList.Count > 0)
-                {
-                    DebugConsole.WriteWarning($"No tracked files were added to checksum data (all {uploadList.Count} were skipped)");
-                }
+                DebugConsole.WriteInfo($"{uploadList.Count} file(s) tracked (checksums update after upload)");
             }
             catch (Exception ex)
             {
                 DebugConsole.WriteException(ex, "CRITICAL: Failed to update PlayTime - Smart Sync may use stale value!");
-                // Re-throw to ensure caller knows PlayTime commit failed
                 throw;
             }
         }
