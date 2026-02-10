@@ -62,7 +62,7 @@ namespace SaveTracker.Resources.LOGIC
                 }
 
                 // Clean up any existing ETW sessions
-                CleanupExistingEtwSessions();
+                await CleanupExistingEtwSessions().ConfigureAwait(false);
 
                 // Initialize new tracking session
                 _currentSession = new TrackingSession(gameArg, probeForPrefix);
@@ -70,14 +70,17 @@ namespace SaveTracker.Resources.LOGIC
                 try
                 {
                     // Validate and initialize
-                    if (!await _currentSession.Initialize())
+                    if (!await _currentSession.Initialize().ConfigureAwait(false))
+                    {
+                        DebugConsole.WriteWarning("TrackingSession initialization failed.");
                         return;
+                    }
 
                     // Start tracking
-                    await _currentSession.StartTracking();
+                    await _currentSession.StartTracking().ConfigureAwait(false);
 
                     // Wait for completion
-                    await _currentSession.WaitForCompletion();
+                    await _currentSession.WaitForCompletion().ConfigureAwait(false);
 
                     // Display results
                     var uploadFiles = _currentSession.GetUploadList();
@@ -110,7 +113,7 @@ namespace SaveTracker.Resources.LOGIC
         /// <summary>
         /// Clean up any orphaned ETW sessions
         /// </summary>
-        private void CleanupExistingEtwSessions()
+        private async Task CleanupExistingEtwSessions()
         {
             if (!System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))
             {
@@ -119,17 +122,30 @@ namespace SaveTracker.Resources.LOGIC
 
             try
             {
-                var existingSession = TraceEventSession.GetActiveSession(ETW_SESSION_NAME);
-                if (existingSession != null)
+                // TraceEventSession.GetActiveSession and session.Stop() can take time or block.
+                // We wrap it in a Task.Run to ensure it doesn't block the caller's context.
+                await Task.Run(() =>
                 {
-                    DebugConsole.WriteWarning("Found existing ETW session, stopping it...");
-                    existingSession.Stop();
-                    existingSession.Dispose();
-                }
+                    try
+                    {
+                        var existingSession = TraceEventSession.GetActiveSession(ETW_SESSION_NAME);
+                        if (existingSession != null)
+                        {
+                            DebugConsole.WriteWarning("[EtwCleanup] Found existing ETW session, stopping it...");
+                            existingSession.Stop();
+                            existingSession.Dispose();
+                            DebugConsole.WriteSuccess("[EtwCleanup] Existing ETW session stopped and disposed.");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        DebugConsole.WriteWarning($"[EtwCleanup] Error during session cleanup: {ex.Message}");
+                    }
+                }).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
-                DebugConsole.WriteWarning($"Error cleaning up ETW session: {ex.Message}");
+                DebugConsole.WriteWarning($"[EtwCleanup] Cleanup task failed: {ex.Message}");
             }
         }
 
@@ -886,7 +902,7 @@ namespace SaveTracker.Resources.LOGIC
             finally
             {
                 DebugConsole.WriteLine("Analyzing session data..."); // Feedback for user
-                await StopAsync();
+                await StopAsync().ConfigureAwait(false);
             }
 
             DebugConsole.WriteLine("Tracking session complete.");
@@ -901,7 +917,7 @@ namespace SaveTracker.Resources.LOGIC
             if (!_isTracking || _isDisposed)
                 return;
 
-            DebugConsole.WriteLine("Stopping tracking session...");
+            DebugConsole.WriteLine("[TrackingSession] Stopping tracking session...");
 
             _isTracking = false;
 
@@ -919,13 +935,14 @@ namespace SaveTracker.Resources.LOGIC
                     }
                     if (sessionDuration > TimeSpan.Zero)
                     {
-                        await UpdatePlayTimeAsync(sessionDuration);
+                        // Use ConfigureAwait(false) to avoid deadlocks if called from UI sync path
+                        await UpdatePlayTimeAsync(sessionDuration).ConfigureAwait(false);
                     }
                 }
             }
             catch (Exception ex)
             {
-                DebugConsole.WriteError($"Failed to update PlayTime during stop: {ex.Message}");
+                DebugConsole.WriteError($"[TrackingSession] Failed to update PlayTime during stop: {ex.Message}");
             }
 
             // Cancel all background tasks
@@ -935,7 +952,7 @@ namespace SaveTracker.Resources.LOGIC
             }
             catch (Exception ex)
             {
-                DebugConsole.WriteWarning($"Error cancelling tasks: {ex.Message}");
+                DebugConsole.WriteWarning($"[TrackingSession] Error cancelling tasks: {ex.Message}");
             }
 
             // Stop ETW session
@@ -943,16 +960,28 @@ namespace SaveTracker.Resources.LOGIC
             {
                 if (_etwSession != null)
                 {
-                    _etwSession.Stop();
-                    DebugConsole.WriteLine("ETW session stopped.");
+                    // TraceEventSession.Stop is synchronous and can sometimes block.
+                    // We run it on the thread pool to avoid blocking the caller if they are on a UI thread.
+                    await Task.Run(() =>
+                    {
+                        try
+                        {
+                            _etwSession.Stop();
+                        }
+                        catch (Exception ex)
+                        {
+                            DebugConsole.WriteWarning($"[TrackingSession] ETW Stop Error: {ex.Message}");
+                        }
+                    }).ConfigureAwait(false);
+                    DebugConsole.WriteLine("[TrackingSession] ETW session stopped.");
                 }
             }
             catch (Exception ex)
             {
-                DebugConsole.WriteWarning($"Error stopping ETW session: {ex.Message}");
+                DebugConsole.WriteWarning($"[TrackingSession] Error stopping ETW session: {ex.Message}");
             }
 
-            DebugConsole.WriteLine("Session stopped.");
+            DebugConsole.WriteLine("[TrackingSession] Session stopped.");
         }
 
         /// <summary>
@@ -961,8 +990,29 @@ namespace SaveTracker.Resources.LOGIC
         /// </summary>
         public void Stop()
         {
-            // For Dispose and cleanup paths that can't await
-            StopAsync().GetAwaiter().GetResult();
+            if (!_isTracking || _isDisposed)
+                return;
+
+            DebugConsole.WriteLine("[TrackingSession] Synchronous Stop() called - triggering background cleanup...");
+
+            // Signal stop immediately to break loops
+            _isTracking = false;
+            try { _cancellationTokenSource?.Cancel(); } catch { }
+
+            // To avoid deadlocks on UI thread, we don't perform a blocking Wait() here.
+            // Instead, we fire and forget the async stop, or perform a very short wait.
+            // Since Dispose handles its own WaitAll, we just ensure the signal is sent.
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await StopAsync().ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    DebugConsole.WriteWarning($"[TrackingSession] Background StopAsync failed: {ex.Message}");
+                }
+            });
         }
 
         /// <summary>
@@ -975,7 +1025,7 @@ namespace SaveTracker.Resources.LOGIC
             try
             {
                 // 1. Update GameUploadData.json (per-game config)
-                var data = await ConfigManagement.GetGameData(_game);
+                var data = await ConfigManagement.GetGameData(_game).ConfigureAwait(false);
                 if (data == null)
                 {
                     data = new SaveTracker.Resources.Logic.RecloneManagement.GameUploadData();
@@ -990,7 +1040,7 @@ namespace SaveTracker.Resources.LOGIC
                 var checksumService = new SaveTracker.Resources.Logic.RecloneManagement.ChecksumService();
 
                 // Load existing data safely - USE PROFILE ID from active profile
-                var checksumData = await checksumService.LoadChecksumData(_game.InstallDirectory, _game.ActiveProfileId);
+                var checksumData = await checksumService.LoadChecksumData(_game.InstallDirectory, _game.ActiveProfileId).ConfigureAwait(false);
 
                 // Update PlayTime ONLY - file checksums are updated AFTER successful upload
                 // in RcloneFileOperations.HandleSuccessfulUpload() to prevent race conditions
@@ -998,7 +1048,7 @@ namespace SaveTracker.Resources.LOGIC
                 checksumData.LastUpdated = DateTime.Now;
 
                 // SAVE WITH PROFILE ID - THIS IS CRITICAL!
-                await checksumService.SaveChecksumData(checksumData, _game.InstallDirectory, _game.ActiveProfileId);
+                await checksumService.SaveChecksumData(checksumData, _game.InstallDirectory, _game.ActiveProfileId).ConfigureAwait(false);
 
                 var uploadList = GetUploadList();
                 DebugConsole.WriteSuccess(
@@ -1080,41 +1130,61 @@ namespace SaveTracker.Resources.LOGIC
                 return;
 
             _isDisposed = true;
+            DebugConsole.WriteLine("[TrackingSession] Disposing...");
 
+            // Trigger stop immediately
             Stop();
 
-            // Wait for background tasks to complete
+            // Wait for background tasks to complete with a safe timeout
             try
             {
                 if (_backgroundTasks.Count > 0)
                 {
-                    DebugConsole.WriteLine("Waiting for background tasks to complete...");
-                    Task.WaitAll(_backgroundTasks.ToArray(), TimeSpan.FromSeconds(5));
+                    DebugConsole.WriteLine($"[TrackingSession] Waiting for {_backgroundTasks.Count} background tasks to complete...");
+                    // Use a shorter timeout or avoid Task.WaitAll if on UI thread.
+                    // But here we are already in Stop() background task, so WaitAll is mostly safe 
+                    // EXCEPT if Dispose is called from UI thread.
+                    bool completed = Task.WaitAll(_backgroundTasks.ToArray(), TimeSpan.FromSeconds(3));
+                    if (!completed)
+                    {
+                        DebugConsole.WriteWarning("[TrackingSession] Some background tasks did not complete within timeout.");
+                    }
                 }
             }
             catch (Exception ex)
             {
-                DebugConsole.WriteWarning($"Error waiting for background tasks: {ex.Message}");
+                DebugConsole.WriteWarning($"[TrackingSession] Error waiting for background tasks: {ex.Message}");
             }
 
             // Dispose resources
             try
             {
                 _cancellationTokenSource?.Dispose();
+                _cancellationTokenSource = null;
             }
             catch { }
 
             try
             {
-                _etwSession?.Dispose();
+                if (_etwSession != null)
+                {
+                    _etwSession.Dispose();
+                    _etwSession = null;
+                }
             }
             catch { }
 
             try
             {
-                _processMonitor?.Dispose();
+                if (_processMonitor != null)
+                {
+                    _processMonitor.Dispose();
+                    _processMonitor = null;
+                }
             }
             catch { }
+
+            DebugConsole.WriteLine("[TrackingSession] Disposed.");
         }
 
         private const string ETW_SESSION_NAME = "SaveTrackerSession";

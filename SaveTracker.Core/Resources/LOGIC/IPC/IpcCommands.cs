@@ -21,14 +21,14 @@ namespace SaveTracker.Resources.LOGIC.IPC
         /// <summary>
         /// Helper to get a parameter value by name
         /// </summary>
-        public T? GetParam<T>(string name)
+        public T? GetParam<T>(string name, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T> typeInfo)
         {
             if (Params == null || Params.Value.ValueKind == JsonValueKind.Undefined)
                 return default;
 
             if (Params.Value.TryGetProperty(name, out var element))
             {
-                return JsonSerializer.Deserialize<T>(element.GetRawText());
+                return JsonSerializer.Deserialize<T>(element.GetRawText(), typeInfo);
             }
             return default;
         }

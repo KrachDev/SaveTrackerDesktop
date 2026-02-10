@@ -46,6 +46,9 @@ namespace SaveTracker
             }
             finally
             {
+                // Gracefully stop the IPC server
+                SaveTracker.Resources.LOGIC.IPC.IpcServer.Stop();
+
                 _mutex.ReleaseMutex();
             }
         }

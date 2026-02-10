@@ -52,6 +52,8 @@ namespace SaveTracker.Headless
             }
             finally
             {
+                // Gracefully stop the IPC server
+                IpcServer.Stop();
                 DebugConsole.WriteInfo("Exiting.");
             }
         }

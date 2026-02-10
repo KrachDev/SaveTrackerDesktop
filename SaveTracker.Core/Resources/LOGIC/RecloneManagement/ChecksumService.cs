@@ -24,13 +24,13 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
         {
             try
             {
-                var data = await LoadChecksumData(gameDirectory) ?? new GameUploadData();
+                var data = await LoadChecksumData(gameDirectory).ConfigureAwait(false) ?? new GameUploadData();
                 data.PlayTime = playTime;
                 data.LastUpdated = DateTime.Now;
 
                 string checksumPath = GetChecksumFilePath(gameDirectory);
                 string json = JsonConvert.SerializeObject(data, Formatting.Indented);
-                await File.WriteAllLinesAsync(checksumPath, new[] { json });
+                await File.WriteAllLinesAsync(checksumPath, new[] { json }).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -134,7 +134,7 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                 profileId = "DEFAULT_PROFILE_ID";
             }
 
-            await _checksumFileLock.WaitAsync();
+            await _checksumFileLock.WaitAsync().ConfigureAwait(false);
             try
             {
                 string legacyPath = Path.Combine(gameDirectory, LegacyChecksumFilename);
@@ -289,7 +289,7 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                     using (var stream = new FileStream(checksumFilePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
                     using (var reader = new StreamReader(stream))
                     {
-                        jsonContent = await reader.ReadToEndAsync();
+                        jsonContent = await reader.ReadToEndAsync().ConfigureAwait(false);
                     }
 
                     var data = JsonConvert.DeserializeObject<GameUploadData>(jsonContent);
@@ -302,7 +302,7 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                 catch (IOException ioEx) when (i < maxRetries - 1)
                 {
                     DebugConsole.WriteWarning($"File access error loading checksum (Attempt {i + 1}/{maxRetries}): {ioEx.Message}");
-                    await Task.Delay(delayMs);
+                    await Task.Delay(delayMs).ConfigureAwait(false);
                     delayMs *= 2; // Exponential backoff
                 }
                 catch (Exception ex)
@@ -326,10 +326,10 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
         // Public method with lock and profile support
         public async Task<GameUploadData> LoadChecksumData(string gameDirectory, string? profileId)
         {
-            await _checksumFileLock.WaitAsync();
+            await _checksumFileLock.WaitAsync().ConfigureAwait(false);
             try
             {
-                return await LoadChecksumDataInternal(gameDirectory, profileId);
+                return await LoadChecksumDataInternal(gameDirectory, profileId).ConfigureAwait(false);
             }
             finally
             {
@@ -359,8 +359,8 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                     using (var stream = new FileStream(checksumFilePath, FileMode.Create, FileAccess.Write, FileShare.Read))
                     using (var writer = new StreamWriter(stream))
                     {
-                        await writer.WriteAsync(jsonContent);
-                        await writer.FlushAsync();
+                        await writer.WriteAsync(jsonContent).ConfigureAwait(false);
+                        await writer.FlushAsync().ConfigureAwait(false);
                     }
 
                     DebugConsole.WriteDebug($"Saved checksum data to {Path.GetFileName(checksumFilePath)}");
@@ -372,7 +372,7 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                 catch (IOException ioEx) when (i < maxRetries - 1)
                 {
                     DebugConsole.WriteWarning($"File access error saving checksum (Attempt {i + 1}/{maxRetries}): {ioEx.Message}");
-                    await Task.Delay(delayMs);
+                    await Task.Delay(delayMs).ConfigureAwait(false);
                     delayMs *= 2; // Exponential backoff
                 }
                 catch (Exception ex)
@@ -392,10 +392,10 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
         // Public method with lock and profile support
         public async Task SaveChecksumData(GameUploadData data, string gameDirectory, string? profileId)
         {
-            await _checksumFileLock.WaitAsync();
+            await _checksumFileLock.WaitAsync().ConfigureAwait(false);
             try
             {
-                await SaveChecksumDataInternal(data, gameDirectory, profileId);
+                await SaveChecksumDataInternal(data, gameDirectory, profileId).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
