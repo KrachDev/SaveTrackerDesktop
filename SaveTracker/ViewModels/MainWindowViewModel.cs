@@ -1193,12 +1193,11 @@ namespace SaveTracker.ViewModels
                 DebugConsole.WriteInfo($"{game.Name} closed. Smart Sync Exit Check...");
 
                 useCts?.Cancel();
-                // Wait for tracking session to complete
-                // Note: We can't easily await the specific task unless we passed it too, but cancelling the token breaks the loop
-                // and the task finishes.
 
-                // If we are using the global task, await it.
-                if (_trackingTask != null && sessionCts == null) // Only await global if we are in "global mode"
+                // CRITICAL: Always await the tracking task to ensure PlayTime is committed to disk
+                // before Smart Sync reads it. Previously, per-game sessions skipped this await,
+                // causing a race condition where Smart Sync read stale playtime.
+                if (_trackingTask != null)
                 {
                     try
                     {
@@ -1210,70 +1209,73 @@ namespace SaveTracker.ViewModels
                         DebugConsole.WriteWarning($"Tracking task error: {ex.Message}");
                     }
                 }
-                else if (sessionCts != null)
-                {
-                    // If we have a local session, simpler to just wait a moment for the tracker loop to exit naturally via token
-                    // The loop effectively runs `await tracker.Track`, which should respect the token if set up correctly.
-                    // SaveFileTrackerManager checks the lock, but doesn't take a CancellationToken in Track().
-                    // However, the loop in TrackGameProcessAsync awaits `Task.Delay(5000, cancellationToken)`.
-                    // So cancelling token breaks the delay and exits the loop immediately.
-                }
 
                 game.LastTracked = DateTime.Now;
                 await ConfigManagement.SaveGameAsync(game);
 
-                // Smart Sync Check
-                // Smart Sync Check
-                var gameData = await ConfigManagement.GetGameData(game);
-                if (gameData?.EnableSmartSync ?? true)
+                // Check if tracker has pending upload files — if so, skip Smart Sync comparison
+                // and upload directly. A completed tracking session with files is the strongest
+                // signal that an upload is needed, regardless of playtime similarity.
+                var filesToUpload = useTracker?.GetUploadList();
+                bool hasPendingFiles = filesToUpload != null && filesToUpload.Count > 0;
+
+                if (hasPendingFiles && (await ConfigManagement.LoadConfigAsync())?.Auto_Upload == true)
                 {
-                    DebugConsole.WriteInfo("Checking Smart Sync status before opening window...");
-                    var smartSync = new SmartSyncService();
-                    var provider = await smartSync.GetEffectiveProvider(game);
-
-                    // Hidden check with 30s threshold
-                    var comparison = await smartSync.CompareProgressAsync(game, TimeSpan.FromSeconds(30), provider);
-
-                    if (comparison.Status == SmartSyncService.ProgressStatus.Similar)
+                    DebugConsole.WriteInfo($"Tracker has {filesToUpload!.Count} pending files. Uploading directly (bypassing Smart Sync)...");
+                    await UploadFilesAsync(filesToUpload, game);
+                }
+                else
+                {
+                    // No pending files from tracker — fall back to Smart Sync comparison
+                    var gameData = await ConfigManagement.GetGameData(game);
+                    if (gameData?.EnableSmartSync ?? true)
                     {
-                        DebugConsole.WriteSuccess("Smart Sync: already synced. Skipping window.");
-                    }
-                    else if ((comparison.Status == SmartSyncService.ProgressStatus.LocalAhead ||
-                              comparison.Status == SmartSyncService.ProgressStatus.CloudNotFound) &&
-                             (await ConfigManagement.LoadConfigAsync())?.Auto_Upload == true)
-                    {
-                        // AUTO-UPLOAD: If local is newer or cloud doesn't exist, and Auto-Upload is ON, just upload!
-                        DebugConsole.WriteInfo($"Smart Sync Status: {comparison.Status}. Auto-Upload enabled -> Uploading...");
+                        DebugConsole.WriteInfo("No pending files from tracker. Checking Smart Sync status...");
+                        var smartSync = new SmartSyncService();
+                        var provider = await smartSync.GetEffectiveProvider(game);
 
-                        // We need the file list from the SPECIFIC tracker instance
-                        var filesToUpload = useTracker?.GetUploadList();
-                        if (filesToUpload != null && filesToUpload.Count > 0)
+                        var comparison = await smartSync.CompareProgressAsync(game, TimeSpan.FromSeconds(30), provider);
+
+                        if (comparison.Status == SmartSyncService.ProgressStatus.Similar)
                         {
-                            bool forceUpload = comparison.Status == SmartSyncService.ProgressStatus.CloudNotFound;
-                            if (forceUpload)
+                            DebugConsole.WriteSuccess("Smart Sync: already synced. Skipping window.");
+                        }
+                        else if ((comparison.Status == SmartSyncService.ProgressStatus.LocalAhead ||
+                                  comparison.Status == SmartSyncService.ProgressStatus.CloudNotFound) &&
+                                 (await ConfigManagement.LoadConfigAsync())?.Auto_Upload == true)
+                        {
+                            DebugConsole.WriteInfo($"Smart Sync Status: {comparison.Status}. Auto-Upload enabled -> Uploading...");
+
+                            // Re-check for files
+                            var smartSyncFiles = useTracker?.GetUploadList();
+                            if (smartSyncFiles != null && smartSyncFiles.Count > 0)
                             {
-                                DebugConsole.WriteInfo("Forcing upload because cloud save is missing.");
+                                bool forceUpload = comparison.Status == SmartSyncService.ProgressStatus.CloudNotFound;
+                                if (forceUpload)
+                                {
+                                    DebugConsole.WriteInfo("Forcing upload because cloud save is missing.");
+                                }
+                                await UploadFilesAsync(smartSyncFiles, game, forceUpload);
                             }
-                            await UploadFilesAsync(filesToUpload, game, forceUpload);
+                            else
+                            {
+                                DebugConsole.WriteWarning("Auto-Upload requested but no files in upload list.");
+                            }
                         }
                         else
                         {
-                            DebugConsole.WriteWarning("Auto-Upload requested but no files in upload list.");
+                            DebugConsole.WriteInfo($"Smart Sync Status: {comparison.Status}. Opening window...");
+                            var vm = new SmartSyncViewModel(game, SmartSyncMode.GameExit, comparison);
+                            if (OnSmartSyncRequested != null)
+                            {
+                                await OnSmartSyncRequested.Invoke(vm);
+                            }
                         }
                     }
                     else
                     {
-                        DebugConsole.WriteInfo($"Smart Sync Status: {comparison.Status}. Opening window...");
-                        var vm = new SmartSyncViewModel(game, SmartSyncMode.GameExit, comparison);
-                        if (OnSmartSyncRequested != null)
-                        {
-                            await OnSmartSyncRequested.Invoke(vm);
-                        }
+                        DebugConsole.WriteWarning("Smart Sync disabled for game. Sync skipped.");
                     }
-                }
-                else
-                {
-                    DebugConsole.WriteWarning("Smart Sync disabled for game. Sync skipped.");
                 }
             }
             catch (Exception ex)
@@ -1808,6 +1810,50 @@ namespace SaveTracker.ViewModels
                         var remoteName = _providerHelper.GetProviderConfigName(config.CloudConfig.Provider);
                         var sanitizedGameName = SanitizeGameName(game.Name);
                         var remotePath = $"{remoteName}:{SaveFileUploadManager.RemoteBaseFolder}/{sanitizedGameName}";
+
+                        // 1. Try to peek .sta metadata first (instant)
+                        try
+                        {
+                            var smartSync = new SmartSyncService();
+                            var metadata = await smartSync.PeekCloudMetadataAsync(remotePath, config.CloudConfig.Provider, game.ActiveProfileId);
+
+                            if (metadata != null && metadata.Files != null && metadata.Files.Count > 0)
+                            {
+                                List<CloudFileViewModel> archiveFiles = new();
+                                long totalBytes = 0;
+
+                                foreach (var kvp in metadata.Files)
+                                {
+                                    var record = kvp.Value;
+                                    // Use last segment of path for name, or sanitise specific known prefixes
+                                    string name = Path.GetFileName(record.Path);
+
+                                    var rcloneInfo = new RcloneFileInfo
+                                    {
+                                        Name = name,
+                                        Path = record.Path,
+                                        Size = record.FileSize,
+                                        ModTime = record.LastWriteTime,
+                                        IsDir = false
+                                    };
+                                    archiveFiles.Add(new CloudFileViewModel(rcloneInfo));
+                                    totalBytes += record.FileSize;
+                                }
+
+                                await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                                {
+                                    CloudFiles.Clear();
+                                    foreach (var vm in archiveFiles.OrderBy(f => f.Name)) CloudFiles.Add(vm);
+                                    CloudFilesCountText = $"{archiveFiles.Count} files in archive • {Misc.FormatFileSize(totalBytes)}";
+                                });
+
+                                return; // Skip legacy lsjson
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            DebugConsole.WriteDebug($"[LoadCloudFiles] Peek failed: {ex.Message}");
+                        }
 
                         var result = await executor.ExecuteRcloneCommand(
                             $"lsjson \"{remotePath}\" --recursive --config \"{configPath}\"",

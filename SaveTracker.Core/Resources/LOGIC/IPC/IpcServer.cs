@@ -9,6 +9,7 @@ using System.Security.Principal;
 using System.Threading;
 using System.Threading.Tasks;
 using SaveTracker.Resources.HELPERS;
+using SaveTracker.Resources.SAVE_SYSTEM;
 
 namespace SaveTracker.Resources.LOGIC.IPC
 {
@@ -33,10 +34,22 @@ namespace SaveTracker.Resources.LOGIC.IPC
         /// <summary>
         /// Starts the IPC server with concurrent connection handling
         /// </summary>
-        public static async Task StartAsync(IWindowManager windowManager, CancellationToken cancellationToken = default)
+        public static async Task StartAsync(IWindowManager windowManager, CancellationToken cancellationToken = default, bool ignoreConfig = false)
         {
             // Try to clean up stale pipes from previous crashed instances
             CleanupStalePipes();
+
+            // Check configuration
+            if (!ignoreConfig)
+            {
+                var config = await ConfigManagement.LoadConfigAsync();
+
+                if (!config.EnableIPC)
+                {
+                    DebugConsole.WriteInfo("[IPC] Server disabled in settings - skipping startup");
+                    return;
+                }
+            }
 
             _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             _handler = new CommandHandler(windowManager);

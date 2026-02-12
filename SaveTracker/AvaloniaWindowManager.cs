@@ -10,6 +10,7 @@ using SaveTracker.Views;
 using SaveTracker.Views.Dialog;
 using System;
 using System.Linq;
+using System.Threading.Tasks;
 
 namespace SaveTracker
 {
@@ -116,6 +117,22 @@ namespace SaveTracker
             {
                 DebugConsole.WriteError($"Failed to open browser: {ex.Message}");
             }
+        }
+
+        public async Task StartSession(Game game)
+        {
+            // GUI usually handles this via UI interactions, but we can potentially support it.
+            // For now, allow Playnite to trigger tracking even in GUI mode?
+            // This requires thread hopping and interacting with MainWindowViewModel.
+            // Given the complexity and user focus on Headless for Playnite, we'll log a warning for now.
+            DebugConsole.WriteWarning("External 'StartSession' command not yet fully supported in GUI mode.");
+            await Task.CompletedTask;
+        }
+
+        public async Task EndSession(Game game)
+        {
+            DebugConsole.WriteWarning("External 'EndSession' command not yet fully supported in GUI mode.");
+            await Task.CompletedTask;
         }
 
         private void ShowGenericWindow(string name, Func<Window> creator)

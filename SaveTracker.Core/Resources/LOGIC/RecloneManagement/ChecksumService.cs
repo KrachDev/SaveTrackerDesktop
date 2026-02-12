@@ -22,19 +22,23 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
 
         public async Task UpdatePlayTime(string gameDirectory, TimeSpan playTime)
         {
+            await _checksumFileLock.WaitAsync().ConfigureAwait(false);
             try
             {
-                var data = await LoadChecksumData(gameDirectory).ConfigureAwait(false) ?? new GameUploadData();
+                var data = await LoadChecksumDataInternal(gameDirectory).ConfigureAwait(false) ?? new GameUploadData();
                 data.PlayTime = playTime;
                 data.LastUpdated = DateTime.Now;
 
-                string checksumPath = GetChecksumFilePath(gameDirectory);
-                string json = JsonConvert.SerializeObject(data, Formatting.Indented);
-                await File.WriteAllLinesAsync(checksumPath, new[] { json }).ConfigureAwait(false);
+                await SaveChecksumDataInternal(data, gameDirectory).ConfigureAwait(false);
+                DebugConsole.WriteDebug($"[Atomic] PlayTime updated: {playTime} in {gameDirectory}");
             }
             catch (Exception ex)
             {
-                DebugConsole.WriteException(ex, "Failed to update local PlayTime manually");
+                DebugConsole.WriteException(ex, "Failed to update local PlayTime");
+            }
+            finally
+            {
+                _checksumFileLock.Release();
             }
         }
 
@@ -137,6 +141,18 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             await _checksumFileLock.WaitAsync().ConfigureAwait(false);
             try
             {
+                return MigrateFromLegacyInternal(gameDirectory, profileId);
+            }
+            finally
+            {
+                _checksumFileLock.Release();
+            }
+        }
+
+        private bool MigrateFromLegacyInternal(string gameDirectory, string profileId)
+        {
+            try
+            {
                 string legacyPath = Path.Combine(gameDirectory, LegacyChecksumFilename);
                 string profilePath = GetChecksumFilePath(gameDirectory, profileId);
 
@@ -148,23 +164,45 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
 
                 DebugConsole.WriteInfo($"[Checksum Migration] Migrating {LegacyChecksumFilename} to profile-specific: {Path.GetFileName(profilePath)}");
 
-                try
-                {
-                    // Copy legacy file to profile-specific location
-                    File.Copy(legacyPath, profilePath, overwrite: false);
+                // Copy legacy file to profile-specific location
+                File.Copy(legacyPath, profilePath, overwrite: false);
 
-                    DebugConsole.WriteSuccess($"[Checksum Migration] Successfully migrated checksum file to profile {profileId}");
+                DebugConsole.WriteSuccess($"[Checksum Migration] Successfully migrated checksum file to profile {profileId}");
 
-                    // Optional: Delete legacy file after successful migration to all profiles
-                    // For now, keep it for safety
+                return true;
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteWarning($"[Checksum Migration] Failed to migrate checksum file: {ex.Message}");
+                return false;
+            }
+        }
 
-                    return true;
-                }
-                catch (Exception ex)
-                {
-                    DebugConsole.WriteWarning($"[Checksum Migration] Failed to migrate checksum file: {ex.Message}");
-                    return false;
-                }
+        /// <summary>
+        /// Atomically ensures the checksum file exists and is ready for upload.
+        /// Performs migration and initialization within a single lock.
+        /// </summary>
+        public async Task<string> EnsureChecksumFileAsync(string gameDirectory, string? profileId = null)
+        {
+            await _checksumFileLock.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                // Auto-migrate from legacy global naming - works for ANY profile including DEFAULT
+                string migrateToProfileId = !string.IsNullOrEmpty(profileId) ? profileId : "DEFAULT_PROFILE_ID";
+                MigrateFromLegacyInternal(gameDirectory, migrateToProfileId);
+
+                // Load existing checksum data (or create new if doesn't exist)
+                var checksumData = await LoadChecksumDataInternal(gameDirectory, profileId).ConfigureAwait(false);
+
+                // Save to ensure file exists (atomic with load)
+                await SaveChecksumDataInternal(checksumData, gameDirectory, profileId).ConfigureAwait(false);
+
+                return GetChecksumFilePath(gameDirectory, profileId);
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteException(ex, "Failed to ensure checksum file");
+                throw;
             }
             finally
             {
@@ -591,5 +629,51 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
 
             return existingCount;
         }
+        public async Task UpdateBatchChecksumRecords(
+            Dictionary<string, FileChecksumRecord> updates,
+            string gameDirectory,
+            string? profileId = null)
+        {
+            if (updates == null || updates.Count == 0) return;
+
+            await _checksumFileLock.WaitAsync();
+            try
+            {
+                var checksumData = await LoadChecksumDataInternal(gameDirectory, profileId);
+                bool anyChanges = false;
+
+                foreach (var kvp in updates)
+                {
+                    string portablePath = kvp.Key;
+                    var record = kvp.Value;
+
+                    // Ensure we are not adding duplicates if nothing changed (optional optimization)
+                    if (checksumData.Files.TryGetValue(portablePath, out var existing))
+                    {
+                        if (existing.Checksum == record.Checksum &&
+                            existing.FileSize == record.FileSize &&
+                            existing.LastWriteTime == record.LastWriteTime)
+                        {
+                            continue;
+                        }
+                    }
+
+                    checksumData.Files[portablePath] = record;
+                    anyChanges = true;
+                }
+
+                if (anyChanges)
+                {
+                    await SaveChecksumDataInternal(checksumData, gameDirectory, profileId);
+                    DebugConsole.WriteDebug($"[Batch] Updated {updates.Count} checksum records");
+                }
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteException(ex, "Failed to batch update checksum records");
+                throw;
+            }
+        }
+
     }
 }

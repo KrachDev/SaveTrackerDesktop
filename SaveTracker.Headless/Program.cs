@@ -1,7 +1,9 @@
-﻿using SaveTracker.Resources.HELPERS;
-using SaveTracker.Resources.LOGIC.IPC;
+﻿using System;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using SaveTracker.Resources.HELPERS;
+using SaveTracker.Resources.LOGIC.IPC;
 
 namespace SaveTracker.Headless
 {
@@ -13,6 +15,12 @@ namespace SaveTracker.Headless
         {
             DebugConsole.Enable(true);
             DebugConsole.WriteSection("SaveTracker Headless Mode");
+
+            if (args.Contains("--test-sta"))
+            {
+                await SaveTracker.Resources.Logic.Testing.SaveArchiverTestChamber.RunTest();
+                return;
+            }
 
             // Handle CTRL+C
             Console.CancelKeyPress += (s, e) =>
@@ -27,11 +35,15 @@ namespace SaveTracker.Headless
                 // Initialize Config (Loads or creates defaults)
                 await SaveTracker.Resources.SAVE_SYSTEM.ConfigManagement.LoadConfigAsync();
 
+                // Initialize Game Service (Core Logic)
+                bool enableWatcher = args.Contains("--enable-watcher");
+                HeadlessGameService.Instance.Initialize(enableWatcher);
+
                 // Start IPC Server
                 var windowManager = new HeadlessWindowManager();
 
                 // Fire and forget server task, linked to CTS
-                var serverTask = IpcServer.StartAsync(windowManager, _cts.Token);
+                var serverTask = IpcServer.StartAsync(windowManager, _cts.Token, ignoreConfig: true);
                 DebugConsole.WriteSuccess("Ready to accept commands.");
 
                 // Keep alive until cancelled

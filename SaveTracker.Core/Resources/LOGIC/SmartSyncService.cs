@@ -17,11 +17,13 @@ namespace SaveTracker.Resources.Logic
     {
         private readonly RcloneFileOperations _rcloneOps;
         private readonly ChecksumService _checksumService;
+        private readonly SaveArchiver _archiver;
 
         public SmartSyncService()
         {
             _rcloneOps = new RcloneFileOperations();
             _checksumService = new ChecksumService();
+            _archiver = new SaveArchiver();
         }
 
         /// <summary>
@@ -225,7 +227,7 @@ namespace SaveTracker.Resources.Logic
         /// <summary>
         /// Download and read cloud checksum file to get PlayTime
         /// </summary>
-        private async Task<TimeSpan?> GetCloudPlayTimeAsync(Game game, CloudProvider? provider = null, GameUploadData? cachedCloudData = null)
+        public async Task<TimeSpan?> GetCloudPlayTimeAsync(Game game, CloudProvider? provider = null, GameUploadData? cachedCloudData = null)
         {
             try
             {
@@ -235,13 +237,47 @@ namespace SaveTracker.Resources.Logic
                     return cachedCloudData.PlayTime;
                 }
 
-                var effectiveProvider = provider ?? await GetEffectiveProvider(game);
+                if (string.IsNullOrWhiteSpace(game?.InstallDirectory))
+                {
+                    DebugConsole.WriteWarning("Invalid game or missing install directory");
+                    return null;
+                }
 
-                // Use helper to get correct path for active profile
+                var effectiveProvider = provider ?? await GetEffectiveProvider(game);
                 var remoteBasePath = await _rcloneOps.GetRemotePathAsync(effectiveProvider, game);
 
                 DebugConsole.WriteInfo($"Checking cloud for: {remoteBasePath}");
 
+                // === HIGH PERFORMANCE PEEK (.sta) ===
+                var peekedData = await PeekCloudMetadataAsync(remoteBasePath, effectiveProvider, game.ActiveProfileId);
+                if (peekedData != null)
+                {
+                    DebugConsole.WriteSuccess($"Cloud Peek SUCCESS: PlayTime: {FormatTimeSpan(peekedData.PlayTime)}");
+                    return peekedData.PlayTime;
+                }
+
+                DebugConsole.WriteInfo("Archive not found or peek failed. Falling back to legacy JSON check...");
+
+                // === LEGACY FALLBACK (JSON) ===
+                return await GetLegacyCloudPlayTime(game, effectiveProvider, remoteBasePath);
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteException(ex, "Failed to get cloud PlayTime");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Legacy method - checks old JSON checksum files
+        /// </summary>
+        private async Task<TimeSpan?> GetLegacyCloudPlayTime(
+            Game game,
+            CloudProvider provider,
+            string remoteBasePath)
+        {
+            try
+            {
                 // Determine file names
                 string gameDirectory = game.InstallDirectory;
                 string checksumLocalFullPath = _checksumService.GetChecksumFilePath(gameDirectory, game.ActiveProfileId);
@@ -256,21 +292,19 @@ namespace SaveTracker.Resources.Logic
                 string legacyRelativePath = relativeChecksumPath.Replace(checksumFileName, legacyChecksumName);
                 string legacyRemotePath = $"{remoteBasePath}/{legacyRelativePath}";
 
-                // === OPTIMIZATION: Check Local Cache First ===
+                // Check Local Cache first for legacy files
                 try
                 {
                     var cacheDir = CloudLibraryCacheService.Instance.GetGameCacheDirectory(game.Name);
                     if (Directory.Exists(cacheDir))
                     {
-                        // Check Primary Name
                         string cachedPrimary = Path.Combine(cacheDir, checksumFileName);
                         if (File.Exists(cachedPrimary))
                         {
-                            var modTime = await GetRemoteFileModTime(primaryRemotePath, effectiveProvider);
+                            var modTime = await GetRemoteFileModTime(primaryRemotePath, provider);
                             if (modTime.HasValue)
                             {
                                 var localInfo = new FileInfo(cachedPrimary);
-                                // Allow 2s tolerance for timestamp precision differences
                                 if (Math.Abs((localInfo.LastWriteTime - modTime.Value).TotalSeconds) < 2)
                                 {
                                     DebugConsole.WriteSuccess($"Cache HIT: Using local cached checksum for {checksumFileName}");
@@ -278,128 +312,102 @@ namespace SaveTracker.Resources.Logic
                                     var data = JsonConvert.DeserializeObject<GameUploadData>(json);
                                     return data?.PlayTime;
                                 }
-                                else
-                                {
-                                    DebugConsole.WriteInfo($"Cache MISS: Remote {checksumFileName} is newer/different.");
-                                }
-                            }
-                        }
-
-                        // Check Legacy Name if Primary didn't match (or wasn't checked)
-                        // Note: If Primary existed efficiently, we returned above. 
-                        // If Primary remote check failed (null), we might check legacy remote.
-
-                        string cachedLegacy = Path.Combine(cacheDir, legacyChecksumName);
-                        if (File.Exists(cachedLegacy))
-                        {
-                            var modTime = await GetRemoteFileModTime(legacyRemotePath, effectiveProvider);
-                            if (modTime.HasValue)
-                            {
-                                var localInfo = new FileInfo(cachedLegacy);
-                                if (Math.Abs((localInfo.LastWriteTime - modTime.Value).TotalSeconds) < 2)
-                                {
-                                    DebugConsole.WriteSuccess($"Cache HIT: Using local cached checksum for {legacyChecksumName}");
-                                    string json = await File.ReadAllTextAsync(cachedLegacy);
-                                    var data = JsonConvert.DeserializeObject<GameUploadData>(json);
-                                    return data?.PlayTime;
-                                }
                             }
                         }
                     }
                 }
-                catch (Exception ex)
-                {
-                    DebugConsole.WriteWarning($"Cache optimization check failed: {ex.Message}");
-                }
-                // =============================================
+                catch { }
 
                 // Check if cloud save exists (Directory check)
-                bool cloudExists = await _rcloneOps.CheckCloudSaveExistsAsync(remoteBasePath, effectiveProvider);
+                bool cloudExists = await _rcloneOps.CheckCloudSaveExistsAsync(remoteBasePath, provider);
                 if (!cloudExists)
                 {
                     DebugConsole.WriteInfo("Cloud save doesn't exist");
                     return null;
                 }
 
-                // Download checksum file to temp location
+                // Download legacy checksum file
                 string tempFolder = Path.Combine(Path.GetTempPath(), $"SaveTracker_SmartSync_{Guid.NewGuid():N}");
                 Directory.CreateDirectory(tempFolder);
 
                 try
                 {
                     string checksumLocalPath = Path.Combine(tempFolder, relativeChecksumPath);
-
-                    // Create local folder if needed
                     string? localDir = Path.GetDirectoryName(checksumLocalPath);
                     if (!string.IsNullOrEmpty(localDir)) Directory.CreateDirectory(localDir);
 
-                    DebugConsole.WriteInfo($"Downloading checksum from: {primaryRemotePath}");
-
-                    // Use RcloneTransferService for reliable download with retry
                     var transferService = new RcloneTransferService();
-                    bool downloaded = await transferService.DownloadFileWithRetry(
-                        primaryRemotePath,
-                        checksumLocalPath,
-                        checksumFileName,
-                        effectiveProvider
-                    );
+                    bool downloaded = await transferService.DownloadFileWithRetry(primaryRemotePath, checksumLocalPath, checksumFileName, provider);
 
-                    // Fallback to legacy checksum name if profile-specific failed
                     if (!downloaded)
                     {
-                        DebugConsole.WriteInfo($"Attempting legacy checksum fetch: {legacyRelativePath}");
-
-                        downloaded = await transferService.DownloadFileWithRetry(
-                            legacyRemotePath,
-                            checksumLocalPath, // Save it to the same local path for deserialization
-                            legacyChecksumName,
-                            effectiveProvider
-                        );
+                        downloaded = await transferService.DownloadFileWithRetry(legacyRemotePath, checksumLocalPath, legacyChecksumName, provider);
                     }
 
-                    if (!downloaded || !File.Exists(checksumLocalPath))
+                    if (downloaded && File.Exists(checksumLocalPath))
                     {
-                        DebugConsole.WriteWarning("Failed to download cloud checksum file");
-                        return null;
+                        string json = await File.ReadAllTextAsync(checksumLocalPath);
+                        var cloudData = JsonConvert.DeserializeObject<GameUploadData>(json);
+                        return cloudData?.PlayTime;
                     }
-
-                    // Read PlayTime from downloaded checksum file
-                    string json = await File.ReadAllTextAsync(checksumLocalPath);
-                    var cloudData = JsonConvert.DeserializeObject<GameUploadData>(json);
-
-                    if (cloudData == null)
-                    {
-                        DebugConsole.WriteWarning("Failed to deserialize cloud checksum data");
-                        return null;
-                    }
-
-                    // Validate that actual cloud save files exist, not just the checksum
-                    // OPTIMIZATION: Instead of listing ALL files (which hangs on large folders),
-                    // we trust the checksum file existence + maybe check one file if strictly needed.
-                    // For now, if checksums.json exists, we assume the save is valid to avoid the performance penalty.
-
-                    if (cloudData.Files != null && cloudData.Files.Count > 0)
-                    {
-                        DebugConsole.WriteInfo($"Cloud save validated via checksum file ({cloudData.Files.Count} references)");
-                    }
-
-                    DebugConsole.WriteSuccess($"Cloud PlayTime: {FormatTimeSpan(cloudData.PlayTime)}");
-                    return cloudData.PlayTime;
                 }
                 finally
                 {
-                    // Cleanup temp folder
-                    try
-                    {
-                        if (Directory.Exists(tempFolder))
-                            Directory.Delete(tempFolder, true);
-                    }
-                    catch { }
+                    try { if (Directory.Exists(tempFolder)) Directory.Delete(tempFolder, true); } catch { }
+                }
+
+                return null;
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteException(ex, "Legacy cloud check failed");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Peeks at the .sta archive metadata using binary-safe execution
+        /// </summary>
+        public async Task<GameUploadData?> PeekCloudMetadataAsync(
+            string remoteBasePath,
+            CloudProvider provider,
+            string? profileId)
+        {
+            try
+            {
+                // Determine archive filename based on profile
+                string archiveFileName = _rcloneOps.GetArchiveFileName(profileId);
+                string remoteArchivePath = $"{remoteBasePath}/{archiveFileName}";
+
+                // Fast-fail if archive doesn't exist
+                if (!await _rcloneOps.RemoteFileExistsAsync(remoteArchivePath, provider))
+                {
+                    return null;
+                }
+
+                string configPath = RclonePathHelper.GetConfigPath(provider);
+                var executor = new RcloneExecutor();
+
+                // Peek first 65,664 bytes (128B header + 64KB metadata buffer)
+                byte[] bytes = await executor.ExecuteRcloneBinaryAsync(
+                    $"cat \"{remoteArchivePath}\" --count 65664 --config \"{configPath}\"",
+                    TimeSpan.FromSeconds(10),
+                    65664
+                );
+
+                if (bytes == null || bytes.Length < 128)
+                {
+                    return null;
+                }
+
+                using (var ms = new MemoryStream(bytes))
+                {
+                    return await _archiver.PeekMetadataAsync(ms);
                 }
             }
             catch (Exception ex)
             {
-                DebugConsole.WriteException(ex, "Failed to get cloud PlayTime");
+                DebugConsole.WriteDebug($"Peek failed: {ex.Message}");
                 return null;
             }
         }

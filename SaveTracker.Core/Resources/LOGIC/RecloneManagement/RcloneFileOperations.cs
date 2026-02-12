@@ -18,6 +18,7 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
         private readonly Game _currentGame;
         private readonly ChecksumService _checksumService = new ChecksumService();
         private readonly RcloneTransferService _transferService = new RcloneTransferService();
+        private readonly SaveArchiver _archiver = new SaveArchiver();
 
         // Forwarding static properties for backward compatibility if needed, 
         // though direct usage of RclonePathHelper is preferred.
@@ -33,30 +34,71 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             game = game ?? _currentGame;
             if (game == null) throw new ArgumentNullException(nameof(game));
 
-            var config = await ConfigManagement.LoadConfigAsync();
-            var cloudHelper = new CloudProviderHelper(); // Instantiating here or pass as dependency? 
-                                                         // RcloneFileOperations typically doesn't use CloudProviderHelper directly in existing code? 
-                                                         // It gets config path from RclonePathHelper.
-                                                         // But we need the "gdrive:" prefix.
-                                                         // CloudProviderHelper.GetProviderConfigName is what we need. 
-                                                         // It is in SaveTracker.Resources.HELPERS.
-                                                         // Let's use simple instantiation or static helper if available. 
-                                                         // SaveTracker.Resources.HELPERS.CloudProviderHelper
-
             string remoteName = new CloudProviderHelper().GetProviderConfigName(provider);
             string sanitizedGameName = SanitizeName(game.Name);
             string basePath = $"{remoteName}:{SaveTracker.Resources.Logic.SaveFileUploadManager.RemoteBaseFolder}/{sanitizedGameName}";
 
-            if (!string.IsNullOrEmpty(game.ActiveProfileId))
+            // All profiles (default and named) are now stored at the game root level
+            return await Task.FromResult(basePath);
+        }
+
+        /// <summary>
+        /// Gets the archive filename for a specific profile
+        /// </summary>
+        public string GetArchiveFileName(string? profileId)
+        {
+            if (string.IsNullOrEmpty(profileId) || profileId == "default")
             {
-                var profile = config.Profiles.FirstOrDefault(p => p.Id == game.ActiveProfileId);
-                if (profile != null && !profile.IsDefault)
-                {
-                    string profileFolder = SanitizeName(profile.Name);
-                    basePath = $"{basePath}/Additional Profiles/{profileFolder}";
-                }
+                return "default.sta";
             }
-            return basePath;
+
+            string sanitized = SanitizeFileName(profileId);
+            return $"{sanitized}.sta";
+        }
+
+        /// <summary>
+        /// Sanitizes a profile name for safe filesystem usage
+        /// </summary>
+        private string SanitizeFileName(string name)
+        {
+            // Remove invalid filename characters
+            string invalid = new string(Path.GetInvalidFileNameChars()) + ":*?\"<>|";
+
+            foreach (char c in invalid)
+            {
+                name = name.Replace(c, '_');
+            }
+
+            // Limit length to 200 chars to avoid path length issues
+            if (name.Length > 200)
+            {
+                name = name.Substring(0, 200);
+            }
+
+            return name;
+        }
+
+        /// <summary>
+        /// Checks if a remote file exists (fast check)
+        /// </summary>
+        public async Task<bool> RemoteFileExistsAsync(string remotePath, CloudProvider provider)
+        {
+            try
+            {
+                string configPath = RclonePathHelper.GetConfigPath(provider);
+                var executor = new RcloneExecutor();
+
+                var result = await executor.ExecuteRcloneCommand(
+                    $"lsf \"{remotePath}\" --config \"{configPath}\"",
+                    TimeSpan.FromSeconds(5)
+                );
+
+                return result.Success && !string.IsNullOrWhiteSpace(result.Output);
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private static string SanitizeName(string name)
@@ -121,7 +163,8 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             Game game = null,
             CloudProvider? provider = null,
             IProgress<RcloneProgressUpdate>? progress = null,
-            bool force = false)
+            bool force = false,
+            string? targetFileName = null)
         {
             // Use provided game or fall back to constructor game
             game = game ?? _currentGame;
@@ -193,7 +236,7 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                 DebugConsole.WriteInfo($"UPLOADING: {fileName}");
 
                 CloudProvider effectiveProvider = provider ?? await GetEffectiveProvider(game);
-                bool uploadSuccess = await _transferService.UploadFileWithRetry(filePath, remotePath, fileName, effectiveProvider, progress);
+                bool uploadSuccess = await _transferService.UploadFileWithRetry(filePath, remotePath, fileName, effectiveProvider, progress, targetFileName);
 
                 if (uploadSuccess)
                 {
@@ -714,6 +757,7 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             return await _transferService.CheckCloudSaveExistsAsync(remoteBasePath, effectiveProvider);
         }
 
+
         public async Task<bool> DownloadDirectory(string remotePath, string localPath, CloudProvider? provider = null)
         {
             CloudProvider effectiveProvider = provider ?? await GetEffectiveProvider(_currentGame);
@@ -730,167 +774,80 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
         {
             string stagingFolder = Path.Combine(Path.GetTempPath(), "SaveTracker_Download_" + Guid.NewGuid().ToString("N"));
 
-            // Get detected prefix for correct path expansion on Linux
-            var gameData = await ConfigManagement.GetGameData(game);
-            string? detectedPrefix = gameData?.DetectedPrefix;
-
             try
             {
-                DebugConsole.WriteInfo($"Downloading cloud saves to staging folder: {stagingFolder}");
                 Directory.CreateDirectory(stagingFolder);
-
                 CloudProvider effectiveProvider = provider ?? await GetEffectiveProvider(game);
-                var downloadResult = await _transferService.DownloadDirectory(remotePath, stagingFolder, effectiveProvider, progress);
 
-                if (!downloadResult)
+                // === HIGH PERFORMANCE RESTORE (.sta) ===
+                string archiveFileName = GetArchiveFileName(game.ActiveProfileId);
+                string remoteArchivePath = $"{remotePath}/{archiveFileName}";
+                string localArchivePath = Path.Combine(stagingFolder, archiveFileName);
+
+                if (await RemoteFileExistsAsync(remoteArchivePath, effectiveProvider))
                 {
-                    DebugConsole.WriteError($"Failed to download files to staging");
-                    return false;
-                }
+                    DebugConsole.WriteInfo($"Found {archiveFileName}! Performance mode enabled.");
 
-                // Explicitly check for checksum file and try to download it specifically if missing
-                // This covers cases where rclone filtering might have excluded it or it was somehow missed
-
-                var checksumService = new ChecksumService();
-                string correctChecksumPath = checksumService.GetChecksumFilePath(game.InstallDirectory, game.ActiveProfileId);
-                string checksumFileName = Path.GetFileName(correctChecksumPath);
-
-                string relativeChecksumPath = PathContractor.ContractPath(correctChecksumPath, game.InstallDirectory, detectedPrefix).Replace('\\', '/');
-                string stagingChecksumPath = Path.Combine(stagingFolder, relativeChecksumPath);
-                if (!File.Exists(stagingChecksumPath))
-                {
-                    DebugConsole.WriteWarning($"Checksum file ({relativeChecksumPath}) missing - attempting fallback checks...");
-
-                    // 1. Try explicit fetch of the profile-specific name
-                    string remoteChecksumPath = $"{remotePath}/{relativeChecksumPath}";
-
-                    // Create directory in staging if it doesn't exist (e.g. %GAMEPATH% subfolder)
-                    string? stagingDir = Path.GetDirectoryName(stagingChecksumPath);
-                    if (!string.IsNullOrEmpty(stagingDir)) Directory.CreateDirectory(stagingDir);
-
-                    bool checksumDownloaded = await _transferService.DownloadFileWithRetry(
-                        remoteChecksumPath,
-                        stagingChecksumPath,
-                        checksumFileName,
+                    bool archiveDownloaded = await _transferService.DownloadFileWithRetry(
+                        remoteArchivePath,
+                        localArchivePath,
+                        archiveFileName,
                         effectiveProvider
                     );
 
-                    // 2. Fallback to legacy checksum name if profile-specific failed
-                    if (!checksumDownloaded)
+                    if (archiveDownloaded && File.Exists(localArchivePath))
                     {
-                        string legacyChecksumName = ".savetracker_checksums.json";
-                        string legacyRelativePath = relativeChecksumPath.Replace(checksumFileName, legacyChecksumName);
-                        string legacyRemotePath = $"{remotePath}/{legacyRelativePath}";
-
-                        DebugConsole.WriteInfo($"Attempting legacy checksum fetch: {legacyRelativePath}");
-
-                        checksumDownloaded = await _transferService.DownloadFileWithRetry(
-                            legacyRemotePath,
-                            stagingChecksumPath, // Still save it to the expected local path
-                            legacyChecksumName,
-                            effectiveProvider
+                        DebugConsole.WriteInfo("Unpacking archive...");
+                        var unpackResult = await _archiver.UnpackAsync(
+                            localArchivePath,
+                            game.InstallDirectory,
+                            game.InstallDirectory
                         );
-                    }
 
-                    if (checksumDownloaded)
-                        DebugConsole.WriteSuccess("Successfully recovered checksum file.");
-                    else
-                        DebugConsole.WriteWarning("Could not recover checksum file - PlayTime metadata might be lost.");
-                }
-
-                // Drive restoration from Staging Files (Source of Truth)
-                // This handles cases where checksum keys are flattened/broken but Staging has correct structure.
-                var stagingFiles = Directory.GetFiles(stagingFolder, "*", SearchOption.AllDirectories);
-                DebugConsole.WriteInfo($"Restoring {stagingFiles.Length} files from staging...");
-
-                int successCount = 0;
-                int failCount = 0;
-
-                foreach (var sourceFile in stagingFiles)
-                {
-                    try
-                    {
-                        string relativeStagingPath = Path.GetRelativePath(stagingFolder, sourceFile);
-                        string fileName = Path.GetFileName(sourceFile);
-
-                        // Skip checksum files
-                        if (fileName.Equals(SaveFileUploadManager.ChecksumFilename, StringComparison.OrdinalIgnoreCase))
-                            continue;
-
-                        // Calculate Target Path based on Staging Structure
-                        string targetPath;
-
-                        // Handle variable-based paths (e.g. %USERPROFILE%/...)
-                        if (relativeStagingPath.Contains("%"))
+                        if (unpackResult.Success && unpackResult.Metadata != null)
                         {
-                            // Normalize for ExpandPath
-                            string contractedPath = relativeStagingPath.Replace('\\', '/');
-                            targetPath = PathContractor.ExpandPath(contractedPath, game.InstallDirectory, detectedPrefix);
+                            DebugConsole.WriteSuccess("✓ Atomic restoration successful");
+
+                            // Update local checksum file
+                            var checksumService = new ChecksumService();
+                            string localChecksumPath = checksumService.GetChecksumFilePath(
+                                game.InstallDirectory,
+                                game.ActiveProfileId
+                            );
+
+                            string json = JsonConvert.SerializeObject(unpackResult.Metadata, Formatting.Indented);
+                            await File.WriteAllTextAsync(localChecksumPath, json);
+
+                            return true;
                         }
                         else
                         {
-                            // Assume relative to Game Directory
-                            targetPath = Path.Combine(game.InstallDirectory, relativeStagingPath);
+                            DebugConsole.WriteWarning($"Archive unpacking failed: {unpackResult.Error}. Falling back to legacy restore.");
                         }
-
-                        // Safety: Ensure target is not empty
-                        if (string.IsNullOrWhiteSpace(targetPath))
-                        {
-                            DebugConsole.WriteWarning($"Could not determine target path for {relativeStagingPath}");
-                            failCount++;
-                            continue;
-                        }
-
-                        string? targetDir = Path.GetDirectoryName(targetPath);
-                        if (!string.IsNullOrEmpty(targetDir) && !Directory.Exists(targetDir))
-                        {
-                            Directory.CreateDirectory(targetDir);
-                        }
-
-                        File.Copy(sourceFile, targetPath, overwrite: true);
-                        DebugConsole.WriteSuccess($"✓ Restored: {relativeStagingPath}");
-                        successCount++;
-
-                        // UPDATE LOCAL CHECKSUM RECORD to fix the metadata for future
-                        // This regenerates the checksums.json with CORRECT paths
-                        await _checksumService.UpdateFileChecksumRecord(targetPath, game.InstallDirectory, detectedPrefix);
-                    }
-                    catch (Exception ex)
-                    {
-                        DebugConsole.WriteError($"✗ Failed to restore {Path.GetFileName(sourceFile)}: {ex.Message}");
-                        failCount++;
                     }
                 }
 
-                // Copy the cloud checksum file to the game directory so the app knows what files are tracked
-                // Copy the cloud checksum file to the game directory so the app knows what files are tracked
-                try
+                // === LEGACY FALLBACK ===
+                DebugConsole.WriteInfo("Archive not found or failed. Using legacy restore method...");
+
+                var downloadResult = await _transferService.DownloadDirectory(
+                    remotePath,
+                    stagingFolder,
+                    effectiveProvider,
+                    progress
+                );
+
+                if (!downloadResult)
                 {
-                    string restoredChecksumName = Path.GetFileName(checksumService.GetChecksumFilePath(game.InstallDirectory, game.ActiveProfileId));
-                    string cloudChecksumPath = Path.Combine(stagingFolder, restoredChecksumName);
-                    string localChecksumPath = checksumService.GetChecksumFilePath(game.InstallDirectory, game.ActiveProfileId);
-
-                    if (File.Exists(cloudChecksumPath))
-                    {
-                        File.Copy(cloudChecksumPath, localChecksumPath, overwrite: true);
-                        DebugConsole.WriteSuccess($"✓ Checksum file copied to game directory: {localChecksumPath}");
-                    }
-                    else
-                    {
-                        DebugConsole.WriteWarning("Cloud checksum file not found in staging folder");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    DebugConsole.WriteWarning($"Failed to copy checksum file to game directory: {ex.Message}");
+                    DebugConsole.WriteWarning("Legacy download failed");
+                    return false;
                 }
 
-                DebugConsole.WriteSuccess($"Download complete: {successCount} files restored, {failCount} failed");
-                return failCount == 0;
+                return await ProcessLegacyRestore(stagingFolder, game, remotePath, effectiveProvider);
             }
             catch (Exception ex)
             {
-                DebugConsole.WriteException(ex, "Download with checksum failed");
+                DebugConsole.WriteException(ex, "Restore operation failed");
                 return false;
             }
             finally
@@ -898,16 +855,156 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                 try
                 {
                     if (Directory.Exists(stagingFolder))
+                        Directory.Delete(stagingFolder, true);
+                }
+                catch { }
+            }
+        }
+
+        /// <summary>
+        /// Handles legacy file restoration from staging folder
+        /// </summary>
+        private async Task<bool> ProcessLegacyRestore(
+            string stagingFolder,
+            Game game,
+            string remotePath,
+            CloudProvider provider)
+        {
+            // Get detected prefix for correct path expansion on Linux
+            var gameData = await ConfigManagement.GetGameData(game);
+            string? detectedPrefix = gameData?.DetectedPrefix;
+
+            var checksumService = new ChecksumService();
+            string correctChecksumPath = checksumService.GetChecksumFilePath(game.InstallDirectory, game.ActiveProfileId);
+            string checksumFileName = Path.GetFileName(correctChecksumPath);
+
+            string relativeChecksumPath = PathContractor.ContractPath(correctChecksumPath, game.InstallDirectory, detectedPrefix).Replace('\\', '/');
+            string stagingChecksumPath = Path.Combine(stagingFolder, relativeChecksumPath);
+
+            if (!File.Exists(stagingChecksumPath))
+            {
+                DebugConsole.WriteWarning($"Checksum file ({relativeChecksumPath}) missing - attempting fallback checks...");
+
+                // 1. Try explicit fetch of the profile-specific name
+                string remoteChecksumPath = $"{remotePath}/{relativeChecksumPath}";
+
+                // Create directory in staging if it doesn't exist (e.g. %GAMEPATH% subfolder)
+                string? stagingDir = Path.GetDirectoryName(stagingChecksumPath);
+                if (!string.IsNullOrEmpty(stagingDir)) Directory.CreateDirectory(stagingDir);
+
+                bool checksumDownloaded = await _transferService.DownloadFileWithRetry(
+                    remoteChecksumPath,
+                    stagingChecksumPath,
+                    checksumFileName,
+                    provider
+                );
+
+                // 2. Fallback to legacy checksum name if profile-specific failed
+                if (!checksumDownloaded)
+                {
+                    string legacyChecksumName = ".savetracker_checksums.json";
+                    string legacyRelativePath = relativeChecksumPath.Replace(checksumFileName, legacyChecksumName);
+                    string legacyRemotePath = $"{remotePath}/{legacyRelativePath}";
+
+                    DebugConsole.WriteInfo($"Attempting legacy checksum fetch: {legacyRelativePath}");
+
+                    checksumDownloaded = await _transferService.DownloadFileWithRetry(
+                        legacyRemotePath,
+                        stagingChecksumPath, // Still save it to the expected local path
+                        legacyChecksumName,
+                        provider
+                    );
+                }
+
+                if (checksumDownloaded)
+                    DebugConsole.WriteSuccess("Successfully recovered checksum file.");
+                else
+                    DebugConsole.WriteWarning("Could not recover checksum file - PlayTime metadata might be lost.");
+            }
+
+            // Drive restoration from Staging Files (Source of Truth)
+            var stagingFiles = Directory.GetFiles(stagingFolder, "*", SearchOption.AllDirectories);
+            DebugConsole.WriteInfo($"Restoring {stagingFiles.Length} files from staging...");
+
+            int successCount = 0;
+            int failCount = 0;
+
+            foreach (var sourceFile in stagingFiles)
+            {
+                try
+                {
+                    string relativeStagingPath = Path.GetRelativePath(stagingFolder, sourceFile);
+                    string fileName = Path.GetFileName(sourceFile);
+
+                    // Skip checksum files
+                    if (fileName.Equals(SaveFileUploadManager.ChecksumFilename, StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    // Skip profile archives if they somehow ended up in staging
+                    if (fileName.EndsWith(".sta"))
+                        continue;
+
+                    // Calculate Target Path based on Staging Structure
+                    string targetPath;
+
+                    // Handle variable-based paths (e.g. %USERPROFILE%/...)
+                    if (relativeStagingPath.Contains("%"))
                     {
-                        Directory.Delete(stagingFolder, recursive: true);
-                        DebugConsole.WriteInfo("Staging folder cleaned up");
+                        // Normalize for ExpandPath
+                        string contractedPath = relativeStagingPath.Replace('\\', '/');
+                        targetPath = PathContractor.ExpandPath(contractedPath, game.InstallDirectory, detectedPrefix);
                     }
+                    else
+                    {
+                        // Assume relative to Game Directory
+                        targetPath = Path.Combine(game.InstallDirectory, relativeStagingPath);
+                    }
+
+                    // Safety: Ensure target is not empty
+                    if (string.IsNullOrWhiteSpace(targetPath))
+                    {
+                        DebugConsole.WriteWarning($"Could not determine target path for {relativeStagingPath}");
+                        failCount++;
+                        continue;
+                    }
+
+                    string? targetDir = Path.GetDirectoryName(targetPath);
+                    if (!string.IsNullOrEmpty(targetDir) && !Directory.Exists(targetDir))
+                    {
+                        Directory.CreateDirectory(targetDir);
+                    }
+
+                    File.Copy(sourceFile, targetPath, overwrite: true);
+                    DebugConsole.WriteSuccess($"✓ Restored: {relativeStagingPath}");
+                    successCount++;
+
+                    // UPDATE LOCAL CHECKSUM RECORD
+                    await checksumService.UpdateFileChecksumRecord(targetPath, game.InstallDirectory, detectedPrefix);
                 }
                 catch (Exception ex)
                 {
-                    DebugConsole.WriteWarning($"Failed to clean up staging folder: {ex.Message}");
+                    DebugConsole.WriteError($"✗ Failed to restore {Path.GetFileName(sourceFile)}: {ex.Message}");
+                    failCount++;
                 }
             }
+
+            // Copy the cloud checksum file to the game directory
+            try
+            {
+                if (File.Exists(stagingChecksumPath))
+                {
+                    string localChecksumPath = checksumService.GetChecksumFilePath(game.InstallDirectory, game.ActiveProfileId);
+                    File.Copy(stagingChecksumPath, localChecksumPath, overwrite: true);
+                    DebugConsole.WriteSuccess($"✓ Checksum file copied to game directory: {localChecksumPath}");
+                }
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteWarning($"Failed to copy checksum file to game directory: {ex.Message}");
+            }
+
+            DebugConsole.WriteSuccess($"Download complete: {successCount} files restored, {failCount} failed");
+            return failCount == 0;
         }
         public async Task<bool> DownloadSelectedFilesAsync(string remotePath, Game game, List<string> selectedRelativePaths, CloudProvider? provider = null)
         {

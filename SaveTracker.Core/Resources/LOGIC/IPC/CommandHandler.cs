@@ -89,7 +89,13 @@ namespace SaveTracker.Resources.LOGIC.IPC
                     "showblacklist" => HandleShowWindow("blacklist"),
                     "showcloudsettings" => HandleShowWindow("cloudsettings"),
                     "showsettings" => HandleShowWindow("settings"),
+                    "showsettings" => HandleShowWindow("settings"),
                     "reportissue" => HandleReportIssue(),
+
+                    // === SESSION COMMANDS ===
+                    "startsession" => await HandleStartSession(request),
+                    "endsession" => await HandleEndSession(request),
+                    "stopsession" => await HandleEndSession(request), // Alias
 
                     _ => IpcResponse.Fail($"Unknown command: {request.Command}")
                 };
@@ -111,7 +117,7 @@ namespace SaveTracker.Resources.LOGIC.IPC
                 GameName = CurrentlyTrackingGame
             });
         }
-        
+
         private IpcResponse HandleGetSyncStatus()
         {
             return IpcResponse.Success(new SyncStatusResponse
@@ -125,7 +131,7 @@ namespace SaveTracker.Resources.LOGIC.IPC
         #endregion
 
         #region Game Commands
-        
+
         private async Task<IpcResponse> HandleGetGameList()
         {
             try
@@ -169,9 +175,9 @@ namespace SaveTracker.Resources.LOGIC.IPC
 
                 // Deserialize using Context
                 Game? game = null;
-                try 
+                try
                 {
-                     game = JsonSerializer.Deserialize(gameData, IpcJsonContext.Default.Game);
+                    game = JsonSerializer.Deserialize(gameData, IpcJsonContext.Default.Game);
                 }
                 catch
                 {
@@ -202,15 +208,15 @@ namespace SaveTracker.Resources.LOGIC.IPC
 
         private async Task<IpcResponse> HandleGetGameStatus(IpcRequest request)
         {
-             var name = request.GetString("name");
+            var name = request.GetString("name");
             if (string.IsNullOrEmpty(name))
                 return IpcResponse.Fail("Missing 'name' parameter");
 
             // Simple status for now
             bool isTracking = IsCurrentlyTracking && string.Equals(CurrentlyTrackingGame, name, StringComparison.OrdinalIgnoreCase);
-            
-            return IpcResponse.Success(new TrackingStatusResponse 
-            { 
+
+            return IpcResponse.Success(new TrackingStatusResponse
+            {
                 Tracking = isTracking,
                 GameName = name
             });
@@ -230,7 +236,7 @@ namespace SaveTracker.Resources.LOGIC.IPC
                 var smartSync = new SmartSyncService();
                 var comparison = await smartSync.CompareProgressAsync(game, TimeSpan.FromMinutes(5));
                 bool inCloud = comparison.Status != SmartSyncService.ProgressStatus.CloudNotFound;
-                
+
                 return IpcResponse.Success(new CloudPresenceResponse { InCloud = inCloud });
             }
             catch (Exception ex)
@@ -249,11 +255,11 @@ namespace SaveTracker.Resources.LOGIC.IPC
             if (string.IsNullOrEmpty(name))
                 return IpcResponse.Fail("Missing 'name' parameter");
 
-             try
+            try
             {
                 var game = await ConfigManagement.LoadGameAsync(name);
                 if (game == null) return IpcResponse.Fail("Game not found");
-                
+
                 // Stub: ProfileManager methods don't exist yet, return default profile
                 var profiles = new List<string> { "default" };
                 return IpcResponse.Success(new ProfileListResponse { Profiles = profiles, ActiveProfileId = "default" });
@@ -266,10 +272,10 @@ namespace SaveTracker.Resources.LOGIC.IPC
 
         private async Task<IpcResponse> HandleGetActiveProfile(IpcRequest request)
         {
-             var name = request.GetString("name");
+            var name = request.GetString("name");
             if (string.IsNullOrEmpty(name))
                 return IpcResponse.Fail("Missing 'name' parameter");
-            
+
             try
             {
                 var game = await ConfigManagement.LoadGameAsync(name);
@@ -278,7 +284,7 @@ namespace SaveTracker.Resources.LOGIC.IPC
                 // Stub: Return default profile
                 return IpcResponse.Success(new ActiveProfileResponse { ActiveProfileId = "default" });
             }
-             catch (Exception ex)
+            catch (Exception ex)
             {
                 return IpcResponse.Fail($"Failed to get active profile: {ex.Message}");
             }
@@ -313,8 +319,8 @@ namespace SaveTracker.Resources.LOGIC.IPC
 
         private IpcResponse HandleGetProviders()
         {
-             var providers = Enum.GetNames(typeof(CloudProvider)).ToList();
-             return IpcResponse.Success(new ProvidersResponse { Providers = providers });
+            var providers = Enum.GetNames(typeof(CloudProvider)).ToList();
+            return IpcResponse.Success(new ProvidersResponse { Providers = providers });
         }
 
         private async Task<IpcResponse> HandleGetSelectedProvider()
@@ -333,7 +339,7 @@ namespace SaveTracker.Resources.LOGIC.IPC
         private async Task<IpcResponse> HandleSetProvider(IpcRequest request)
         {
             // Update GetParam usage later
-            var providerId = request.GetParam<int?>("provider", IpcJsonContext.Default.NullableInt32); 
+            var providerId = request.GetParam<int?>("provider", IpcJsonContext.Default.NullableInt32);
             if (providerId == null)
                 return IpcResponse.Fail("Missing 'provider' parameter");
 
@@ -347,8 +353,8 @@ namespace SaveTracker.Resources.LOGIC.IPC
 
         private async Task<IpcResponse> HandleGetRcloneStatus()
         {
-             bool installed = await _rcloneInstaller.RcloneCheckAsync(CloudProvider.GoogleDrive);
-             return IpcResponse.Success(new InstallRcloneResponse { Installed = installed });
+            bool installed = await _rcloneInstaller.RcloneCheckAsync(CloudProvider.GoogleDrive);
+            return IpcResponse.Success(new InstallRcloneResponse { Installed = installed });
         }
 
         private async Task<IpcResponse> HandleInstallRclone()
@@ -401,17 +407,17 @@ namespace SaveTracker.Resources.LOGIC.IPC
         private async Task<IpcResponse> HandleTriggerSync(IpcRequest request)
         {
             var name = request.GetString("name");
-            if(string.IsNullOrEmpty(name)) return IpcResponse.Fail("Missing name");
-            
+            if (string.IsNullOrEmpty(name)) return IpcResponse.Fail("Missing name");
+
             try
             {
                 var game = await ConfigManagement.LoadGameAsync(name);
                 if (game == null) return IpcResponse.Fail("Game not found");
-                
+
                 _windowManager.TriggerSmartSync(game);
                 return IpcResponse.Success(new SyncTriggeredResponse { Triggered = true, GameName = name });
             }
-            catch(Exception ex)
+            catch (Exception ex)
             {
                 return IpcResponse.Fail(ex.Message);
             }
@@ -419,9 +425,9 @@ namespace SaveTracker.Resources.LOGIC.IPC
 
         private async Task<IpcResponse> HandleUploadNow(IpcRequest request)
         {
-             var name = request.GetString("name");
-            if(string.IsNullOrEmpty(name)) return IpcResponse.Fail("Missing name");
-            
+            var name = request.GetString("name");
+            if (string.IsNullOrEmpty(name)) return IpcResponse.Fail("Missing name");
+
             try
             {
                 // Assuming WindowManager has method for this or we should trigger logic directly
@@ -430,12 +436,12 @@ namespace SaveTracker.Resources.LOGIC.IPC
                 var game = await ConfigManagement.LoadGameAsync(name);
                 if (game == null) return IpcResponse.Fail("Game not found");
 
-                 _windowManager.TriggerSmartSync(game); // Reusing smart sync for now
+                _windowManager.TriggerSmartSync(game); // Reusing smart sync for now
                 return IpcResponse.Success(new UploadStartedResponse { UploadStarted = true, GameName = name });
             }
-             catch(Exception ex)
+            catch (Exception ex)
             {
-                 return IpcResponse.Fail(ex.Message);
+                return IpcResponse.Fail(ex.Message);
             }
         }
 
@@ -451,14 +457,14 @@ namespace SaveTracker.Resources.LOGIC.IPC
 
                 var smartSync = new SmartSyncService();
                 var comparison = await smartSync.CompareProgressAsync(game, TimeSpan.FromMinutes(5));
-                
+
                 // Need a DTO for comparison result?
                 // IPC Context has ProgressComparisonResult? No I removed it.
                 // Let's mapping it to a simple object or re-add the DTO.
                 // For now, let's just return a bool or simple string status
-                
+
                 return IpcResponse.Success(new CompareProgressResponse
-                { 
+                {
                     Status = comparison.Status.ToString(),
                     LocalTime = comparison.LocalPlayTime.ToString(),
                     CloudTime = comparison.CloudPlayTime.ToString()
@@ -551,7 +557,7 @@ namespace SaveTracker.Resources.LOGIC.IPC
 
         private async Task<IpcResponse> HandleSaveGameSettings(IpcRequest request)
         {
-             var name = request.GetString("name");
+            var name = request.GetString("name");
             if (string.IsNullOrEmpty(name))
                 return IpcResponse.Fail("Missing 'name' parameter");
 
@@ -559,9 +565,9 @@ namespace SaveTracker.Resources.LOGIC.IPC
             {
                 var game = await ConfigManagement.LoadGameAsync(name);
                 if (game == null) return IpcResponse.Fail("Game not found");
-                
+
                 var data = await ConfigManagement.GetGameData(game) ?? new GameUploadData();
-                 if (request.Params != null)
+                if (request.Params != null)
                 {
                     var p = request.Params.Value;
                     if (p.TryGetProperty("enableSmartSync", out var ess))
@@ -591,7 +597,7 @@ namespace SaveTracker.Resources.LOGIC.IPC
         private IpcResponse HandleShowWindow(string windowType)
         {
             // Simple mapping
-             switch (windowType)
+            switch (windowType)
             {
                 case "library": _windowManager.ShowLibrary(); break;
                 case "blacklist": _windowManager.ShowBlacklist(); break;
@@ -607,6 +613,46 @@ namespace SaveTracker.Resources.LOGIC.IPC
         {
             _windowManager.ReportIssue();
             return IpcResponse.Success(new IssueReportedResponse { Opened = true });
+        }
+
+        private async Task<IpcResponse> HandleStartSession(IpcRequest request)
+        {
+            var name = request.GetString("name");
+            if (string.IsNullOrEmpty(name))
+                return IpcResponse.Fail("Missing 'name' parameter");
+
+            try
+            {
+                var game = await ConfigManagement.LoadGameAsync(name);
+                if (game == null) return IpcResponse.Fail($"Game not found: {name}");
+
+                await _windowManager.StartSession(game);
+                return IpcResponse.Success(new { started = true, game = game.Name });
+            }
+            catch (Exception ex)
+            {
+                return IpcResponse.Fail($"Failed to start session: {ex.Message}");
+            }
+        }
+
+        private async Task<IpcResponse> HandleEndSession(IpcRequest request)
+        {
+            var name = request.GetString("name");
+            if (string.IsNullOrEmpty(name))
+                return IpcResponse.Fail("Missing 'name' parameter");
+
+            try
+            {
+                var game = await ConfigManagement.LoadGameAsync(name);
+                if (game == null) return IpcResponse.Fail($"Game not found: {name}");
+
+                await _windowManager.EndSession(game);
+                return IpcResponse.Success(new { ended = true, game = game.Name });
+            }
+            catch (Exception ex)
+            {
+                return IpcResponse.Fail($"Failed to end session: {ex.Message}");
+            }
         }
 
         #endregion

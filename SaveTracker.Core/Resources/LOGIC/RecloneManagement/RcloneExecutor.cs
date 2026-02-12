@@ -118,6 +118,75 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             }
         }
 
+        public async Task<byte[]> ExecuteRcloneBinaryAsync(
+            string arguments,
+            TimeSpan timeout,
+            int maxBytes = -1
+        )
+        {
+            DebugConsole.WriteDebug($"Executing Binary: rclone {arguments}");
+
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = RcloneExePath,
+                Arguments = arguments,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true,
+            };
+
+            try
+            {
+                using var process = Process.Start(startInfo);
+                if (process == null) return Array.Empty<byte>();
+
+                using var cts = new CancellationTokenSource(timeout);
+                using var ms = new MemoryStream();
+
+                var outputStream = process.StandardOutput.BaseStream;
+                byte[] buffer = new byte[8192];
+                int totalRead = 0;
+
+                var readTask = Task.Run(async () =>
+                {
+                    while (true)
+                    {
+                        int toRead = buffer.Length;
+                        if (maxBytes > 0) toRead = Math.Min(buffer.Length, maxBytes - totalRead);
+
+                        if (toRead <= 0) break;
+
+                        int read = await outputStream.ReadAsync(buffer, 0, toRead, cts.Token);
+                        if (read <= 0) break;
+
+                        ms.Write(buffer, 0, read);
+                        totalRead += read;
+
+                        if (maxBytes > 0 && totalRead >= maxBytes) break;
+                    }
+                });
+
+                var errorTask = process.StandardError.ReadToEndAsync();
+                var processTask = WaitForExitAsync(process, cts.Token);
+
+                await Task.WhenAll(processTask, readTask);
+
+                if (process.ExitCode != 0)
+                {
+                    string error = await errorTask;
+                    DebugConsole.WriteWarning($"Binary execution failed ({process.ExitCode}): {error}");
+                }
+
+                return ms.ToArray();
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteException(ex, "Binary execution failed");
+                return Array.Empty<byte>();
+            }
+        }
+
         // Method to read stream line-by-line and invoke callback
         private static async Task<string> ReadStreamAsync(
             StreamReader reader,

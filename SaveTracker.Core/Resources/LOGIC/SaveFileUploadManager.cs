@@ -7,6 +7,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Newtonsoft.Json;
 
 namespace SaveTracker.Resources.Logic
 {
@@ -27,9 +28,20 @@ namespace SaveTracker.Resources.Logic
         private readonly CloudProviderHelper _cloudProviderHelper = cloudProviderHelper ?? throw new ArgumentNullException(nameof(cloudProviderHelper));
         private readonly RcloneFileOperations _rcloneFileOperations = rcloneFileOperations ?? throw new ArgumentNullException(nameof(rcloneFileOperations));
         private readonly RcloneConfigManager _configManager = new RcloneConfigManager();
+        private readonly SaveArchiver _archiver = new SaveArchiver();
 
         // Properties
         private static string RcloneExePath => RclonePathHelper.GetRclonePath();
+
+        // Caching
+        private static (bool IsValid, DateTime LastChecked) _validationCache = (false, DateTime.MinValue);
+        private static readonly TimeSpan ValidationCacheDuration = TimeSpan.FromMinutes(1);
+
+        public static void InvalidateValidationCache()
+        {
+            _validationCache = (false, DateTime.MinValue);
+            DebugConsole.WriteInfo("Validation cache invalidated.");
+        }
 
         // Event for progress updates
         public event Action<UploadProgressInfo>? OnProgressChanged;
@@ -88,9 +100,19 @@ namespace SaveTracker.Resources.Logic
                 context.Provider = provider;
             }
 
-            // Validate rclone installation and config
-            bool rcloneValid = await _rcloneInstaller.RcloneCheckAsync(context.Provider);
-            bool configValid = await _configManager.IsValidConfig(context.Provider);
+            // Validate rclone installation and config (with caching)
+            bool rcloneValid = false;
+            bool configValid = false;
+
+            // Check cache
+            if (_validationCache.IsValid && (DateTime.UtcNow - _validationCache.LastChecked) < ValidationCacheDuration)
+            {
+                DebugConsole.WriteDebug("Using cached validation result (Valid)");
+                return true;
+            }
+
+            rcloneValid = await _rcloneInstaller.RcloneCheckAsync(context.Provider);
+            configValid = await _configManager.IsValidConfig(context.Provider);
 
             if (!rcloneValid || !File.Exists(RcloneExePath) || !configValid)
             {
@@ -104,6 +126,7 @@ namespace SaveTracker.Resources.Logic
                         configValid = await _configManager.IsValidConfig(context.Provider);
                         if (rcloneValid && File.Exists(RcloneExePath) && configValid)
                         {
+                            _validationCache = (true, DateTime.UtcNow);
                             return true;
                         }
                     }
@@ -114,6 +137,7 @@ namespace SaveTracker.Resources.Logic
                 return false;
             }
 
+            _validationCache = (true, DateTime.UtcNow);
             return true;
         }
 
@@ -208,26 +232,377 @@ namespace SaveTracker.Resources.Logic
             CancellationToken cancellationToken,
             bool force = false)
         {
-            // Phase 1: Upload save files
-            await UploadSaveFilesAsync(
-                session,
-                fileManager.ValidFiles,
-                cancellationToken,
-                force
-            );
+            ReportProgress(new UploadProgressInfo
+            {
+                Status = "Preparing archive (.sta)...",
+                TotalFiles = fileManager.ValidFiles.Count,
+                ProcessedFiles = 0
+            });
 
-            // Phase 2: Upload checksum file
-            await UploadChecksumFileAsync(
-                session,
-                checksumManager,
-                cancellationToken
-            );
+            string tempArchivePath = Path.Combine(Path.GetTempPath(), $"upload_{Guid.NewGuid()}.sta");
 
-            // Phase 3: Check and upload icon (Best effort, non-blocking failure)
-            await CheckAndUploadIconAsync(
-                session,
-                cancellationToken
-            );
+            try
+            {
+                // 1. Load metadata
+                var checksumService = new ChecksumService();
+                var metadata = await checksumService.LoadChecksumData(
+                    session.Context.Game.InstallDirectory,
+                    session.Context.Game.ActiveProfileId
+                );
+
+                // 1b. Populate metadata with current files (CRITICAL for .sta header)
+                // We must ensure the metadata in the archive header matches the files we are packing.
+                if (metadata.Files == null) metadata.Files = new Dictionary<string, FileChecksumRecord>();
+
+                foreach (var filePath in fileManager.ValidFiles)
+                {
+                    try
+                    {
+                        // Use existing ChecksumService logic to get checksum
+                        string checksum = await checksumService.GetFileChecksum(filePath);
+                        if (string.IsNullOrEmpty(checksum)) continue;
+
+                        string portablePath = PathContractor.ContractPath(filePath, session.Context.Game.InstallDirectory, metadata.DetectedPrefix);
+                        var fileInfo = new FileInfo(filePath);
+
+                        metadata.Files[portablePath] = new FileChecksumRecord
+                        {
+                            Checksum = checksum,
+                            LastUpload = DateTime.UtcNow,
+                            FileSize = fileInfo.Length,
+                            Path = portablePath,
+                            LastWriteTime = fileInfo.LastWriteTimeUtc
+                        };
+                    }
+                    catch (Exception ex)
+                    {
+                        DebugConsole.WriteWarning($"Failed to prep metadata for {Path.GetFileName(filePath)}: {ex.Message}");
+                    }
+                }
+
+                // 2. Pack the archive
+                var packResult = await _archiver.PackAsync(
+                    tempArchivePath,
+                    fileManager.ValidFiles,
+                    session.Context.Game.InstallDirectory,
+                    metadata,
+                    metadata.DetectedPrefix
+                );
+
+                if (!packResult.Success)
+                {
+                    throw new Exception($"Failed to bundle files: {packResult.Error}");
+                }
+
+                // 3. Determine archive filename
+                string archiveFileName = _rcloneFileOperations.GetArchiveFileName(
+                    session.Context.Game.ActiveProfileId
+                );
+
+                ReportProgress(new UploadProgressInfo
+                {
+                    Status = $"Uploading {archiveFileName}...",
+                    CurrentFile = archiveFileName,
+                    TotalFiles = 1,
+                    ProcessedFiles = 0
+                });
+
+                // 4. Upload archive DIRECTLY (bypass ProcessFile to avoid path contraction)
+                string remoteArchivePath = $"{session.RemoteBasePath}/{archiveFileName}";
+                string configPath = RclonePathHelper.GetConfigPath(session.Context.Provider);
+                var executor = new RcloneExecutor();
+
+                DebugConsole.WriteInfo($"Uploading to: {remoteArchivePath}");
+
+                var uploadResult = await executor.ExecuteRcloneCommand(
+                    $"copyto \"{tempArchivePath}\" \"{remoteArchivePath}\" --config \"{configPath}\"",
+                    TimeSpan.FromMinutes(5),
+                    hideWindow: true
+                );
+
+                if (!uploadResult.Success)
+                {
+                    throw new Exception($"Archive upload failed: {uploadResult.Error}");
+                }
+
+                DebugConsole.WriteSuccess($"✓ {archiveFileName} uploaded successfully (Atomic)");
+                session.Stats.UploadedCount = fileManager.ValidFiles.Count;
+                session.Stats.UploadedSize = new FileInfo(tempArchivePath).Length;
+
+                // 4b. Update checksum records using BATCH update
+                // Collect file records that were just uploaded
+                var updates = new Dictionary<string, FileChecksumRecord>();
+                foreach (var filePath in fileManager.ValidFiles)
+                {
+                    string portablePath = PathContractor.ContractPath(filePath, session.Context.Game.InstallDirectory, metadata.DetectedPrefix);
+                    if (metadata.Files != null && metadata.Files.TryGetValue(portablePath, out var record))
+                    {
+                        updates[portablePath] = record;
+                    }
+                }
+
+                await checksumService.UpdateBatchChecksumRecords(
+                    updates,
+                    session.Context.Game.InstallDirectory,
+                    session.Context.Game.ActiveProfileId
+                );
+
+                // 5. Upload icon & 6. Legacy cleanup (PARALLEL)
+                DebugConsole.WriteDebug("Starting post-upload tasks (Icon + Cleanup)...");
+                var iconTask = CheckAndUploadIconAsync(session, cancellationToken);
+                var cleanupTask = CleanupLegacyFiles(session, archiveFileName);
+                await Task.WhenAll(iconTask, cleanupTask);
+            }
+            finally
+            {
+                if (File.Exists(tempArchivePath))
+                {
+                    try { File.Delete(tempArchivePath); } catch { }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Deletes legacy individual files after successful .sta upload
+        /// </summary>
+        private async Task CleanupLegacyFiles(UploadSession session, string archiveFileName)
+        {
+            try
+            {
+                DebugConsole.WriteInfo("Checking for legacy files to clean up...");
+
+                string configPath = RclonePathHelper.GetConfigPath(session.Context.Provider);
+                var executor = new RcloneExecutor();
+
+                // Delete all files EXCEPT .sta files and icon.png
+                var deleteResult = await executor.ExecuteRcloneCommand(
+                    $"delete \"{session.RemoteBasePath}\" " +
+                    $"--exclude \"*.sta\" " +
+                    $"--exclude \"icon.png\" " +
+                    $"--config \"{configPath}\"",
+                    TimeSpan.FromSeconds(30)
+                );
+
+                if (deleteResult.Success)
+                {
+                    DebugConsole.WriteSuccess("✓ Legacy individual files cleaned up");
+                }
+
+                // Check for legacy "Additional Profiles" folder
+                string legacyProfilesPath = $"{session.RemoteBasePath}/Additional Profiles";
+                var checkResult = await executor.ExecuteRcloneCommand(
+                    $"lsf \"{legacyProfilesPath}\" --config \"{configPath}\"",
+                    TimeSpan.FromSeconds(5)
+                );
+
+                if (checkResult.Success && !string.IsNullOrWhiteSpace(checkResult.Output))
+                {
+                    DebugConsole.WriteInfo("Found legacy Additional Profiles folder. Triggering migration...");
+
+                    // Run migration in background (non-blocking)
+                    _ = Task.Run(async () =>
+                    {
+                        await MigrateLegacyProfiles(
+                            session.Context.Game,
+                            session.Context.Provider
+                        );
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteWarning($"Legacy cleanup failed (non-critical): {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Migrates legacy "Additional Profiles" folder structure to .sta files
+        /// </summary>
+        private async Task MigrateLegacyProfiles(Game game, CloudProvider provider)
+        {
+            try
+            {
+                DebugConsole.WriteInfo("Starting legacy profile migration...");
+
+                string basePath = await _rcloneFileOperations.GetRemotePathAsync(provider, game);
+                string legacyProfilesPath = $"{basePath}/Additional Profiles";
+
+                string configPath = RclonePathHelper.GetConfigPath(provider);
+                var executor = new RcloneExecutor();
+
+                // List all profile folders
+                var listResult = await executor.ExecuteRcloneCommand(
+                    $"lsf \"{legacyProfilesPath}\" --dirs-only --config \"{configPath}\"",
+                    TimeSpan.FromSeconds(10)
+                );
+
+                if (!listResult.Success || string.IsNullOrWhiteSpace(listResult.Output))
+                {
+                    DebugConsole.WriteInfo("No legacy profiles found to migrate");
+                    return;
+                }
+
+                var profileFolders = listResult.Output
+                    .Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries)
+                    .Select(p => p.Trim().TrimEnd('/'))
+                    .Where(p => !string.IsNullOrWhiteSpace(p))
+                    .ToList();
+
+                DebugConsole.WriteInfo($"Found {profileFolders.Count} profiles to migrate");
+
+                int migratedCount = 0;
+                foreach (var profileName in profileFolders)
+                {
+                    bool success = await MigrateSingleProfile(
+                        game,
+                        provider,
+                        profileName,
+                        legacyProfilesPath,
+                        basePath
+                    );
+
+                    if (success) migratedCount++;
+                }
+
+                // Delete the old Additional Profiles folder
+                if (migratedCount == profileFolders.Count)
+                {
+                    await executor.ExecuteRcloneCommand(
+                        $"purge \"{legacyProfilesPath}\" --config \"{configPath}\"",
+                        TimeSpan.FromSeconds(30)
+                    );
+
+                    DebugConsole.WriteSuccess($"✓ Successfully migrated {migratedCount} profiles");
+                }
+                else
+                {
+                    DebugConsole.WriteWarning($"Partially migrated {migratedCount}/{profileFolders.Count} profiles");
+                }
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteException(ex, "Profile migration failed");
+            }
+        }
+
+        /// <summary>
+        /// Migrates a single legacy profile folder to .sta format
+        /// </summary>
+        private async Task<bool> MigrateSingleProfile(
+            Game game,
+            CloudProvider provider,
+            string profileName,
+            string legacyBasePath,
+            string newBasePath)
+        {
+            string tempFolder = Path.Combine(Path.GetTempPath(), $"ProfileMigration_{Guid.NewGuid():N}");
+            string tempArchive = Path.Combine(Path.GetTempPath(), $"{profileName}_{Guid.NewGuid()}.sta");
+
+            try
+            {
+                Directory.CreateDirectory(tempFolder);
+
+                // 1. Download legacy profile folder
+                string profileFolder = $"{legacyBasePath}/{profileName}";
+                var transferService = new RcloneTransferService();
+
+                DebugConsole.WriteInfo($"Downloading legacy profile '{profileName}'...");
+
+                bool downloaded = await transferService.DownloadDirectory(
+                    profileFolder,
+                    tempFolder,
+                    provider,
+                    null
+                );
+
+                if (!downloaded)
+                {
+                    DebugConsole.WriteWarning($"Failed to download profile '{profileName}'");
+                    return false;
+                }
+
+                // 2. Find and load checksum file
+                var checksumFiles = Directory.GetFiles(tempFolder, ".savetracker_checksums*.json", SearchOption.AllDirectories);
+                if (checksumFiles.Length == 0)
+                {
+                    DebugConsole.WriteWarning($"No checksum file found for profile '{profileName}'");
+                    return false;
+                }
+
+                string json = await File.ReadAllTextAsync(checksumFiles[0]);
+                var metadata = JsonConvert.DeserializeObject<GameUploadData>(json);
+
+                if (metadata == null)
+                {
+                    DebugConsole.WriteWarning($"Failed to parse metadata for profile '{profileName}'");
+                    return false;
+                }
+
+                // 3. Get all save files (exclude checksum files)
+                var files = Directory.GetFiles(tempFolder, "*", SearchOption.AllDirectories)
+                    .Where(f => !f.EndsWith(".json"))
+                    .ToList();
+
+                if (files.Count == 0)
+                {
+                    DebugConsole.WriteWarning($"No save files found for profile '{profileName}'");
+                    return false;
+                }
+
+                // 4. Pack into .sta
+                DebugConsole.WriteInfo($"Packing profile '{profileName}' into archive...");
+
+                var packResult = await _archiver.PackAsync(
+                    tempArchive,
+                    files,
+                    tempFolder,
+                    metadata,
+                    metadata.DetectedPrefix
+                );
+
+                if (!packResult.Success)
+                {
+                    DebugConsole.WriteWarning($"Failed to pack profile '{profileName}': {packResult.Error}");
+                    return false;
+                }
+
+                // 5. Upload to new location DIRECTLY (bypass ProcessFile to avoid path contraction)
+                string newArchiveName = _rcloneFileOperations.GetArchiveFileName(profileName);
+                string remoteArchivePath = $"{newBasePath}/{newArchiveName}";
+                string configPath = RclonePathHelper.GetConfigPath(provider);
+                var migrationExecutor = new RcloneExecutor();
+
+                DebugConsole.WriteInfo($"Uploading {newArchiveName} to {remoteArchivePath}...");
+
+                var migrationResult = await migrationExecutor.ExecuteRcloneCommand(
+                    $"copyto \"{tempArchive}\" \"{remoteArchivePath}\" --config \"{configPath}\"",
+                    TimeSpan.FromMinutes(5),
+                    hideWindow: true
+                );
+
+                if (!migrationResult.Success)
+                {
+                    DebugConsole.WriteWarning($"Failed to upload migrated profile '{profileName}': {migrationResult.Error}");
+                    return false;
+                }
+
+                DebugConsole.WriteSuccess($"✓ Migrated profile '{profileName}' → {newArchiveName}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteWarning($"Failed to migrate profile '{profileName}': {ex.Message}");
+                return false;
+            }
+            finally
+            {
+                try
+                {
+                    if (Directory.Exists(tempFolder)) Directory.Delete(tempFolder, true);
+                    if (File.Exists(tempArchive)) File.Delete(tempArchive);
+                }
+                catch { }
+            }
         }
 
         #endregion
@@ -682,24 +1057,9 @@ namespace SaveTracker.Resources.Logic
                     return;
                 }
 
-                // Auto-migrate from legacy global naming - works for ANY profile including DEFAULT
-                string migrateToProfileId = !string.IsNullOrEmpty(_profileId) ? _profileId : "DEFAULT_PROFILE_ID";
-                await _checksumService.MigrateFromLegacyIfNeeded(gameDirectory, migrateToProfileId);
-
-                // Load existing checksum data (or create new if doesn't exist)
-                // Provide profileId so it uses profile-specific file
-                var checksumData = await _checksumService.LoadChecksumData(gameDirectory, _profileId);
-
-                // DON'T update checksums here - they should only be updated AFTER successful upload
-                // This method just ensures the checksum file exists and is ready to be uploaded
-                // Individual file checksums will be updated by ProcessFile after successful upload
-
-                // Save the checksum data (with existing checksums, not updated ones)
-                // This creates the file with the correct profile-specific naming
-                await _checksumService.SaveChecksumData(checksumData, gameDirectory, _profileId);
-
-                // Set the checksum file path for upload (uses profile-specific naming for all profiles)
-                ChecksumFilePath = _checksumService.GetChecksumFilePath(gameDirectory, _profileId);
+                // Atomically ensure checksum file exists, migrates if needed, and is ready for upload
+                // This replaces the previous non-atomic Load/Save sequence
+                ChecksumFilePath = await _checksumService.EnsureChecksumFileAsync(gameDirectory, !string.IsNullOrEmpty(_profileId) ? _profileId : "DEFAULT_PROFILE_ID");
 
                 DebugConsole.WriteSuccess($"Checksum file prepared: {Path.GetFileName(ChecksumFilePath)} (checksums will be updated after successful uploads)");
             }

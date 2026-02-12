@@ -195,6 +195,51 @@ namespace SaveTracker.ViewModels
 
                         // Legacy icon scanning removed to prevent rate limits.
                         // Icons are now handled by the centralized CloudLibraryCacheService.
+
+                        // STEP 3.5: Peek .sta metadata for cloud games (progressive)
+                        var cloudGames = mergedGames.Values.Where(g => g.IsInCloud).ToList();
+                        if (cloudGames.Any())
+                        {
+                            await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                                StatusMessage = $"Fetching metadata for {cloudGames.Count} cloud games...");
+
+                            var syncService = new SmartSyncService();
+                            int peekCount = 0;
+
+                            foreach (var cloudGame in cloudGames)
+                            {
+                                try
+                                {
+                                    string gameRemotePath = $"{remoteName}:{SaveFileUploadManager.RemoteBaseFolder}/{cloudGame.Name}";
+
+                                    // Peek default profile archive
+                                    var metadata = await syncService.PeekCloudMetadataAsync(
+                                        gameRemotePath,
+                                        provider,
+                                        "DEFAULT_PROFILE_ID"
+                                    );
+
+                                    if (metadata != null)
+                                    {
+                                        await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                                        {
+                                            cloudGame.PlayTime = metadata.PlayTime;
+                                            cloudGame.FileCount = metadata.Files?.Count ?? 0;
+                                            cloudGame.TotalSize = metadata.Files?.Values.Sum(f => f.FileSize) ?? 0;
+                                        });
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    DebugConsole.WriteDebug($"[CloudLibrary] Peek failed for {cloudGame.Name}: {ex.Message}");
+                                }
+
+                                peekCount++;
+                                int count = peekCount;
+                                await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                                    StatusMessage = $"Fetching metadata {count}/{cloudGames.Count}...");
+                            }
+                        }
                     }
                     catch (Exception ex)
                     {

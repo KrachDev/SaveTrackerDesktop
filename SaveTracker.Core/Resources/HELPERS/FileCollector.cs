@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using SaveTracker.Resources.SAVE_SYSTEM;
+using SaveTracker.Resources.Logic.RecloneManagement;
 
 namespace SaveTracker.Resources.HELPERS
 {
@@ -17,6 +18,8 @@ namespace SaveTracker.Resources.HELPERS
         private readonly HashSet<string> _collectedFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private readonly object _lock = new object();
         private static readonly HashSet<string> _loggedFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private Dictionary<string, FileChecksumRecord>? _cachedBlacklist;
+        private bool _blacklistLoaded = false;
 
         public FileCollector(Game game)
         {
@@ -42,45 +45,53 @@ namespace SaveTracker.Resources.HELPERS
             {
                 try
                 {
-                    var data = ConfigManagement.GetGameData(_game).Result;
-                    var blacklist = data.Blacklist;
-                    if (data?.Blacklist != null && data.Blacklist.Count > 0)
+                    // Performance optimization: Load and cache the blacklist once per session
+                    // This avoids repeated JSON parsing and disk I/O on every file event
+                    if (!_blacklistLoaded)
                     {
-                        blacklist = data.Blacklist;
-                    }
-                    
-
-                    foreach (var blacklistItem in blacklist)
-                    {
-                        // Get the path from the FileChecksumRecord
-                        string blacklistPath = blacklistItem.Value?.Path;
-                        if (string.IsNullOrEmpty(blacklistPath))
-                            continue;
-
-                        // Normalize blacklist path once per iteration
-                        string normalizedBlacklist = blacklistPath.Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar);
-
-                        // Combined exact path match
-                        if (string.Equals(normalizedPath, normalizedBlacklist, StringComparison.OrdinalIgnoreCase))
+                        var data = ConfigManagement.GetGameData(_game).Result;
+                        if (data != null && data.Blacklist != null)
                         {
-                            if (shouldLog)
-                                DebugConsole.WriteWarning($"Skipped (Game Blacklist - Exact): {filePath}");
-                            return true;
+                            _cachedBlacklist = data.Blacklist;
                         }
+                        _blacklistLoaded = true;
+                    }
 
-                        // Check if file is within blacklisted directory
-                        if (normalizedPath.StartsWith(normalizedBlacklist + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                    if (_cachedBlacklist != null && _cachedBlacklist.Count > 0)
+                    {
+                        foreach (var blacklistItem in _cachedBlacklist)
                         {
-                            if (shouldLog)
-                                DebugConsole.WriteWarning($"Skipped (Game Blacklist - Directory): {filePath}");
-                            return true;
+                            // Get the path from the FileChecksumRecord
+                            string? blacklistPath = blacklistItem.Value?.Path;
+                            if (string.IsNullOrEmpty(blacklistPath))
+                                continue;
+
+                            // Normalize blacklist path once per iteration
+                            string normalizedBlacklist = blacklistPath.Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar);
+
+                            // Combined exact path match
+                            if (string.Equals(normalizedPath, normalizedBlacklist, StringComparison.OrdinalIgnoreCase))
+                            {
+                                if (shouldLog)
+                                    DebugConsole.WriteWarning($"Skipped (Game Blacklist - Exact): {filePath}");
+                                return true;
+                            }
+
+                            // Check if file is within blacklisted directory
+                            if (normalizedPath.StartsWith(normalizedBlacklist + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                            {
+                                if (shouldLog)
+                                    DebugConsole.WriteWarning($"Skipped (Game Blacklist - Directory): {filePath}");
+                                return true;
+                            }
                         }
                     }
                 }
                 catch (Exception ex)
                 {
                     // Silently continue if blacklist check fails
-                    DebugConsole.WriteWarning($"Blacklist check failed: {ex.Message}");
+                    if (shouldLog)
+                        DebugConsole.WriteWarning($"Blacklist check failed: {ex.Message}");
                 }
             }
 
@@ -94,7 +105,7 @@ namespace SaveTracker.Resources.HELPERS
                     {
                         if (shouldLog)
                             DebugConsole.WriteWarning($"Skipped (System Directory): {filePath}");
-                            return true;
+                        return true;
                     }
                 }
 
@@ -106,14 +117,14 @@ namespace SaveTracker.Resources.HELPERS
                 {
                     if (shouldLog)
                         DebugConsole.WriteWarning($"Skipped (Ignored Filename): {filePath}");
-                        return true;
+                    return true;
                 }
 
                 if (Ignorlist.IgnoredExtensions.Contains(fileExtension))
                 {
                     if (shouldLog)
                         DebugConsole.WriteWarning($"Skipped (Ignored Extension): {filePath}");
-                        return true;
+                    return true;
                 }
 
                 // 4. Simple keyword filtering
@@ -126,7 +137,7 @@ namespace SaveTracker.Resources.HELPERS
                     {
                         if (shouldLog)
                             DebugConsole.WriteWarning($"Skipped (Keyword Match '{keyword}'): {filePath}");
-                            return true;
+                        return true;
                     }
                 }
 
@@ -135,7 +146,7 @@ namespace SaveTracker.Resources.HELPERS
                 {
                     if (shouldLog)
                         DebugConsole.WriteWarning($"Skipped (System File Heuristic): {filePath}");
-                        return true;
+                    return true;
                 }
 
                 // File passed all filters

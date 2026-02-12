@@ -58,38 +58,38 @@ namespace SaveTracker.ViewModels
         private async void InitializeAsync()
         {
             await CheckRcloneStatusAsync();
-                await LoadProvidersAsync();
+            await LoadProvidersAsync();
+        }
+
+        private async Task LoadProvidersAsync()
+        {
+            Providers.Clear();
+            var supported = _providerHelper.GetSupportedProviders();
+            foreach (var provider in supported)
+            {
+                Providers.Add(new CloudProviderDisplay(provider, _providerHelper.GetProviderDisplayName(provider)));
             }
 
-            private async Task LoadProvidersAsync()
+            // Try to load from config, otherwise default to first
+            try
             {
-                Providers.Clear();
-                var supported = _providerHelper.GetSupportedProviders();
-                foreach (var provider in supported)
+                var config = await ConfigManagement.LoadConfigAsync();
+                if (config?.CloudConfig?.Provider != null)
                 {
-                    Providers.Add(new CloudProviderDisplay(provider, _providerHelper.GetProviderDisplayName(provider)));
+                    var savedProvider = Providers.FirstOrDefault(p => p.Provider == config.CloudConfig.Provider);
+                    SelectedProvider = savedProvider ?? Providers.FirstOrDefault();
                 }
-
-                // Try to load from config, otherwise default to first
-                try
+                else
                 {
-                    var config = await ConfigManagement.LoadConfigAsync();
-                    if (config?.CloudConfig?.Provider != null)
-                    {
-                        var savedProvider = Providers.FirstOrDefault(p => p.Provider == config.CloudConfig.Provider);
-                        SelectedProvider = savedProvider ?? Providers.FirstOrDefault();
-                    }
-                    else
-                    {
-                        SelectedProvider = Providers.FirstOrDefault();
-                    }
-                }
-                catch
-                {
-                    // If config loading fails, default to first provider
                     SelectedProvider = Providers.FirstOrDefault();
                 }
             }
+            catch
+            {
+                // If config loading fails, default to first provider
+                SelectedProvider = Providers.FirstOrDefault();
+            }
+        }
 
         private async Task CheckRcloneStatusAsync()
         {
@@ -225,6 +225,9 @@ namespace SaveTracker.ViewModels
                         config.CloudConfig.Provider = SelectedProvider.Provider;
                         await ConfigManagement.SaveConfigAsync(config);
                     }
+
+                    // Invalidate validation cache so the new provider is checked immediately
+                    SaveFileUploadManager.InvalidateValidationCache();
 
                     Avalonia.Threading.Dispatcher.UIThread.Post(() => RequestClose?.Invoke());
                 }

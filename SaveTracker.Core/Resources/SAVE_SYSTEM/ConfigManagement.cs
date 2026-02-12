@@ -539,6 +539,7 @@ public class Config
 
     // Notification settings
     public bool EnableNotifications { get; set; } = true;
+    public bool EnableIPC { get; set; } = false;
 
     // Auto-updater settings
     public bool CheckForUpdatesOnStartup { get; set; } = true;

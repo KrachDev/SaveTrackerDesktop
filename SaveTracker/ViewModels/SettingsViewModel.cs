@@ -38,6 +38,10 @@ namespace SaveTracker.ViewModels
         [ObservableProperty]
         private string _analyticsSummary = "No data collected";
 
+        // Other settings
+        [ObservableProperty]
+        private bool _enableIPC;
+
         // Auto-updater properties
         [ObservableProperty]
         private bool _checkForUpdatesOnStartup;
@@ -78,6 +82,7 @@ namespace SaveTracker.ViewModels
                 StartMinimized = _currentConfig.StartMinimized;
                 ShowDebugConsole = _currentConfig.ShowDebugConsole;
                 EnableNotifications = _currentConfig.EnableNotifications;
+                EnableIPC = _currentConfig.EnableIPC;
                 CheckForUpdatesOnStartup = _currentConfig.CheckForUpdatesOnStartup;
                 EnableAnalytics = _currentConfig.EnableAnalytics;
             }
@@ -99,6 +104,7 @@ namespace SaveTracker.ViewModels
             _currentConfig.StartMinimized = StartMinimized;
             _currentConfig.ShowDebugConsole = ShowDebugConsole;
             _currentConfig.EnableNotifications = EnableNotifications;
+            _currentConfig.EnableIPC = EnableIPC;
             _currentConfig.CheckForUpdatesOnStartup = CheckForUpdatesOnStartup;
             _currentConfig.EnableAnalytics = EnableAnalytics;
 

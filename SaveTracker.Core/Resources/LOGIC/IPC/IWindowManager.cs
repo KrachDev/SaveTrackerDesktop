@@ -12,7 +12,12 @@ namespace SaveTracker.Resources.LOGIC.IPC
         void ShowSettings();
         void TriggerSmartSync(Game game);
         void ReportIssue();
-        
+
+
+        // Session Management
+        Task StartSession(Game game);
+        Task EndSession(Game game);
+
         // Add other UI interactions here if necessary
     }
 }

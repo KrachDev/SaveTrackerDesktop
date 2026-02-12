@@ -120,6 +120,31 @@
                                 </StackPanel>
                             </StackPanel>
                         </Expander>
+
+                        <!-- Integrations Settings -->
+                        <Expander IsExpanded="True" 
+                                  Background="#2A2A2A" 
+                                  CornerRadius="8"
+                                  BorderThickness="0"
+                                  HorizontalAlignment="Stretch">
+                            <Expander.Header>
+                                <TextBlock Text="Integrations" 
+                                           FontSize="16" 
+                                           FontWeight="SemiBold" 
+                                           Foreground="White"/>
+                            </Expander.Header>
+                            <StackPanel Spacing="12" Margin="10">
+                                <StackPanel Spacing="8">
+                                    <CheckBox IsChecked="{Binding EnableIPC}" 
+                                              Content="Enable IPC Server"
+                                              Foreground="#CCCCCC"/>
+                                    <TextBlock Text="Allows external applications (like Playnite extensions) to communicate with SaveTracker. Requires restart." 
+                                               FontSize="11" 
+                                               Foreground="#666666"
+                                               Margin="28,0,0,0"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Expander>
                         
                     </StackPanel>
                 </ScrollViewer>

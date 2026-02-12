@@ -26,7 +26,8 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
             string remotePath,
             string fileName,
             CloudProvider provider,
-            IProgress<RcloneProgressUpdate>? progress = null)
+            IProgress<RcloneProgressUpdate>? progress = null,
+            string? targetFileName = null)
         {
             for (int attempt = 1; attempt <= _maxRetries; attempt++)
             {
@@ -37,8 +38,16 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
                     );
 
                     string configPath = RclonePathHelper.GetConfigPath(provider);
+
+                    // If targetFileName is provided, we use it as the final part of the destination path
+                    string destination = remotePath;
+                    if (!string.IsNullOrEmpty(targetFileName))
+                    {
+                        destination = $"{remotePath.TrimEnd('/')}/{targetFileName}";
+                    }
+
                     var result = await _executor.ExecuteRcloneCommand(
-                        $"copyto \"{localPath}\" \"{remotePath}\" --config \"{configPath}\" --progress",
+                        $"copyto \"{localPath}\" \"{destination}\" --config \"{configPath}\" --progress",
                         _processTimeout,
                         hideWindow: true,
                         allowedExitCodes: null,
