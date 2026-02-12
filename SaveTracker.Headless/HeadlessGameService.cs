@@ -174,7 +174,7 @@ namespace SaveTracker.Headless
             var provider = config.CloudConfig.Provider;
 
             var installer = new SaveTracker.Resources.Logic.RecloneManagement.RcloneInstaller();
-            var helper = new SaveTracker.Resources.Logic.CloudProviderHelper();
+            var helper = new CloudProviderHelper();
             var ops = new SaveTracker.Resources.Logic.RecloneManagement.RcloneFileOperations(game);
 
             var manager = new SaveTracker.Resources.Logic.SaveFileUploadManager(installer, helper, ops);

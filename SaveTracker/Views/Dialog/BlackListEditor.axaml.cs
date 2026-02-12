@@ -7,6 +7,7 @@ using Avalonia.Platform.Storage;
 using MsBox.Avalonia;
 using Newtonsoft.Json;
 using SaveTracker.Resources.HELPERS;
+using SaveTracker.Resources.LOGIC;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -16,10 +17,7 @@ namespace SaveTracker
 {
     public partial class BlackListEditor : Window
     {
-        private HashSet<string> _directories;
-        private HashSet<string> _extensions;
-        private HashSet<string> _fileNames;
-        private List<string> _keywords;
+        private BlacklistManager _manager => BlacklistManager.Instance;
 
         public BlackListEditor()
         {
@@ -31,11 +29,7 @@ namespace SaveTracker
 
         private void LoadBlacklists()
         {
-            // Load from Ignorlist class
-            _directories = new HashSet<string>(Ignorlist.IgnoredDirectoriesSet);
-            _extensions = new HashSet<string>(Ignorlist.IgnoredExtensions);
-            _fileNames = new HashSet<string>(Ignorlist.IgnoredFileNames);
-            _keywords = new List<string>(Ignorlist.IgnoredKeywords);
+            // Data is managed by BlacklistManager.Instance
         }
 
         private void SetupEventHandlers()
@@ -67,7 +61,7 @@ namespace SaveTracker
         private void PopulateDirectories()
         {
             DirectoryListPanel.Children.Clear();
-            var filteredDirs = _directories.OrderBy(d => d).ToList();
+            var filteredDirs = _manager.Directories.OrderBy(d => d).ToList();
 
             foreach (var dir in filteredDirs)
             {
@@ -75,46 +69,46 @@ namespace SaveTracker
                 DirectoryListPanel.Children.Add(item);
             }
 
-            DirectoryCountText.Text = $"{_directories.Count} directories";
+            DirectoryCountText.Text = $"{_manager.Directories.Count} directories";
         }
 
         private void PopulateExtensions()
         {
             ExtensionWrapPanel.Children.Clear();
 
-            foreach (var ext in _extensions.OrderBy(e => e))
+            foreach (var ext in _manager.Extensions.OrderBy(e => e))
             {
                 var chip = CreateChip(ext, () => RemoveExtension(ext));
                 ExtensionWrapPanel.Children.Add(chip);
             }
 
-            ExtensionCountText.Text = $"{_extensions.Count} extensions";
+            ExtensionCountText.Text = $"{_manager.Extensions.Count} extensions";
         }
 
         private void PopulateFileNames()
         {
             FileNameWrapPanel.Children.Clear();
 
-            foreach (var fileName in _fileNames.OrderBy(f => f))
+            foreach (var fileName in _manager.FileNames.OrderBy(f => f))
             {
                 var chip = CreateChip(fileName, () => RemoveFileName(fileName));
                 FileNameWrapPanel.Children.Add(chip);
             }
 
-            FileNameCountText.Text = $"{_fileNames.Count} file names";
+            FileNameCountText.Text = $"{_manager.FileNames.Count} file names";
         }
 
         private void PopulateKeywords()
         {
             KeywordWrapPanel.Children.Clear();
 
-            foreach (var keyword in _keywords.OrderBy(k => k))
+            foreach (var keyword in _manager.Keywords.OrderBy(k => k))
             {
                 var chip = CreateChip(keyword, () => RemoveKeyword(keyword));
                 KeywordWrapPanel.Children.Add(chip);
             }
 
-            KeywordCountText.Text = $"{_keywords.Count} keywords";
+            KeywordCountText.Text = $"{_manager.Keywords.Count} keywords";
         }
 
         #endregion
@@ -225,7 +219,7 @@ namespace SaveTracker
 
             if (!string.IsNullOrEmpty(result))
             {
-                if (_directories.Add(result))
+                if (_manager.AddDirectory(result))
                 {
                     PopulateDirectories();
                     DebugConsole.WriteSuccess($"Added directory: {result}");
@@ -251,7 +245,7 @@ namespace SaveTracker
             if (!ext.StartsWith("."))
                 ext = "." + ext;
 
-            if (_extensions.Add(ext))
+            if (_manager.AddExtension(ext))
             {
                 ExtensionInput.Text = string.Empty;
                 PopulateExtensions();
@@ -273,7 +267,7 @@ namespace SaveTracker
                 return;
             }
 
-            if (_fileNames.Add(fileName))
+            if (_manager.AddFileName(fileName))
             {
                 FileNameInput.Text = string.Empty;
                 PopulateFileNames();
@@ -295,9 +289,8 @@ namespace SaveTracker
                 return;
             }
 
-            if (!_keywords.Contains(keyword, StringComparer.OrdinalIgnoreCase))
+            if (_manager.AddKeyword(keyword))
             {
-                _keywords.Add(keyword);
                 KeywordInput.Text = string.Empty;
                 PopulateKeywords();
                 DebugConsole.WriteSuccess($"Added keyword: {keyword}");
@@ -314,7 +307,7 @@ namespace SaveTracker
 
         private void RemoveDirectory(string dir)
         {
-            if (_directories.Remove(dir))
+            if (_manager.RemoveDirectory(dir))
             {
                 PopulateDirectories();
                 DebugConsole.WriteInfo($"Removed directory: {dir}");
@@ -323,7 +316,7 @@ namespace SaveTracker
 
         private void RemoveExtension(string ext)
         {
-            if (_extensions.Remove(ext))
+            if (_manager.RemoveExtension(ext))
             {
                 PopulateExtensions();
                 DebugConsole.WriteInfo($"Removed extension: {ext}");
@@ -332,7 +325,7 @@ namespace SaveTracker
 
         private void RemoveFileName(string fileName)
         {
-            if (_fileNames.Remove(fileName))
+            if (_manager.RemoveFileName(fileName))
             {
                 PopulateFileNames();
                 DebugConsole.WriteInfo($"Removed file name: {fileName}");
@@ -341,7 +334,7 @@ namespace SaveTracker
 
         private void RemoveKeyword(string keyword)
         {
-            if (_keywords.Remove(keyword))
+            if (_manager.RemoveKeyword(keyword))
             {
                 PopulateKeywords();
                 DebugConsole.WriteInfo($"Removed keyword: {keyword}");
@@ -354,37 +347,13 @@ namespace SaveTracker
 
         private async void SaveBtn_Click(object? sender, RoutedEventArgs e)
         {
-            try
-            {
-                // Save to JSON file or update Ignorlist class
-                var data = new
-                {
-                    Directories = _directories.ToList(),
-                    Extensions = _extensions.ToList(),
-                    FileNames = _fileNames.ToList(),
-                    Keywords = _keywords.ToList()
-                };
-
-                string json = JsonConvert.SerializeObject(data, Formatting.Indented);
-                string filePath = Path.Combine(
-                    AppDomain.CurrentDomain.BaseDirectory,
-                    "Data",
-                    "blacklist_config.json"
-                );
-
-                await File.WriteAllTextAsync(filePath, json);
-
-                DebugConsole.WriteSuccess("Blacklist saved successfully!");
-            }
-            catch (Exception ex)
-            {
-                DebugConsole.WriteException(ex, "Failed to save blacklist");
-            }
+            await _manager.SaveAsync();
+            DebugConsole.WriteSuccess("Blacklist saved successfully!");
         }
 
         private void ResetToDefaultBtn_Click(object? sender, RoutedEventArgs e)
         {
-            LoadBlacklists();
+            _manager.Load();
             PopulateUI();
             DebugConsole.WriteInfo("Reset to default blacklist");
         }
@@ -414,10 +383,10 @@ namespace SaveTracker
                 {
                     var data = new
                     {
-                        Directories = _directories.ToList(),
-                        Extensions = _extensions.ToList(),
-                        FileNames = _fileNames.ToList(),
-                        Keywords = _keywords.ToList()
+                        Directories = _manager.Directories.ToList(),
+                        Extensions = _manager.Extensions.ToList(),
+                        FileNames = _manager.FileNames.ToList(),
+                        Keywords = _manager.Keywords.ToList()
                     };
 
                     var json = JsonConvert.SerializeObject(data, Formatting.Indented);
@@ -458,11 +427,19 @@ namespace SaveTracker
 
                     if (data != null)
                     {
-                        _directories = new HashSet<string>(data.Directories ?? new List<string>());
-                        _extensions = new HashSet<string>(data.Extensions ?? new List<string>());
-                        _fileNames = new HashSet<string>(data.FileNames ?? new List<string>());
-                        _keywords = data.Keywords ?? new List<string>();
+                        _manager.Directories.Clear();
+                        foreach (var d in data.Directories ?? new List<string>()) _manager.Directories.Add(d);
 
+                        _manager.Extensions.Clear();
+                        foreach (var ext in data.Extensions ?? new List<string>()) _manager.Extensions.Add(ext);
+
+                        _manager.FileNames.Clear();
+                        foreach (var fn in data.FileNames ?? new List<string>()) _manager.FileNames.Add(fn);
+
+                        _manager.Keywords.Clear();
+                        foreach (var k in data.Keywords ?? new List<string>()) _manager.Keywords.Add(k);
+
+                        await _manager.SaveAsync();
                         PopulateUI();
                         DebugConsole.WriteSuccess($"Imported from: {result[0]}");
                     }
@@ -483,8 +460,8 @@ namespace SaveTracker
             DirectoryListPanel.Children.Clear();
 
             var filteredDirs = string.IsNullOrWhiteSpace(searchText)
-                ? _directories.OrderBy(d => d)
-                : _directories.Where(d => d.Contains(searchText, StringComparison.OrdinalIgnoreCase))
+                ? _manager.Directories.OrderBy(d => d)
+                : _manager.Directories.Where(d => d.Contains(searchText, StringComparison.OrdinalIgnoreCase))
                               .OrderBy(d => d);
 
             foreach (var dir in filteredDirs)
@@ -493,7 +470,7 @@ namespace SaveTracker
                 DirectoryListPanel.Children.Add(item);
             }
 
-            DirectoryCountText.Text = $"{filteredDirs.Count()} of {_directories.Count} directories";
+            DirectoryCountText.Text = $"{filteredDirs.Count()} of {_manager.Directories.Count} directories";
         }
 
         #endregion

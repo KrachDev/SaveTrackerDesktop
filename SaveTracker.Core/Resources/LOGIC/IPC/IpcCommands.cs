@@ -230,4 +230,34 @@ namespace SaveTracker.Resources.LOGIC.IPC
         [JsonPropertyName("recommendation")]
         public string? Recommendation { get; set; }
     }
+
+    /// <summary>
+    /// Categorized help info for IPC commands
+    /// </summary>
+    public class HelpResponse
+    {
+        [JsonPropertyName("categories")]
+        public List<CommandCategory> Categories { get; set; } = new();
+    }
+
+    public class CommandCategory
+    {
+        [JsonPropertyName("name")]
+        public string Name { get; set; } = string.Empty;
+
+        [JsonPropertyName("commands")]
+        public List<CommandInfo> Commands { get; set; } = new();
+    }
+
+    public class CommandInfo
+    {
+        [JsonPropertyName("command")]
+        public string Command { get; set; } = string.Empty;
+
+        [JsonPropertyName("description")]
+        public string Description { get; set; } = string.Empty;
+
+        [JsonPropertyName("params")]
+        public string? Params { get; set; }
+    }
 }

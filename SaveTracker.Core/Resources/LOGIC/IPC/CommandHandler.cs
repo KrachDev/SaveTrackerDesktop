@@ -47,6 +47,7 @@ namespace SaveTracker.Resources.LOGIC.IPC
                 {
                     // === STATUS COMMANDS ===
                     "ping" => IpcResponse.Success(new PingResponse { Pong = true }),
+                    "help" => HandleHelp(),
                     "istracking" => HandleIsTracking(),
                     "getsyncstatus" => HandleGetSyncStatus(),
 
@@ -89,13 +90,19 @@ namespace SaveTracker.Resources.LOGIC.IPC
                     "showblacklist" => HandleShowWindow("blacklist"),
                     "showcloudsettings" => HandleShowWindow("cloudsettings"),
                     "showsettings" => HandleShowWindow("settings"),
-                    "showsettings" => HandleShowWindow("settings"),
                     "reportissue" => HandleReportIssue(),
+
 
                     // === SESSION COMMANDS ===
                     "startsession" => await HandleStartSession(request),
                     "endsession" => await HandleEndSession(request),
                     "stopsession" => await HandleEndSession(request), // Alias
+
+                    // === DATA API COMMANDS ===
+                    "getblacklist" => HandleGetBlacklist(),
+                    "addblacklist" => await HandleAddBlacklist(request),
+                    "removeblacklist" => await HandleRemoveBlacklist(request),
+                    "getcloudlibrary" => await HandleGetCloudLibrary(),
 
                     _ => IpcResponse.Fail($"Unknown command: {request.Command}")
                 };
@@ -108,6 +115,92 @@ namespace SaveTracker.Resources.LOGIC.IPC
         }
 
         #region Status Commands
+
+        private IpcResponse HandleHelp()
+        {
+            var help = new HelpResponse();
+
+            // Add Version Info
+            help.Categories.Add(new CommandCategory
+            {
+                Name = "System Info",
+                Commands = new List<CommandInfo>
+                {
+                    new CommandInfo { Command = "Version", Description = "Headless v0.1 (based on SaveTracker v0.5.0)" }
+                }
+            });
+
+            help.Categories.Add(new CommandCategory
+            {
+                Name = "Status Commands",
+                Commands = new List<CommandInfo>
+                {
+                    new CommandInfo { Command = "ping", Description = "Check if IPC server is alive" },
+                    new CommandInfo { Command = "help", Description = "Show this help message" },
+                    new CommandInfo { Command = "istracking", Description = "Check if any game is currently being tracked" },
+                    new CommandInfo { Command = "getsyncstatus", Description = "Get current upload/download status" }
+                }
+            });
+
+            help.Categories.Add(new CommandCategory
+            {
+                Name = "Game Commands",
+                Commands = new List<CommandInfo>
+                {
+                    new CommandInfo { Command = "getgamelist", Description = "Get list of all games in SaveTracker" },
+                    new CommandInfo { Command = "getgame", Description = "Get details for a specific game", Params = "name" },
+                    new CommandInfo { Command = "addgame", Description = "Add a new game or update existing one", Params = "{game object}" },
+                    new CommandInfo { Command = "deletegame", Description = "Remove a game from SaveTracker", Params = "name" },
+                    new CommandInfo { Command = "getgamestatus", Description = "Get tracking status for a specific game", Params = "name" },
+                    new CommandInfo { Command = "checkcloudpresence", Description = "Check if game has saves in the cloud", Params = "name" }
+                }
+            });
+
+            help.Categories.Add(new CommandCategory
+            {
+                Name = "Session Commands",
+                Commands = new List<CommandInfo>
+                {
+                    new CommandInfo { Command = "startsession", Description = "Manually start tracking a game", Params = "name" },
+                    new CommandInfo { Command = "endsession", Description = "Manually stop tracking and trigger upload", Params = "name" }
+                }
+            });
+
+            help.Categories.Add(new CommandCategory
+            {
+                Name = "Blacklist Commands",
+                Commands = new List<CommandInfo>
+                {
+                    new CommandInfo { Command = "getblacklist", Description = "Get current global blacklist config" },
+                    new CommandInfo { Command = "addblacklist", Description = "Add item to blacklist", Params = "type, value (directory, extension, filename, keyword)" },
+                    new CommandInfo { Command = "removeblacklist", Description = "Remove item from blacklist", Params = "type, value" }
+                }
+            });
+
+            help.Categories.Add(new CommandCategory
+            {
+                Name = "Data API Commands",
+                Commands = new List<CommandInfo>
+                {
+                    new CommandInfo { Command = "getcloudlibrary", Description = "Get merged list of local and cloud games with stats" }
+                }
+            });
+
+            help.Categories.Add(new CommandCategory
+            {
+                Name = "Window Commands (GUI only)",
+                Commands = new List<CommandInfo>
+                {
+                    new CommandInfo { Command = "showmainwindow", Description = "Bring main window to front" },
+                    new CommandInfo { Command = "showlibrary", Description = "Open Library window" },
+                    new CommandInfo { Command = "showblacklist", Description = "Open Blacklist editor" },
+                    new CommandInfo { Command = "showcloudsettings", Description = "Open Cloud settings" },
+                    new CommandInfo { Command = "showsettings", Description = "Open App settings" }
+                }
+            });
+
+            return IpcResponse.Success(help);
+        }
 
         private IpcResponse HandleIsTracking()
         {
@@ -654,6 +747,119 @@ namespace SaveTracker.Resources.LOGIC.IPC
                 return IpcResponse.Fail($"Failed to end session: {ex.Message}");
             }
         }
+
+        #region Blacklist & Cloud Library Commands
+
+        private IpcResponse HandleGetBlacklist()
+        {
+            var bm = BlacklistManager.Instance;
+            return IpcResponse.Success(new BlacklistResponse
+            {
+                Directories = bm.Directories.ToList(),
+                Extensions = bm.Extensions.ToList(),
+                FileNames = bm.FileNames.ToList(),
+                Keywords = bm.Keywords.ToList()
+            });
+        }
+
+        private async Task<IpcResponse> HandleAddBlacklist(IpcRequest request)
+        {
+            var type = request.GetString("type")?.ToLower();
+            var value = request.GetString("value");
+
+            if (string.IsNullOrEmpty(type) || string.IsNullOrEmpty(value))
+                return IpcResponse.Fail("Missing 'type' or 'value' parameter");
+
+            bool success = false;
+            string msg = "";
+
+            switch (type)
+            {
+                case "directory":
+                    success = BlacklistManager.Instance.AddDirectory(value);
+                    msg = success ? "Directory added" : "Directory already exists";
+                    break;
+                case "extension":
+                    if (!value.StartsWith(".")) value = "." + value;
+                    success = BlacklistManager.Instance.AddExtension(value);
+                    msg = success ? "Extension added" : "Extension already exists";
+                    break;
+                case "filename":
+                    success = BlacklistManager.Instance.AddFileName(value);
+                    msg = success ? "Filename added" : "Filename already exists";
+                    break;
+                case "keyword":
+                    success = BlacklistManager.Instance.AddKeyword(value);
+                    msg = success ? "Keyword added" : "Keyword already exists";
+                    break;
+                default:
+                    return IpcResponse.Fail("Invalid type. Use: directory, extension, filename, keyword");
+            }
+
+            return IpcResponse.Success(new BlacklistActionResponse { Success = success, Message = msg });
+        }
+
+        private async Task<IpcResponse> HandleRemoveBlacklist(IpcRequest request)
+        {
+            var type = request.GetString("type")?.ToLower();
+            var value = request.GetString("value");
+
+            if (string.IsNullOrEmpty(type) || string.IsNullOrEmpty(value))
+                return IpcResponse.Fail("Missing 'type' or 'value' parameter");
+
+            bool success = false;
+            string msg = "";
+
+            switch (type)
+            {
+                case "directory":
+                    success = BlacklistManager.Instance.RemoveDirectory(value);
+                    break;
+                case "extension":
+                    if (!value.StartsWith(".")) value = "." + value;
+                    success = BlacklistManager.Instance.RemoveExtension(value);
+                    break;
+                case "filename":
+                    success = BlacklistManager.Instance.RemoveFileName(value);
+                    break;
+                case "keyword":
+                    success = BlacklistManager.Instance.RemoveKeyword(value);
+                    break;
+                default:
+                    return IpcResponse.Fail("Invalid type");
+            }
+
+            msg = success ? "Item removed" : "Item not found";
+            return IpcResponse.Success(new BlacklistActionResponse { Success = success, Message = msg });
+        }
+
+        private async Task<IpcResponse> HandleGetCloudLibrary()
+        {
+            try
+            {
+                var service = new CloudLibraryService();
+                var items = await service.GetCloudLibraryAsync();
+
+                var dtos = items.Select(i => new CloudLibraryItemDto
+                {
+                    Name = i.Name,
+                    IsInstalled = i.IsInstalled,
+                    IsInCloud = i.IsInCloud,
+                    LocalPath = i.LocalPath,
+                    PlayTime = i.PlayTime.ToString(@"hh\:mm\:ss"), // Simple formatting
+                    TotalSize = i.TotalSize,
+                    FileCount = i.FileCount
+                }).ToList();
+
+                return IpcResponse.Success(dtos);
+            }
+            catch (Exception ex)
+            {
+                return IpcResponse.Fail($"Failed to get cloud library: {ex.Message}");
+            }
+        }
+
+        #endregion
 
         #endregion
     }

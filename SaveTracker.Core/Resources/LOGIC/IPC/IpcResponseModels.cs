@@ -110,7 +110,7 @@ namespace SaveTracker.Resources.LOGIC.IPC
     {
         public int Provider { get; set; }
         public string Name { get; set; } = string.Empty;
-    //    public string DisplayName { get; set; } = string.Empty;
+        //    public string DisplayName { get; set; } = string.Empty;
     }
 
     public class SyncStatusResponse
@@ -142,5 +142,29 @@ namespace SaveTracker.Resources.LOGIC.IPC
         public string Status { get; set; } = string.Empty;
         public string LocalTime { get; set; } = string.Empty;
         public string CloudTime { get; set; } = string.Empty;
+    }
+    public class BlacklistResponse
+    {
+        public List<string> Directories { get; set; } = new();
+        public List<string> Extensions { get; set; } = new();
+        public List<string> FileNames { get; set; } = new();
+        public List<string> Keywords { get; set; } = new();
+    }
+
+    public class BlacklistActionResponse
+    {
+        public bool Success { get; set; }
+        public string Message { get; set; } = string.Empty;
+    }
+
+    public class CloudLibraryItemDto
+    {
+        public string Name { get; set; } = string.Empty;
+        public bool IsInstalled { get; set; }
+        public bool IsInCloud { get; set; }
+        public string? LocalPath { get; set; }
+        public string PlayTime { get; set; } = string.Empty; // Formatted
+        public long TotalSize { get; set; }
+        public int FileCount { get; set; }
     }
 }

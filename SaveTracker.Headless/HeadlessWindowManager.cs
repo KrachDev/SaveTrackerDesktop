@@ -38,16 +38,26 @@ namespace SaveTracker.Headless
 
         public void ReportIssue()
         {
-             DebugConsole.WriteInfo("Received 'ReportIssue'. Opening browser...");
-             try
-             {
-                 System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-                 {
-                     FileName = "https://github.com/KrachDev/SaveTrackerDesktop/issues/new",
-                     UseShellExecute = true
-                 });
-             }
-             catch { }
+            DebugConsole.WriteInfo("Received 'ReportIssue'. Opening browser...");
+            try
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "https://github.com/KrachDev/SaveTrackerDesktop/issues/new",
+                    UseShellExecute = true
+                });
+            }
+            catch { }
+        }
+
+        public async Task StartSession(Game game)
+        {
+            await HeadlessGameService.Instance.StartTrackingAsync(game);
+        }
+
+        public async Task EndSession(Game game)
+        {
+            await HeadlessGameService.Instance.StopTrackingAsync(game);
         }
     }
 }

@@ -14,7 +14,13 @@ namespace SaveTracker.Headless
         static async Task Main(string[] args)
         {
             DebugConsole.Enable(true);
-            DebugConsole.WriteSection("SaveTracker Headless Mode");
+            DebugConsole.WriteSection("SaveTracker Headless Mode v0.1 (based on SaveTracker v0.5.0)");
+
+            if (args.Contains("--help") || args.Contains("-h"))
+            {
+                ShowHelp();
+                return;
+            }
 
             if (args.Contains("--test-sta"))
             {
@@ -68,6 +74,20 @@ namespace SaveTracker.Headless
                 IpcServer.Stop();
                 DebugConsole.WriteInfo("Exiting.");
             }
+        }
+        private static void ShowHelp()
+        {
+            Console.WriteLine("SaveTracker Headless Helper v0.1");
+            Console.WriteLine("Based on SaveTracker v0.5.0");
+            Console.WriteLine("Usage: SaveTrackerHelper.exe [options]");
+            Console.WriteLine();
+            Console.WriteLine("Options:");
+            Console.WriteLine("  -h, --help           Show this help message");
+            Console.WriteLine("  --enable-watcher     Enable automatic game tracking via filesystem monitoring");
+            Console.WriteLine("  --test-sta           Run internal SaveArchiver tests");
+            Console.WriteLine();
+            Console.WriteLine("This helper runs a background service with an IPC Named Pipe server.");
+            Console.WriteLine("Addons (like Playnite) can connect to the pipe to control SaveTracker.");
         }
     }
 }

@@ -6,6 +6,7 @@ using System.Text;
 using System.Threading.Tasks;
 using SaveTracker.Resources.SAVE_SYSTEM;
 using SaveTracker.Resources.Logic.RecloneManagement;
+using SaveTracker.Resources.LOGIC;
 
 namespace SaveTracker.Resources.HELPERS
 {
@@ -97,8 +98,8 @@ namespace SaveTracker.Resources.HELPERS
 
             try
             {
-                // 2. Quick directory check - most performant filter
-                foreach (var ignoredDir in Ignorlist.IgnoredDirectoriesSet)
+                // 2. Quick directory check - using Manager
+                foreach (var ignoredDir in BlacklistManager.Instance.Directories)
                 {
                     if (normalizedPath.StartsWith(ignoredDir + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) ||
                         normalizedPath.Equals(ignoredDir, StringComparison.OrdinalIgnoreCase))
@@ -113,14 +114,14 @@ namespace SaveTracker.Resources.HELPERS
                 string fileName = Path.GetFileName(normalizedPath);
                 string fileExtension = Path.GetExtension(normalizedPath);
 
-                if (Ignorlist.IgnoredFileNames.Contains(fileName))
+                if (BlacklistManager.Instance.FileNames.Contains(fileName))
                 {
                     if (shouldLog)
                         DebugConsole.WriteWarning($"Skipped (Ignored Filename): {filePath}");
                     return true;
                 }
 
-                if (Ignorlist.IgnoredExtensions.Contains(fileExtension))
+                if (BlacklistManager.Instance.Extensions.Contains(fileExtension))
                 {
                     if (shouldLog)
                         DebugConsole.WriteWarning($"Skipped (Ignored Extension): {filePath}");
@@ -131,7 +132,7 @@ namespace SaveTracker.Resources.HELPERS
                 string lowerPath = normalizedPath.ToLower();
                 string lowerFileName = fileName.ToLower();
 
-                foreach (var keyword in Ignorlist.IgnoredKeywords)
+                foreach (var keyword in BlacklistManager.Instance.Keywords)
                 {
                     if (lowerPath.Contains(keyword) || lowerFileName.Contains(keyword))
                     {

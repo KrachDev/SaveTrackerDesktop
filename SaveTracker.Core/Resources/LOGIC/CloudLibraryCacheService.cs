@@ -506,7 +506,10 @@ namespace SaveTracker.Resources.Logic.RecloneManagement
         /// <summary>
         /// Saves cache to disk
         /// </summary>
-        private async Task SaveCacheAsync(CloudLibraryCache cache)
+        /// <summary>
+        /// Saves cache to disk
+        /// </summary>
+        public async Task SaveCacheAsync(CloudLibraryCache cache)
         {
             try
             {

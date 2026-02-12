@@ -5,11 +5,18 @@
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <Version>0.1.0</Version>
+    <InformationalVersion>0.1 (based on SaveTracker 0.5.0)</InformationalVersion>
     <InvariantGlobalization>true</InvariantGlobalization>
     <PublishTrimmed>true</PublishTrimmed>
     <TrimMode>partial</TrimMode>
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
     <AssemblyName>SaveTrackerHelper</AssemblyName>
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>true</SelfContained>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
   </PropertyGroup>
 
   <ItemGroup>
