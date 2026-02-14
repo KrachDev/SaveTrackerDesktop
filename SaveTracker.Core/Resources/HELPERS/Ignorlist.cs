@@ -154,6 +154,7 @@ namespace SaveTracker.Resources.HELPERS
         public static readonly string[] IgnoredKeywords =
         {
             "telemetry",
+            "crash-reports",
             "metrics",
             "\\cache\\",
             "\\logs\\",

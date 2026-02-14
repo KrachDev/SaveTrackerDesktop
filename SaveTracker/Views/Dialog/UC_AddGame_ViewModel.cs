@@ -37,6 +37,14 @@ namespace SaveTracker.Views.Dialog
             _ = LoadCloudGameSuggestionsAsync();
         }
 
+        public UC_AddGame_ViewModel(System.Collections.Generic.IEnumerable<string> cloudGames)
+        {
+            // Use pre-loaded cloud games list from caller
+            foreach (var g in cloudGames)
+                AvailableCloudGames.Add(g);
+            DebugConsole.WriteSuccess($"UC_AddGame_ViewModel: Loaded {AvailableCloudGames.Count} cloud games from caller");
+        }
+
         // Hook into name changes to trigger cloud check
         partial void OnNewGameChanged(Game value)
         {

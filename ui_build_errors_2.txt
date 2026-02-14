@@ -1,7 +1,0 @@
-C:\Users\Kracher\source\repos\KrachDev\SaveTrackerDesktop\SaveTracker\Program.cs(80,30): error CS1002: ; expected [C:\Users\Kracher\source\repos\KrachDev\SaveTrackerDesktop\SaveTracker\SaveTracker.csproj]
-
-Build FAILED.
-    0 Warning(s)
-    1 Error(s)
-
-Time Elapsed 00:00:00.86

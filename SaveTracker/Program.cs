@@ -37,6 +37,55 @@ namespace SaveTracker
 
             try
             {
+                // Init Console
+                SaveTracker.Resources.HELPERS.DebugConsole.Enable(true);
+
+                // Prepare Banner Info
+                var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+                string verString = version != null ? $"{version.Major}.{version.Minor}.{version.Build}" : "Unknown";
+
+                var extraInfo = new System.Collections.Generic.List<System.Collections.Generic.KeyValuePair<string, string>>();
+
+                // Load Data for Banner
+                try
+                {
+                    // Using Task.Run to run async methods synchronously in Main
+                    var config = Task.Run(async () => await SaveTracker.Resources.SAVE_SYSTEM.ConfigManagement.LoadConfigAsync()).Result;
+                    var games = Task.Run(async () => await SaveTracker.Resources.SAVE_SYSTEM.ConfigManagement.LoadAllGamesAsync()).Result;
+                    var providerHelper = new SaveTracker.Resources.Logic.RecloneManagement.CloudProviderHelper();
+
+                    extraInfo.Add(new System.Collections.Generic.KeyValuePair<string, string>("Active Provider", providerHelper.GetProviderDisplayName(config.CloudConfig.Provider)));
+                    extraInfo.Add(new System.Collections.Generic.KeyValuePair<string, string>("Games Tracked", games.Count.ToString()));
+
+                    int profileCount = config.Profiles?.Count ?? 0;
+                    var defaultProfileObj = config.Profiles?.Find(p => p.IsDefault);
+                    string defaultProfile = defaultProfileObj != null ? defaultProfileObj.Name : "Main";
+                    extraInfo.Add(new System.Collections.Generic.KeyValuePair<string, string>("Profiles", $"{profileCount} (Default: {defaultProfile})"));
+
+                    extraInfo.Add(new System.Collections.Generic.KeyValuePair<string, string>("", "")); // Separator
+
+                    extraInfo.Add(new System.Collections.Generic.KeyValuePair<string, string>("Auto-Tracking", config.EnableAutomaticTracking ? "Enabled" : "Disabled"));
+                    extraInfo.Add(new System.Collections.Generic.KeyValuePair<string, string>("Auto-Upload", config.Auto_Upload ? "Enabled" : "Disabled"));
+                    extraInfo.Add(new System.Collections.Generic.KeyValuePair<string, string>("IPC Server", config.EnableIPC ? "Enabled" : "Disabled"));
+
+                    extraInfo.Add(new System.Collections.Generic.KeyValuePair<string, string>("", "")); // Separator
+
+#if DEBUG
+                    extraInfo.Add(new System.Collections.Generic.KeyValuePair<string, string>("Build Mode", "Debug"));
+#else
+                    extraInfo.Add(new System.Collections.Generic.KeyValuePair<string, string>("Build Mode", "Release"));
+#endif
+                }
+                catch (Exception ex)
+                {
+                    extraInfo.Add(new System.Collections.Generic.KeyValuePair<string, string>("Error", "Config Load Failed"));
+                    extraInfo.Add(new System.Collections.Generic.KeyValuePair<string, string>("Details", ex.Message));
+                    if (ex.InnerException != null)
+                        extraInfo.Add(new System.Collections.Generic.KeyValuePair<string, string>("Inner", ex.InnerException.Message));
+                }
+
+                SaveTracker.Resources.HELPERS.DebugConsole.WriteBanner("SaveTracker Desktop", verString, extraInfo);
+
                 // Start the IPC Command Server and inject the Avalonia Window Manager
                 var windowManager = new AvaloniaWindowManager();
                 Task.Run(() => SaveTracker.Resources.LOGIC.IPC.IpcServer.StartAsync(windowManager));

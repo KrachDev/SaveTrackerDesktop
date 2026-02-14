@@ -98,7 +98,7 @@ namespace SaveTracker.Resources.HELPERS
         }
 
         /// <summary>
-        /// Write a warning message
+        /// Write an warning message
         /// </summary>
         public static void WriteWarning(string message, string title = "WARNING")
         {
@@ -204,6 +204,75 @@ namespace SaveTracker.Resources.HELPERS
             {
                 WriteLine(description != "" ? $"  - {item} | {description}" : $"  - {item}");
             }
+        }
+
+        /// <summary>
+        /// Writes the startup banner
+        /// </summary>
+        public static void WriteBanner(string title, string version, IEnumerable<KeyValuePair<string, string>>? extraInfo = null)
+        {
+            if (!_isEnabled) return;
+
+            int width = 64;
+            string horizontalLine = new string('#', width);
+            string emptyLine = $"#{new string(' ', width - 2)}#";
+            string verticalBorder = "|"; // User requested | for vertical
+
+            // Helper to center text
+            string CenterText(string text)
+            {
+                int padding = width - 2 - text.Length;
+                int leftPad = padding / 2;
+                int rightPad = padding - leftPad;
+                return $"{verticalBorder}{new string(' ', leftPad)}{text}{new string(' ', rightPad)}{verticalBorder}";
+            }
+
+            // Helper to format key-value
+            string FormatKeyValue(string key, string value)
+            {
+                // Format: "  KeyName : Value"
+                string content = $"    {key,-18}: {value}";
+                int padding = width - 2 - content.Length;
+                if (padding < 0) padding = 0; // Safety
+                return $"{verticalBorder}{content}{new string(' ', padding)}{verticalBorder}";
+            }
+
+            Console.ForegroundColor = ConsoleColor.Cyan;
+            Console.WriteLine(horizontalLine);
+            Console.WriteLine(CenterText(""));
+            Console.WriteLine(CenterText(title));
+            Console.WriteLine(CenterText($"Ver {version}"));
+            Console.WriteLine(CenterText(""));
+
+            if (extraInfo != null)
+            {
+                // Simple check if enumerable has items
+                bool hasItems = false;
+                foreach (var _ in extraInfo) { hasItems = true; break; }
+
+                if (hasItems)
+                {
+                    Console.WriteLine($"{verticalBorder}  {new string('-', width - 6)}  {verticalBorder}");
+                    Console.WriteLine(CenterText(""));
+
+                    foreach (var kvp in extraInfo)
+                    {
+                        if (string.IsNullOrEmpty(kvp.Key)) // Separator
+                        {
+                            Console.WriteLine(CenterText(""));
+                        }
+                        else
+                        {
+                            Console.WriteLine(FormatKeyValue(kvp.Key, kvp.Value));
+                        }
+                    }
+                    Console.WriteLine(CenterText(""));
+                }
+            }
+
+            Console.WriteLine(horizontalLine);
+            Console.ResetColor();
+            Console.WriteLine();
         }
     }
 }

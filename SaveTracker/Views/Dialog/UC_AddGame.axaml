@@ -113,8 +113,8 @@
                                               VerticalAlignment="Bottom"/>
                                 </Grid>
                                 
-                                <AutoCompleteBox Text="{Binding GameName}"
-                                                 ItemsSource="{Binding AvailableCloudGames}"
+                                <AutoCompleteBox x:Name="GameNameAutoComplete"
+                                                 Text="{Binding GameName}"
                                                  FilterMode="StartsWith"
                                                  Watermark="Enter game name to check cloud..."
                                                  MinimumPrefixLength="2"

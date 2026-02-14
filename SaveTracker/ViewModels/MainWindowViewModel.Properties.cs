@@ -250,84 +250,89 @@ namespace SaveTracker.ViewModels
 
         private async Task LoadCloudGameSuggestionsAsync()
         {
-            // Prevent overlapping loads
-            if (_isLoadingCloudGames)
+            // Run entirely in background to prevent UI freeze
+            await Task.Run(async () =>
             {
-                DebugConsole.WriteDebug("Cloud games load already in progress, skipping duplicate request");
-                return;
-            }
-
-            // Check cache first (5-minute TTL)
-            if (_cachedCloudGamesList != null &&
-                (DateTime.Now - _cloudGamesCacheTime).TotalMinutes < CloudGamesCacheTTLMinutes)
-            {
-                DebugConsole.WriteDebug($"Using cached cloud games list ({_cachedCloudGamesList.Count} games)");
-                Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                // Prevent overlapping loads
+                if (_isLoadingCloudGames)
                 {
-                    AvailableCloudGames.Clear();
-                    foreach (var d in _cachedCloudGamesList)
-                        AvailableCloudGames.Add(d);
-                });
-                return;
-            }
+                    DebugConsole.WriteDebug("Cloud games load already in progress, skipping duplicate request");
+                    return;
+                }
 
-            _isLoadingCloudGames = true;
-            try
-            {
-                DebugConsole.WriteDebug("Fetching cloud games list from remote...");
-                var config = await ConfigManagement.LoadConfigAsync();
-                var provider = config.CloudConfig.Provider;
-                string configPath = RclonePathHelper.GetConfigPath(provider);
-                string remoteName = _providerHelper.GetProviderConfigName(provider);
-                string remotePath = $"{remoteName}:{SaveFileUploadManager.RemoteBaseFolder}";
-
-                var result = await _rcloneExecutorInternal.ExecuteRcloneCommand(
-                    $"lsd \"{remotePath}\" --config \"{configPath}\" " + RcloneExecutor.GetPerformanceFlags(),
-                    TimeSpan.FromSeconds(15),
-                    allowedExitCodes: new[] { 3 }
-                );
-
-                if (result.Success)
+                // Check cache first (5-minute TTL)
+                if (_cachedCloudGamesList != null &&
+                    (DateTime.Now - _cloudGamesCacheTime).TotalMinutes < CloudGamesCacheTTLMinutes)
                 {
-                    var lines = result.Output.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-                    var dirs = new System.Collections.Generic.List<string>();
-
-                    foreach (var line in lines)
-                    {
-                        var parts = line.Trim().Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
-                        if (parts.Length >= 5)
-                        {
-                            string name = string.Join(" ", parts.Skip(4));
-                            dirs.Add(name);
-                        }
-                    }
-
-                    // Cache the results
-                    _cachedCloudGamesList = dirs;
-                    _cloudGamesCacheTime = DateTime.Now;
-
+                    DebugConsole.WriteDebug($"Using cached cloud games list ({_cachedCloudGamesList.Count} games)");
                     Avalonia.Threading.Dispatcher.UIThread.Post(() =>
                     {
                         AvailableCloudGames.Clear();
-                        foreach (var d in dirs)
+                        foreach (var d in _cachedCloudGamesList)
                             AvailableCloudGames.Add(d);
                     });
+                    return;
+                }
 
-                    DebugConsole.WriteDebug($"Cloud games list cached with {dirs.Count} items");
-                }
-                else
+                _isLoadingCloudGames = true;
+                try
                 {
-                    DebugConsole.WriteWarning("Failed to fetch cloud games list");
+                    DebugConsole.WriteDebug("Fetching cloud games list from remote...");
+                    var config = await ConfigManagement.LoadConfigAsync();
+                    var provider = config.CloudConfig.Provider;
+                    string configPath = RclonePathHelper.GetConfigPath(provider);
+                    string remoteName = _providerHelper.GetProviderConfigName(provider);
+                    string remotePath = $"{remoteName}:{SaveFileUploadManager.RemoteBaseFolder}";
+
+                    // Use slightly shorter timeout for suggestions to not block too long if network is slow
+                    var result = await _rcloneExecutorInternal.ExecuteRcloneCommand(
+                        $"lsd \"{remotePath}\" --config \"{configPath}\" " + RcloneExecutor.GetPerformanceFlags(),
+                        TimeSpan.FromSeconds(10),
+                        allowedExitCodes: new[] { 3 }
+                    );
+
+                    if (result.Success)
+                    {
+                        var lines = result.Output.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                        var dirs = new System.Collections.Generic.List<string>();
+
+                        foreach (var line in lines)
+                        {
+                            var parts = line.Trim().Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                            if (parts.Length >= 5)
+                            {
+                                string name = string.Join(" ", parts.Skip(4));
+                                dirs.Add(name);
+                            }
+                        }
+
+                        // Cache the results
+                        _cachedCloudGamesList = dirs;
+                        _cloudGamesCacheTime = DateTime.Now;
+
+                        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                        {
+                            AvailableCloudGames.Clear();
+                            foreach (var d in dirs)
+                                AvailableCloudGames.Add(d);
+                        });
+
+                        DebugConsole.WriteDebug($"Cloud games list cached with {dirs.Count} items");
+                    }
+                    else
+                    {
+                        DebugConsole.WriteWarning("Failed to fetch cloud games list");
+                    }
                 }
-            }
-            catch (Exception ex)
-            {
-                DebugConsole.WriteException(ex, "Failed to load cloud suggestions");
-            }
-            finally
-            {
-                _isLoadingCloudGames = false;
-            }
+                catch (Exception ex)
+                {
+                    DebugConsole.WriteException(ex, "Failed to load cloud suggestions");
+                }
+                finally
+                {
+                    _isLoadingCloudGames = false;
+                }
+            });
         }
 
         partial void OnEditableGameNameChanged(string value)

@@ -277,9 +277,9 @@ namespace SaveTracker.ViewModels
                         string legacyChecksumName = ".savetracker_checksums.json";
                         string legacyRelativePath = relativeChecksumPath.Replace(realChecksumName, legacyChecksumName);
                         string legacyRemotePath = $"{remotePath}/{legacyRelativePath}";
-                        
+
                         DebugConsole.WriteInfo($"Attempting legacy checksum fetch: {legacyRelativePath}");
-                        
+
                         downloaded = await transferService.DownloadFileWithRetry(
                             legacyRemotePath,
                             checksumLocalPath, // Save it to the same local path for deserialization
@@ -839,7 +839,7 @@ namespace SaveTracker.ViewModels
 
         private static string FormatTimeSpan(TimeSpan timeSpan)
         {
-            return timeSpan.ToString(@"hh\:mm\:ss");
+            return $"{(int)timeSpan.TotalHours}:{timeSpan.Minutes:D2}:{timeSpan.Seconds:D2}";
         }
 
         private static string SanitizeGameName(string gameName)

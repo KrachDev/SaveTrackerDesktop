@@ -28,8 +28,50 @@ namespace SaveTracker
 
                 ViewModel = new UC_AddGame_ViewModel();
                 DataContext = ViewModel;
+                this.FindControl<AutoCompleteBox>("GameNameAutoComplete")!.ItemsSource = ViewModel.AvailableCloudGames;
 
                 DebugConsole.WriteSuccess("UC_AddGame initialized successfully");
+            }
+            catch (Exception ex)
+            {
+                DebugConsole.WriteException(ex, "UC_AddGame constructor failed");
+                throw;
+            }
+        }
+
+        public UC_AddGame(System.Collections.Generic.IEnumerable<string> cloudGames)
+        {
+            try
+            {
+                DebugConsole.WriteInfo("UC_AddGame constructor starting (with cloud games)...");
+                InitializeComponent();
+
+                ViewModel = new UC_AddGame_ViewModel(cloudGames);
+                DataContext = ViewModel;
+
+                var acb = this.FindControl<AutoCompleteBox>("GameNameAutoComplete")!;
+                acb.ItemsSource = ViewModel.AvailableCloudGames;
+
+                // Debug: hook into events to trace autocomplete behavior
+                acb.TextChanged += (s, e) =>
+                {
+                    DebugConsole.WriteDebug($"[AutoComplete] TextChanged: '{acb.Text}', ItemsSource count: {(acb.ItemsSource as System.Collections.ICollection)?.Count ?? -1}");
+                };
+                acb.Populating += (s, e) =>
+                {
+                    DebugConsole.WriteDebug($"[AutoComplete] Populating event fired, parameter: '{e.Parameter}'");
+                };
+                acb.DropDownOpening += (s, e) =>
+                {
+                    DebugConsole.WriteDebug($"[AutoComplete] DropDownOpening");
+                };
+
+                DebugConsole.WriteSuccess($"UC_AddGame initialized with {ViewModel.AvailableCloudGames.Count} cloud games");
+                // Log first few games for debugging
+                foreach (var g in ViewModel.AvailableCloudGames.Take(5))
+                {
+                    DebugConsole.WriteDebug($"  Cloud game: {g}");
+                }
             }
             catch (Exception ex)
             {

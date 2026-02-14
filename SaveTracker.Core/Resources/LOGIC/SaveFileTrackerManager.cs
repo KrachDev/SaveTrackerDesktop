@@ -40,7 +40,7 @@ namespace SaveTracker.Resources.LOGIC
         /// <summary>
         /// Main tracking method - same signature as original for compatibility
         /// </summary>
-        public async Task Track(Game gameArg, bool probeForPrefix = false)
+        public async Task Track(Game gameArg, bool probeForPrefix = false, CancellationToken externalCancellationToken = default)
         {
             DebugConsole.WriteLine("== SaveTracker DebugConsole Started ==");
             var gamedata = ConfigManagement.GetGameData(gameArg);
@@ -66,6 +66,20 @@ namespace SaveTracker.Resources.LOGIC
 
                 // Initialize new tracking session
                 _currentSession = new TrackingSession(gameArg, probeForPrefix);
+
+                // Link external token to our internal source if provided
+                if (externalCancellationToken != default)
+                {
+                    externalCancellationToken.Register(() =>
+                    {
+                        try
+                        {
+                            DebugConsole.WriteInfo("External cancellation requested - stopping tracking...");
+                            StopTracking();
+                        }
+                        catch { }
+                    });
+                }
 
                 try
                 {

@@ -145,7 +145,8 @@ namespace SaveTracker.Views
                 await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(async () =>
                 {
                     EnsureWindowVisible();
-                    var window = new UC_AddGame();
+                    DebugConsole.WriteInfo($"[MainWindow] ShowAddGameDialog - AvailableCloudGames count: {_viewModel.AvailableCloudGames.Count}");
+                    var window = new UC_AddGame(_viewModel.AvailableCloudGames);
                     var result = await window.ShowDialog<Game?>(this);
                     if (result != null)
                     {

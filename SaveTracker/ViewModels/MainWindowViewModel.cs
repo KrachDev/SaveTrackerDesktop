@@ -459,7 +459,7 @@ namespace SaveTracker.ViewModels
 
                     // Check if data exists before accessing properties
                     if (data != null && data.PlayTime != TimeSpan.Zero)
-                        GamePlayTimeText = "Play Time: " + data.PlayTime.ToString(@"hh\:mm\:ss");
+                        GamePlayTimeText = $"Play Time: {(int)data.PlayTime.TotalHours}:{data.PlayTime.Minutes:D2}:{data.PlayTime.Seconds:D2}";
                     else
                         GamePlayTimeText = "Play Time: Never";
                     GamePathText = $"Install Path: {game.InstallDirectory}";
@@ -611,8 +611,10 @@ namespace SaveTracker.ViewModels
                 }
                 mainWindow.Activate();
 
-                DebugConsole.WriteInfo("Creating UC_AddGame dialog...");
-                var dialog = new UC_AddGame();
+                DebugConsole.WriteInfo($"Creating UC_AddGame dialog... AvailableCloudGames count: {AvailableCloudGames.Count}");
+                foreach (var g in AvailableCloudGames.Take(3))
+                    DebugConsole.WriteDebug($"  [MainVM] Cloud game sample: {g}");
+                var dialog = new UC_AddGame(AvailableCloudGames);
 
                 DebugConsole.WriteInfo("Showing dialog...");
                 await dialog.ShowDialog(mainWindow);
@@ -932,14 +934,32 @@ namespace SaveTracker.ViewModels
             try
             {
                 var game = SelectedGame.Game;
+                var selectedGameItem = SelectedGame;
 
-                // Check Rclone Config
-                var config = await ConfigManagement.LoadConfigAsync();
-                var provider = config?.CloudConfig;
-                var effectiveProvider = GetEffectiveProviderForGame();
-                var rcloneInstaller = new RcloneInstaller();
+                // Run all heavy pre-launch I/O on a background thread to avoid freezing the UI
+                var preLaunchResult = await Task.Run(async () =>
+                {
+                    var config = await ConfigManagement.LoadConfigAsync();
+                    var provider = config?.CloudConfig;
+                    var effectiveProvider = GetEffectiveProviderForGame();
+                    var rcloneInstaller = new RcloneInstaller();
 
-                bool rcloneReady = await rcloneInstaller.RcloneCheckAsync(effectiveProvider);
+                    bool rcloneReady = await rcloneInstaller.RcloneCheckAsync(effectiveProvider);
+
+                    return new
+                    {
+                        Config = config,
+                        Provider = provider,
+                        EffectiveProvider = effectiveProvider,
+                        RcloneInstaller = rcloneInstaller,
+                        RcloneReady = rcloneReady
+                    };
+                });
+
+                var effectiveProvider = preLaunchResult.EffectiveProvider;
+                bool rcloneReady = preLaunchResult.RcloneReady;
+                var config = preLaunchResult.Config;
+                var provider = preLaunchResult.Provider;
 
                 if (!rcloneReady)
                 {
@@ -947,11 +967,20 @@ namespace SaveTracker.ViewModels
                     if (OnRcloneSetupRequired != null)
                     {
                         await OnRcloneSetupRequired.Invoke();
-                        // Reload config and re-check
-                        config = await ConfigManagement.LoadConfigAsync();
-                        provider = config?.CloudConfig;
-                        effectiveProvider = GetEffectiveProviderForGame();
-                        rcloneReady = await rcloneInstaller.RcloneCheckAsync(effectiveProvider);
+                        // Reload config and re-check on background thread
+                        var recheck = await Task.Run(async () =>
+                        {
+                            var c = await ConfigManagement.LoadConfigAsync();
+                            var p = c?.CloudConfig;
+                            var ep = GetEffectiveProviderForGame();
+                            var ri = new RcloneInstaller();
+                            bool ready = await ri.RcloneCheckAsync(ep);
+                            return new { Config = c, Provider = p, EffectiveProvider = ep, RcloneReady = ready };
+                        });
+                        config = recheck.Config;
+                        provider = recheck.Provider;
+                        effectiveProvider = recheck.EffectiveProvider;
+                        rcloneReady = recheck.RcloneReady;
                     }
                 }
 
@@ -959,7 +988,7 @@ namespace SaveTracker.ViewModels
                 // If on Linux, Smart Sync is enabled, and we don't have a prefix yet -> Probe first.
                 bool checkSmartSync = true;
                 bool isLinux = System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Linux);
-                var gameData = await ConfigManagement.GetGameData(game);
+                var gameData = await Task.Run(() => ConfigManagement.GetGameData(game));
                 bool smartSyncEnabled = gameData?.EnableSmartSync ?? true;
 
                 if (isLinux && rcloneReady && smartSyncEnabled && string.IsNullOrEmpty(gameData?.DetectedPrefix))
@@ -981,7 +1010,7 @@ namespace SaveTracker.ViewModels
                     _notificationService?.Show("Setup Complete", "Save location detected. Checking cloud saves...", NotificationType.Success);
 
                     // Refresh data to get the new prefix
-                    gameData = await ConfigManagement.GetGameData(game);
+                    gameData = await Task.Run(() => ConfigManagement.GetGameData(game));
                 }
 
                 // Smart Sync: Check cloud vs local PlayTime before launching
@@ -994,9 +1023,12 @@ namespace SaveTracker.ViewModels
 
                     if (smartSyncEnabled)
                     {
-                        // Smart Sync Check
-                        var smartSync = new SmartSyncService();
-                        var comparison = await smartSync.CompareProgressAsync(game, TimeSpan.Zero, effectiveProvider);
+                        // Smart Sync Check - run on background thread
+                        var comparison = await Task.Run(async () =>
+                        {
+                            var smartSync = new SmartSyncService();
+                            return await smartSync.CompareProgressAsync(game, TimeSpan.Zero, effectiveProvider);
+                        });
 
                         if (comparison.Status == SmartSyncService.ProgressStatus.CloudAhead)
                         {
@@ -1014,7 +1046,7 @@ namespace SaveTracker.ViewModels
                             // We just launch now.
 
                             // Refresh game data just in case
-                            await LoadGameDetailsAsync(SelectedGame);
+                            await LoadGameDetailsAsync(selectedGameItem);
                         }
                         else
                         {
@@ -1070,18 +1102,27 @@ namespace SaveTracker.ViewModels
 
                 // Start tracking (standard mode)
                 // We don't await this so UI remains responsive
-                _trackingTask = Task.Run(async () =>
+                // Start tracking (standard mode)
+                // REF: Fixed deadlock by decoupling the task variable assignment from the continuation
+                // The _trackingTask should represent the "Walking" part
+                // The "OnExit" part should just be attached to it, but _trackingTask shouldn't point to the continuation of itself.
+                var trackingLogic = Task.Run(async () =>
                 {
                     try
                     {
-                        await _trackLogic.Track(game);
+                        await _trackLogic.Track(game, externalCancellationToken: _trackingCancellation.Token);
                     }
                     catch (Exception ex)
                     {
                         DebugConsole.WriteException(ex, "Tracking task failed in Task.Run");
                         throw; // Propagate to continuation
                     }
-                }, _trackingCancellation.Token).ContinueWith(async t =>
+                }, _trackingCancellation.Token);
+
+                _trackingTask = trackingLogic;
+
+                // Attach continuation separately (fire and forget from perspective of _trackingTask variable)
+                _ = trackingLogic.ContinueWith(async t =>
                 {
                     if (t.IsFaulted)
                     {
@@ -1147,7 +1188,7 @@ namespace SaveTracker.ViewModels
                         {
                             if (IsTrackingEnabledForGame())
                             {
-                                await tracker.Track(game);
+                                await tracker.Track(game, externalCancellationToken: cancellationToken);
                             }
                         }
 
@@ -1313,7 +1354,7 @@ namespace SaveTracker.ViewModels
             var play = lastData?.PlayTime ?? TimeSpan.Zero;
 
             if (play > TimeSpan.Zero)
-                GamePlayTimeText = "Play Time: " + play.ToString(@"hh\:mm\:ss");
+                GamePlayTimeText = $"Play Time: {(int)play.TotalHours}:{play.Minutes:D2}:{play.Seconds:D2}";
             else
                 GamePlayTimeText = "Play Time: Never";
         }
