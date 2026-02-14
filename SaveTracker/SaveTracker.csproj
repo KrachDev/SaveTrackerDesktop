@@ -29,7 +29,7 @@
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
-    <PublishReadyToRun>true</PublishReadyToRun>
+    <PublishReadyToRun>false</PublishReadyToRun>
     
     <!-- Enable Trimming with warnings allowed -->
     <PublishTrimmed>true</PublishTrimmed>
@@ -46,6 +46,9 @@
     <MetadataUpdaterSupport>false</MetadataUpdaterSupport>
   </PropertyGroup>
 
+  <ItemGroup>
+  </ItemGroup>
+
   <!-- Preserve assemblies that don't work well with trimming -->
   <ItemGroup Condition="'$(Configuration)'=='Release'">
     <TrimmerRootAssembly Include="Newtonsoft.Json" />
@@ -54,6 +57,8 @@
     <TrimmerRootAssembly Include="Microsoft.Diagnostics.Tracing.TraceEvent" />
     <TrimmerRootAssembly Include="Avalonia.Controls.DataGrid" />
     <TrimmerRootAssembly Include="Markdown.Avalonia" />
+    <TrimmerRootAssembly Include="HtmlAgilityPack" />
+    <TrimmerRootAssembly Include="Avalonia.Remote.Protocol" />
   </ItemGroup>
 
   <ItemGroup>
