@@ -12,6 +12,8 @@
 
 🚀 **Beta Release v0.5.0**
 
+[View Full Feature List](features.md)
+
 ---
 
 ## 🔥 Why SaveTracker?
@@ -19,23 +21,19 @@
 ### 🧠 **It Just Knows.**
 Forget manual uploads. SaveTracker's **Smart Tracking Engine** detects when a game launches and watches the filesystem in real-time. The second you quit, your progress is safely in the cloud.
 
-### ⚡ **Native Speed.**
-Written in performance-obsessed **.NET 8 AOT**, SaveTracker starts instantly and stays out of your way. No bloated frameworks, no heavy resource usage—just raw efficiency.
+### 👤 **Multiple Profiles**
+Share a PC? Experimenting with mods? Create unlimited **Save Profiles** for any game and switch between them instantly. Your original saves are always safe.
 
-### � **Partial Linux Support (Experimental)**
+### ⚡ **Native Speed.**
+Written in performance-obsessed **.NET 8 AOT**, SaveTracker starts instantly. With the new **Pre-Caching System**, browsing your library is instantaneous.
+
+### 📦 **Smart Transfer (.STA)**
+Say goodbye to cloud clutter. Our new **Smart Transfer Architect (.STA)** bundles small files together, making uploads **50% faster** and keeping your cloud storage organized.
+
+### 🐧 **Partial Linux Support (Experimental)**
 We love the Penguin!
 - **Headless Power**: Run SaveTracker as a background daemon on your Linux rig or Steam Deck.
 - **Process Monitoring**: Native tracking for Linux processes via `/proc`.
-- *Note: GUI is currently Windows-optimized, but the core engine is cross-platform ready.*
-
-### ☁️ **Your Cloud, Your Rules.**
-We don't hold your data hostage. Sync directly to your own storage:
-- **Google Drive**
-- **OneDrive**
-- **Dropbox**
-- **Nextcloud**
-- **pCloud**
-- *...and 10+ more via [Rclone](https://rclone.org/) integration.*
 
 ---
 
@@ -45,6 +43,8 @@ We don't hold your data hostage. Sync directly to your own storage:
 - **Smart Sync**: Uploads only what changed. Advanced checksumming saves your bandwidth.
 - **IPC API**: Developers can hook into SaveTracker via simple JSON-RPC pipes.
 - **Universal Launcher**: Works with everything. Yes, even that obscure indie game from 2005.
+- **Achievement Tracking**: Visualize your wins for supported DRM-free games.
+- **Migration Tool**: Seamlessly upgrade your legacy tracked games to the new system.
 - **Privacy First**: No accounts, no servers, no tracking. Your data stays yours.
 
 ---
@@ -91,7 +91,7 @@ We're building the ultimate save manager, and we need you.
 
 ---
 
-## � License
+## 📜 License
 
 MIT License. Free forever. Open source always.
 
