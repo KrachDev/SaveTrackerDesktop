@@ -1,159 +1,105 @@
 # 🎮 SaveTracker Desktop
 
-> **Version 0.5.0 pre-release** - Automatic Game Save File Tracking & Cloud Sync
+> **Preserve Your Legacy.**
+> *Automatic, cross-platform game save synchronization for the modern gamer.*
 
 [![.NET](https://img.shields.io/badge/.NET-8.0-512BD4?logo=dotnet)](https://dotnet.microsoft.com/)
 [![Avalonia](https://img.shields.io/badge/Avalonia-11.3.9-8B44AC)](https://avaloniaui.net/)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20x64-0078D4?logo=windows)](https://www.microsoft.com/windows)
+[![Experimental](https://img.shields.io/badge/Linux-Experimental-orange?logo=linux)](https://www.linux.org/)
 
-**SaveTracker Desktop** is a powerful standalone application that automatically tracks and synchronizes your game save files to the cloud. Originally developed as a Playnite plugin, it has evolved into a feature-rich desktop app supporting all major game launchers (Steam, Epic, GOG, etc.) with advanced capabilities like headless operation and IPC integration.
+**SaveTracker Desktop** isn't just a backup tool—it's your game progression insurance. Built to run silently and efficiently, it watches over your save files like a guardian, instantly syncing them to your personal cloud the moment you stop playing. Whether you're on Steam, Epic, GOG, or rocking a DRM-free library, SaveTracker ensures your hours of gameplay are never lost to a corrupted drive or accidental deletion.
 
-⚠️ **This is beta software** - Please report any issues you encounter!
-
----
-
-## ✨ Key Features
-
-- 🔄 **Smart Tracking** - Automatically detects running games and monitors file changes in real-time
-- ☁️ **Universal Cloud Sync** - Seamless integration with Google Drive, OneDrive, Dropbox, and 7+ other providers via Rclone
-- 🚀 **Native Performance** - Built with .NET 8 AOT for lightning-fast startup and minimal resource usage
-- 👻 **Headless Mode** - Run silently in the background with a highly optimized, ultra-lightweight executable
-- 🔌 **IPC API** - Full integration support for external tools (e.g., Playnite addons) via Named Pipes
-- 🎮 **Multi-Launcher Support** - Works with Steam, Epic, GOG, and any custom game executable
-- 📁 **Smart File Management** - Intelligent legacy migration, blacklist editor, and manual tracking controls
-- ⚡ **Optimized Transfer** - Batch upload processing for massive save folders (thousands of files)
-- 🔍 **Auto-Detection** - Scans your library to find installed games automatically
+🚀 **Beta Release v0.5.0**
 
 ---
 
-## 📥 Installation
+## 🔥 Why SaveTracker?
 
-### Requirements
-- Windows 10/11 (64-bit)
-- Administrator rights (required for process monitoring)
+### 🧠 **It Just Knows.**
+Forget manual uploads. SaveTracker's **Smart Tracking Engine** detects when a game launches and watches the filesystem in real-time. The second you quit, your progress is safely in the cloud.
 
-### Quick Start
-1. Download `SaveTracker.exe` from [Releases](../../releases)
-2. Run the executable (self-contained, no installation needed)
-3. Grant administrator privileges when prompted
+### ⚡ **Native Speed.**
+Written in performance-obsessed **.NET 8 AOT**, SaveTracker starts instantly and stays out of your way. No bloated frameworks, no heavy resource usage—just raw efficiency.
 
----
+### � **Partial Linux Support (Experimental)**
+We love the Penguin!
+- **Headless Power**: Run SaveTracker as a background daemon on your Linux rig or Steam Deck.
+- **Process Monitoring**: Native tracking for Linux processes via `/proc`.
+- *Note: GUI is currently Windows-optimized, but the core engine is cross-platform ready.*
 
-## 🚀 Usage Guide
-
-### First Time Setup
-1. **Add Games**
-   - Click "Add Game Manually" or let the auto-detector scan your library
-   - Select your game's executable (`.exe`)
-   - Installation paths are automatically resolved
-
-2. **Configure Cloud**
-   - Navigate to "☁️ Cloud" settings
-   - Choose your provider (Google Drive, OneDrive, etc.)
-   - Authenticate securely via browser
-
-3. **Start Playing**
-   - Launch games directly from SaveTracker or your favorite launcher
-   - SaveTracker detects the process and begins monitoring automatically
-   - Saves are synced to the cloud immediately upon game exit
-
-### Headless Mode
-For users who prefer a silent background experience, **SaveTracker.Headless** offers the same powerful tracking engine without the UI overhead. Ideally suited for system startup or integration with other launchers.
-
-### IPC Integration
-Developers and power users can interact with SaveTracker programmatically using the built-in IPC (Inter-Process Communication) API.
-- **Protocol**: Named Pipes (JSON-RPC)
-- **Capabilities**: Query game status, trigger syncs, manage library, and more.
-- **Example**: The official SaveTracker Playnite extension uses this API for seamless integration.
+### ☁️ **Your Cloud, Your Rules.**
+We don't hold your data hostage. Sync directly to your own storage:
+- **Google Drive**
+- **OneDrive**
+- **Dropbox**
+- **Nextcloud**
+- **pCloud**
+- *...and 10+ more via [Rclone](https://rclone.org/) integration.*
 
 ---
 
-## 🔧 Advanced Configuration
+## 💎 Feature Highlights
 
-Access via **⚙️ Settings**:
-
-- **Smart Sync**: Optimize bandwidth by only uploading changed files (uses advanced checksumming)
-- **Blacklist**: Exclude specific files or folders from tracking
-- **Start Location**: Option to start minimized to tray
-- **Debug Console**: View real-time logs for troubleshooting
-
-**Data Locations:**
-- Config: `{AppDirectory}\Data\config.json`
-- Database: `{AppDirectory}\Data\gameslist.json`
-- Logs: `{AppDirectory}\Logs\`
+- **Headless Mode**: A phantom process for tracking without a UI. Perfect for HTPCs and handhelds.
+- **Smart Sync**: Uploads only what changed. Advanced checksumming saves your bandwidth.
+- **IPC API**: Developers can hook into SaveTracker via simple JSON-RPC pipes.
+- **Universal Launcher**: Works with everything. Yes, even that obscure indie game from 2005.
+- **Privacy First**: No accounts, no servers, no tracking. Your data stays yours.
 
 ---
 
-## 🛠️ Building from Source
+## ⚡ Quick Start
 
-**Prerequisites:**
-- .NET 8.0 SDK
+### Windows
+1. **Grab the Binary**: Download `SaveTracker.exe` from [Releases](../../releases).
+2. **Run It**: No installer needed. It's portable.
+3. **Add a Game**: Point it to an executable, and we'll handle the rest.
+4. **Connect Cloud**: OAuth into your provider of choice. Done.
 
-**Build Command:**
-```powershell
-dotnet publish SaveTracker/SaveTracker.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o publish/
+### Linux (Advanced Users)
+SaveTracker's core logic is portable! While the UI is Windows-first, you can build and run the core components on Linux.
+> *Experimental: Expect some rough edges. Contributions welcome!*
+
+---
+
+## 🛠️ For Developers
+
+Want to build it yourself?
+```bash
+git clone https://github.com/KrachDev/SaveTrackerDesktop.git
+cd SaveTrackerDesktop
+dotnet restore
+# Build the beast
+dotnet publish SaveTracker/SaveTracker.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true
 ```
 
-**Note:** The project uses `PublishTrimmed` and `SingleFile` deployment for maximum efficiency. `ReadyToRun` is currently disabled to ensure build stability.
+**Tech Stack:**
+- **Core**: .NET 8, C# 12
+- **UI**: Avalonia UI (Fluent Theme)
+- **Sync**: Embedded Rclone
+- **Architecture**: MVVM, Native AOT, IPC
 
 ---
 
-## 🤝 Contributing
+## 🤝 Join the Mission
 
-Contributions are welcome! Please feel free to submit a Pull Request.
-
----
-
-## 📄 License
-
-MIT License - see [LICENSE](LICENSE) file for details
+We're building the ultimate save manager, and we need you.
+- **Found a bug?** [Open an Issue](../../issues)
+- **Have an idea?** [Start a Discussion](../../discussions)
+- **Code wizard?** Submit a [Pull Request](../../pulls)
 
 ---
 
-## 🙏 Credits
+## � License
 
-- [Avalonia UI](https://avaloniaui.net/) - The powerful cross-platform UI framework
-- [Rclone](https://rclone.org/) - The backbone of our cloud synchronization
-- [CommunityToolkit.Mvvm](https://github.com/CommunityToolkit/dotnet) - Essential MVVM components
-
----
-
-## 📋 Roadmap
-
-### Current (v0.5.0 Beta)
-- ✅ Core save tracking
-- ✅ Cloud sync
-- ✅ Auto-updater
-- ✅ Multi-cloud support
-- ✅ Batch upload optimization
-- ✅ Privacy-focused analytics
-
-### Planned for v1.0
-- [ ] Extended user testing
-- [ ] Bug fixes from community feedback
-- [ ] Performance improvements
-- [ ] Better error handling
-
-### Future Features
-- [ ] Linux/macOS support
-- [ ] Backup versioning
-- [ ] Save file compression
-- [ ] Scheduled backups
-- [ ] Import/Export configurations
-
----
-
-## 📞 Support
-
-- **Issues:** [GitHub Issues](../../issues)
-- **Email:** kooorajoj@gmail.com
+MIT License. Free forever. Open source always.
 
 ---
 
 <div align="center">
 
-**Made with ❤️ for gamers who value their progress**
-
-*Evolved from a Playnite plugin to support all game launchers*
+**Project Status: Active Beta**
+*Evolved from a Playnite plugin. Built for the future.*
 
 </div>
