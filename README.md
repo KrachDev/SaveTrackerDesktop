@@ -43,7 +43,6 @@ We love the Penguin!
 - **Smart Sync**: Uploads only what changed. Advanced checksumming saves your bandwidth.
 - **IPC API**: Developers can hook into SaveTracker via simple JSON-RPC pipes.
 - **Universal Launcher**: Works with everything. Yes, even that obscure indie game from 2005.
-- **Achievement Tracking**: Visualize your wins for supported DRM-free games.
 - **Migration Tool**: Seamlessly upgrade your legacy tracked games to the new system.
 - **Privacy First**: No accounts, no servers, no tracking. Your data stays yours.
 
